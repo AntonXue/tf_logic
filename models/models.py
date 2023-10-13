@@ -12,18 +12,6 @@ def _get_activ_module(activ):
     return str_to_activ_module[activ]
 
 
-def make_feedforward(in_dim, out_dim, width, depth, activ="relu"):
-    """ Make a simple MLP with #depth activations
-    """
-    assert depth > 0
-    modules = [nn.Linear(in_dim, width), _get_activ_module(activ)]
-    for i in range(depth-1):
-        modules.append(nn.Linear(width, width))
-        modules.append(_get_activ_module(activ))
-    modules.append(nn.Linear(width, out_dim))
-    return nn.Sequential(*modules)
-
-
 class MultiAttention(torch.nn.Module):
     def __init__(self, dim, num_heads):
         super().__init__()
@@ -40,12 +28,11 @@ class MultiAttention(torch.nn.Module):
 
 
 class AttentionFeedforward(nn.Module):
-    def __init__(self, dim, width, depth, num_heads=2,
+    def __init__(self, dim, width, depth, num_heads,
                  activ = "relu",
                  do_norm = True,
                  do_norm_first = False,
-                 layer_norm_eps = 1e-5,
-                 ):
+                 layer_norm_eps = 1e-5):
         super().__init__()
         self.dim = dim
         self.num_heads = num_heads
@@ -56,6 +43,7 @@ class AttentionFeedforward(nn.Module):
         self.do_norm = do_norm
         self.do_norm_first = do_norm_first
 
+        # Norm layers
         if do_norm:
             self.norm1 = nn.LayerNorm(dim, eps=layer_norm_eps)
             self.norm2 = nn.LayerNorm(dim, eps=layer_norm_eps)
@@ -63,9 +51,18 @@ class AttentionFeedforward(nn.Module):
             self.norm1 = nn.Identity()
             self.norm2 = nn.Identity()
 
+        # Attention block
         self.attn = MultiAttention(dim, num_heads)
-        self.ffwd = make_feedforward(dim, dim, width, depth, activ=activ)
 
+        # Feedforward block
+        lins = [nn.Linear(dim, width), _get_activ_module(activ)]
+        for i in range(depth-1):
+            lins.append(nn.Linear(width, width))
+            lins.append(_get_activ_module(activ))
+        lins.append(nn.Linear(width, dim))
+        self.ffwd = nn.Sequential(*lins)
+
+    #
     def forward(self, x):
         z = x
         if self.do_norm_first:
