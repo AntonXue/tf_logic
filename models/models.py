@@ -28,50 +28,65 @@ class MultiAttention(torch.nn.Module):
 
 
 class AttentionFeedforward(nn.Module):
-    def __init__(self, dim, width, depth, num_heads,
+    def __init__(self, embed_dim, width, depth, num_heads,
                  activ = "relu",
                  do_norm = True,
-                 do_norm_first = False,
                  layer_norm_eps = 1e-5):
         super().__init__()
-        self.dim = dim
+        self.embed_dim = embed_dim
         self.num_heads = num_heads
         self.width = width
         self.depth = depth
         self.activ = activ
-
         self.do_norm = do_norm
-        self.do_norm_first = do_norm_first
 
         # Norm layers
         if do_norm:
-            self.norm1 = nn.LayerNorm(dim, eps=layer_norm_eps)
-            self.norm2 = nn.LayerNorm(dim, eps=layer_norm_eps)
+            self.norm1 = nn.LayerNorm(embed_dim, eps=layer_norm_eps)
+            self.norm2 = nn.LayerNorm(embed_dim, eps=layer_norm_eps)
         else:
             self.norm1 = nn.Identity()
             self.norm2 = nn.Identity()
 
         # Attention block
-        self.attn = MultiAttention(dim, num_heads)
+        self.attn = MultiAttention(embed_dim, num_heads)
 
         # Feedforward block
-        lins = [nn.Linear(dim, width), _get_activ_module(activ)]
+        lins = [nn.Linear(embed_dim, width), _get_activ_module(activ)]
         for i in range(depth-1):
             lins.append(nn.Linear(width, width))
             lins.append(_get_activ_module(activ))
-        lins.append(nn.Linear(width, dim))
+        lins.append(nn.Linear(width, embed_dim))
         self.ffwd = nn.Sequential(*lins)
 
     #
     def forward(self, x):
         z = x
-        if self.do_norm_first:
-            z = z + self.attn(self.norm1(z))
-            z = z + self.ffwd(self.norm2(z))
-        else:
-            z = self.norm1(z + self.attn(z))
-            z = self.norm2(z + self.ffwd(z))
+        z = self.norm1(z + self.attn(z))
+        z = self.norm2(z + self.ffwd(z))
         return z
+
+
+class MyTransformer(nn.Module):
+    def __init__(self, embed_dim, ffwd_width, ffwd_depth, num_heads, stack_depth, **kwargs):
+        super().__init__()
+
+        self.embed_dim = embed_dim
+        self.ffwd_width = ffwd_width
+        self.ffwd_depth = ffwd_depth
+        self.num_heads = num_heads
+        self.stack_depth = stack_depth
+
+        self.attn_ffwds = nn.Sequential(*[
+                AttentionFeedforward(embed_dim = embed_dim,
+                                     width = ffwd_width,
+                                     depth = ffwd_depth,
+                                     num_heads = num_heads)
+                for _ in range(stack_depth)])
+
+    #
+    def forward(self, x):
+        return self.attn_ffwds(x)
 
 
 
