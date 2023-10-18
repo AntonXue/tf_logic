@@ -75,7 +75,8 @@ class MyTransformer(nn.Module):
             blocks.append(AFBlock(model_dim = model_dim,
                                   width = ffwd_width,
                                   depth = ffwd_depth,
-                                  num_heads = num_heads))
+                                  num_heads = num_heads,
+                                  **kwargs))
         self.attn_ffwds = nn.Sequential(*blocks)
 
 
@@ -155,5 +156,8 @@ class CheckQedDecoder(nn.Module):
         if self.apply_sigmoid:
             z = F.sigmoid(z)
         return z
+
+
+
 
 
