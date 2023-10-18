@@ -1,16 +1,18 @@
 import torch
 
 
-def random_rules(N, r, n, ante_prob, conseq_prob, ensure_facts=True):
-    assert 0 < ante_prob and ante_prob < 1
-    assert 0 < conseq_prob and conseq_prob < 1
+def random_rules(batch_size, num_rules, num_vars, ante_prob, conseq_prob,
+                 ensure_facts = True):
+    N, r, n, pa, pb = batch_size, num_rules, num_vars, ante_prob, conseq_prob
+    assert 0 < pa and pa < 1
+    assert 0 < pb and pb < 1
 
     # Guarantee at least one zero rule exists
-    a = (torch.rand(N,r,n) < ante_prob).long()
+    a = (torch.rand(N,r,n) < pa).long()
     if ensure_facts:
         a[:,0:2,:] = torch.zeros(N,2,n).long()
 
-    b = (torch.rand(N,r,n) < conseq_prob).long()
+    b = (torch.rand(N,r,n) < pb).long()
     rules = torch.cat([a, b], dim=2)
     return rules.long()  # (N,r,2n)
 
@@ -31,7 +33,7 @@ def all_leq(x, y, eps=1e-5):
     return (n <= z + eps).long()
 
 
-def step_rules(rules, state, eps=1e-5, inf_mode=None):
+def step_rules(rules, state, inf_mode=None):
     """ Apply one step of the rules.
         Inference modes:
             'residual': s' = s + sum_{a,b} b * M(a,s)
@@ -41,10 +43,7 @@ def step_rules(rules, state, eps=1e-5, inf_mode=None):
     _, n = state.shape
     assert n2 == n*2
     a, b = antes_conseqs(rules)         # (N,r,n), (N,r,n)
-    hits = all_leq(a, state.view(N,1,n), eps=eps) # (N,r)
-
-    # hits = a <= state.view(N,1,n) + eps # (N,r,n)
-    # hits = n <= hits.sum(dim=2) + eps   # (N,r)
+    hits = all_leq(a, state.view(N,1,n)) # (N,r)
 
     # Original definition
     if inf_mode is None or inf_mode == "residual":
@@ -65,9 +64,8 @@ def compose_rules(rules1, rules2, inf_mode=None):
     """
     assert rules1.shape == rules2.shape
     _, r, _ = rules1.shape
-
-    succs = []
     a, _ = antes_conseqs(rules1)
+    succs = []
     for k in range(r):
         ak = a[:,k,:] # (N,n)
         sk, _ = step_rules(rules1, ak, inf_mode=inf_mode)
@@ -79,7 +77,7 @@ def compose_rules(rules1, rules2, inf_mode=None):
     return comp_rules.long()  # (N,r,2n)
 
 
-def prove_theorem(rules, theorem, eps=1e-5, inf_mode=None):
+def prove_theorem(rules, theorem, inf_mode=None):
     """ Run a proof and return a bunch of metadata
     """
     N, r, n2 = rules.shape
@@ -90,13 +88,13 @@ def prove_theorem(rules, theorem, eps=1e-5, inf_mode=None):
     zs, hs = [], []
     z = torch.zeros_like(theorem)
     for t in range(n):
-        z, h = step_rules(rules, z, eps=eps, inf_mode=inf_mode)
+        z, h = step_rules(rules, z, inf_mode=inf_mode)
         zs.append(z)
         hs.append(h)
 
     zs = torch.stack(zs, dim=1) # (N,n,n)
     hs = torch.stack(hs, dim=1) # (N,n,r)
-    qed = all_leq(theorem, z, eps=eps)
+    qed = all_leq(theorem, z)
     return {
         "rules" : rules,
         "theorem" : theorem,
