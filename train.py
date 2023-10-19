@@ -26,7 +26,7 @@ def run_one_epoch(model, optimizer, config, phase):
 
     loss_fn = torch.nn.BCELoss(reduction="sum")
     num_dones = num_hits = num_qed_true = num_qed_pred = 0
-    cum_loss = 0.
+    cum_loss, cum_qed_pred, cum_grads2 = 0., 0., 0.
     pbar = tqdm(range(config["num_batches"]))
     for i in pbar:
         rules, thm = generate_logic_stuff(config)
@@ -41,19 +41,25 @@ def run_one_epoch(model, optimizer, config, phase):
 
             if phase == "train":
                 loss.backward()
+                grads2 = sum([(p.grad ** 2).sum() for p in model.parameters()])
                 optimizer.step()
 
         num_dones += rules.size(0)
         num_qed_true += qed_true.sum()
         num_qed_pred += (qed_pred > 0.5).sum()
+        cum_qed_pred += qed_pred.sum()
+        cum_grads2 += grads2 if phase == "train" else 0.
+    
         num_hits += ((qed_pred > 0.5) == qed_true).sum()
         cum_loss += loss
 
         # Dump some data
         desc = "[train] " if phase == "train" else "[test]  "
         desc += f"dones {num_dones}, "
-        desc += f"qedt {(num_qed_true/num_dones):.3f}, qedp {(num_qed_pred/num_dones):.3f}, "
-        desc += f"acc {(num_hits/num_dones):.3f}, loss {(cum_loss/num_dones):.3f}"
+        desc += f"qtrue {(num_qed_true/num_dones):.3f}, "
+        desc += f"qpred {(num_qed_pred/num_dones):.3f} ({(cum_qed_pred/num_dones):.3f}), "
+        desc += f"acc {(num_hits/num_dones):.3f}, "
+        desc += f"loss {(cum_loss/num_dones):.3f} (g2 {(cum_grads2/num_dones):.3f}), "
         pbar.set_description(desc)
 
     return {
@@ -131,11 +137,11 @@ def config_to_train_stuff(config):
 
     decoder = CheckQedDecoder(model_dim = config["model_dim"])
 
-    model = LogicTransformer(encoder,tf, decoder)
+    model = LogicTransformer(encoder, tf, decoder)
 
-    optimizer = torch.optim.Adam(model.parameters(),
-                                 lr = config["lr"],
-                                 weight_decay = config["weight_decay"])
+    
+    # optimizer = torch.optim.Adam(model.parameters(), lr = config["lr"])
+    optimizer = torch.optim.SGD(model.parameters(), lr = config["lr"])
 
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer,
                                                 step_size = config["step_every"],
@@ -145,34 +151,33 @@ def config_to_train_stuff(config):
 
 
 def parse_args_to_config():
-    r, n, nb = 96, 32, 32
-    seq_len = n + r + 1
-    d = 10 * n
-    ffwd_width = 2 * d
+    r, n, nb, nh = 20, 16, 5, 4
+    d = r * n * 8
+    ffw, ffd, seq_len = 2*d, 3, n+r+n
     parser = argparse.ArgumentParser()
     parser.add_argument("--num-vars", type=int, default=n)
     parser.add_argument("--num-rules", type=int, default=r)
     parser.add_argument("--ante-prob", type=float, default=0.2)
     parser.add_argument("--conseq-prob", type=float, default=0.2)
-    parser.add_argument("--theorem-prob", type=float, default=0.4)
+    parser.add_argument("--theorem-prob", type=float, default=0.3)
 
     parser.add_argument("--model-dim", type=int, default=d)
-    parser.add_argument("--ffwd-width", type=int, default=ffwd_width)
-    parser.add_argument("--ffwd-depth", type=int, default=4)
-    parser.add_argument("--num-heads", type=int, default=2)
+    parser.add_argument("--ffwd-width", type=int, default=ffw)
+    parser.add_argument("--ffwd-depth", type=int, default=ffd)
+    parser.add_argument("--num-heads", type=int, default=nh)
     parser.add_argument("--num-blocks", type=int, default=nb)
     parser.add_argument("--seq-len", type=int, default=seq_len)
 
     parser.add_argument("--num-epochs", type=int, default=100)
-    parser.add_argument("--batch-size", type=int, default=64)
-    parser.add_argument("--num-batches", type=int, default=100)
-    parser.add_argument("--lr", type=float, default=1e-4)
-    parser.add_argument("--weight-decay", type=float, default=1e-5)
+    parser.add_argument("--batch-size", type=int, default=4)
+    parser.add_argument("--num-batches", type=int, default=400)
+    parser.add_argument("--lr", type=float, default=1e-6)
     parser.add_argument("--step-every", type=int, default=5)
     parser.add_argument("--step-gamma", type=float, default=0.9)
 
     parser.add_argument("--saveto-dir", type=str, default="saved_models/")
     parser.add_argument("--saveto-name", type=str, default="logictf")
+    parser.add_argument("--go", action="store_true", default=False)
     args, unknown = parser.parse_known_args()
     return dict(args._get_kwargs())
 
@@ -181,4 +186,8 @@ def parse_args_to_config():
 if __name__ == "__main__":
     config = parse_args_to_config()
     model, optimizer, scheduler = config_to_train_stuff(config)
+
+    if config["go"]:
+        train(model, optimizer, scheduler, config)
+
 

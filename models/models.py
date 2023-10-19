@@ -45,10 +45,9 @@ class AFBlock(nn.Module):
 
     #
     def forward(self, x):
-        z = x
-        z = self.norm1(z + self.attn(z))
-        z = self.norm2(z + self.ffwd(z))
-        return z
+        x = self.norm1(x + self.attn(x))
+        x = self.norm2(x + self.ffwd(x))
+        return x
 
 
 class MyTransformer(nn.Module):
@@ -60,19 +59,18 @@ class MyTransformer(nn.Module):
         self.num_heads = num_heads
         self.num_blocks = num_blocks
 
-        blocks = []
-        for _ in range(num_blocks):
-            blocks.append(AFBlock(model_dim = model_dim,
-                                  width = ffwd_width,
-                                  depth = ffwd_depth,
-                                  num_heads = num_heads,
-                                  **kwargs))
-        self.attn_ffwds = nn.Sequential(*blocks)
-
+        self.attn_ffwds = nn.ModuleList([AFBlock(model_dim = model_dim,
+                                                 width = ffwd_width,
+                                                 depth = ffwd_depth,
+                                                 num_heads = num_heads,
+                                                 **kwargs)
+                                            for _ in range(num_blocks)])
 
     #
     def forward(self, x):
-        return self.attn_ffwds(x)
+        for block in self.attn_ffwds:
+            x = block(x)
+        return x
 
 
 class ProverEncoder(nn.Module):
@@ -113,7 +111,7 @@ class ProverEncoder(nn.Module):
     def forward(self, rules, theorem):
         N, r, n2 = rules.shape
         _, n = theorem.shape
-        z0 = torch.cat([-1*torch.ones_like(theorem), theorem], dim=1)
+        z0 = torch.cat([-2*torch.ones_like(theorem), theorem], dim=1)
         x = torch.cat([rules, z0.view(N,1,n2)], dim=1) # (N,r+1,2n)
         x = x.permute(1,0,2) # (r+1,N,2n)
         x_pad = torch.zeros(self.seq_len - x.size(0), N, n2, device=x.device)
@@ -137,14 +135,12 @@ class CheckQedDecoder(nn.Module):
             nn.Linear(model_dim, 1))
 
     def forward(self, x):
-        """ x : (seq_len, batch_size, d)
-        """
-        _, N, _ = x.shape
-        z = self.ffwd(x)
-        z = z[-1,:,:]
+        _, N, _ = x.shape   # (seq_len, N, d)
+        x = self.ffwd(x)
+        x = x[-1,:,0]
         if self.apply_sigmoid:
-            z = z.sigmoid()
-        return z.view(N)
+            x = x.sigmoid()
+        return x
 
 
 # Put the above together
