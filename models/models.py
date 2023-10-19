@@ -4,6 +4,8 @@ import torch.nn as nn
 
 
 class MultiAttention(torch.nn.Module):
+    """ Multiheaded attention without splitting across the model_dim
+    """
     def __init__(self, model_dim, num_heads):
         super().__init__()
         self.attn_heads = nn.ModuleList([nn.MultiheadAttention(model_dim, 1)
@@ -20,6 +22,8 @@ class MultiAttention(torch.nn.Module):
 
 
 class AFBlock(nn.Module):
+    """ A single attention-feedforward block
+    """
     def __init__(self, model_dim, width, depth, num_heads,
                  do_norm = True,
                  layer_norm_eps = 1e-5):
@@ -51,6 +55,8 @@ class AFBlock(nn.Module):
 
 
 class MyTransformer(nn.Module):
+    """ A transformer is consisted of num_blocks number of AFBlocks
+    """
     def __init__(self, model_dim, ffwd_width, ffwd_depth, num_heads, num_blocks, **kwargs):
         super().__init__()
         self.model_dim = model_dim
@@ -93,12 +99,11 @@ class ProverEncoder(nn.Module):
             self.norm = nn.Identity()
 
         self.ffwd = nn.Sequential(
-                nn.Linear(num_vars * 2, model_dim),
+                nn.Linear(num_vars * 2, model_dim * 2),
                 nn.ReLU(),
-                nn.Linear(model_dim, model_dim),
+                nn.Linear(model_dim * 2, model_dim * 2),
                 nn.ReLU(),
-                nn.Linear(model_dim, model_dim),
-        )
+                nn.Linear(model_dim * 2, model_dim))
 
         position = torch.arange(seq_len).unsqueeze(1)
         div_term = torch.exp(torch.arange(0, model_dim, 2) * (-math.log(10000.0) / model_dim))
@@ -111,8 +116,8 @@ class ProverEncoder(nn.Module):
     def forward(self, rules, theorem):
         N, r, n2 = rules.shape
         _, n = theorem.shape
-        z0 = torch.cat([-2*torch.ones_like(theorem), theorem], dim=1)
-        x = torch.cat([rules, z0.view(N,1,n2)], dim=1) # (N,r+1,2n)
+        x = torch.cat([-2*torch.ones_like(theorem), theorem]).view(N,1,n2)
+        x = torch.cat([rules, x], dim=1)
         x = x.permute(1,0,2) # (r+1,N,2n)
         x_pad = torch.zeros(self.seq_len - x.size(0), N, n2, device=x.device)
         x = torch.cat([x, x_pad], dim=0)
@@ -122,20 +127,21 @@ class ProverEncoder(nn.Module):
         return x # (seq_len, N, model_dim)
 
 
-class CheckQedDecoder(nn.Module):
+class QedDecoder(nn.Module):
+    """ Returns a single bit indicating whether a QED is achieved
+    """
     def __init__(self, model_dim, apply_sigmoid=True):
         super().__init__()
         self.model_dim = model_dim
         self.apply_sigmoid = apply_sigmoid
         self.ffwd = nn.Sequential(
-            nn.Linear(model_dim, model_dim),
+            nn.Linear(model_dim, model_dim * 2),
             nn.ReLU(),
-            nn.Linear(model_dim, model_dim),
+            nn.Linear(model_dim * 2, model_dim * 2),
             nn.ReLU(),
-            nn.Linear(model_dim, 1))
+            nn.Linear(model_dim * 2, 1))
 
-    def forward(self, x):
-        _, N, _ = x.shape   # (seq_len, N, d)
+    def forward(self, x):   # x : (seq_len, N, model_dim)
         x = self.ffwd(x)
         x = x[-1,:,0]
         if self.apply_sigmoid:
@@ -143,8 +149,33 @@ class CheckQedDecoder(nn.Module):
         return x
 
 
-# Put the above together
+class StateDecoder(nn.Module):
+    """ Returns the state after some whatever steps
+    """
+    def __init__(self, model_dim, num_vars, apply_sigmoid=True):
+        super().__init__()
+        self.model_dim = model_dim
+        self.num_vars = num_vars
+        self.apply_sigmoid = apply_sigmoid
+        self.ffwd = nn.Sequential(
+            nn.Linear(model_dim, model_dim * 2),
+            nn.ReLU(),
+            nn.Linear(model_dim * 2, model_dim * 2),
+            nn.ReLU(),
+            nn.Linear(model_dim * 2, num_vars))
+
+    def forward(self, x):   # x : (seq_len, N, model_dim)
+        x = self.ffwd(x)
+        x = x[-1,:,:]
+        if self.apply_sigmoid:
+            x = x.sigmoid()
+        return x
+
+
 class LogicTransformer(nn.Module):
+    """ Put the above together
+    """
+
     def __init__(self, encoder, transformer, decoder):
         super().__init__()
         self.encoder = encoder
@@ -153,8 +184,8 @@ class LogicTransformer(nn.Module):
 
     def forward(self, rules, theorem):
         x = self.encoder(rules, theorem)
-        y = self.transformer(x)
-        qed = self.decoder(y)
-        return qed
+        x = self.transformer(x)
+        x = self.decoder(x)
+        return x
 
 
