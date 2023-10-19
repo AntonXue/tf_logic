@@ -1,22 +1,13 @@
 import math
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-
-
-str_to_activ_module = {
-    "relu" : nn.ReLU(),
-    "gelu" : nn.GELU(),
-}
-
-def _get_activ_module(activ):
-    return str_to_activ_module[activ]
 
 
 class MultiAttention(torch.nn.Module):
     def __init__(self, model_dim, num_heads):
         super().__init__()
-        self.attn_heads = [nn.MultiheadAttention(model_dim, 1) for _ in range(num_heads)]
+        self.attn_heads = nn.ModuleList([nn.MultiheadAttention(model_dim, 1)
+                                            for _ in range(num_heads)])
 
     def forward(self, x, verbose=False):
         outs = [head(x,x,x) for head in self.attn_heads]
@@ -30,7 +21,6 @@ class MultiAttention(torch.nn.Module):
 
 class AFBlock(nn.Module):
     def __init__(self, model_dim, width, depth, num_heads,
-                 activ = "relu",
                  do_norm = True,
                  layer_norm_eps = 1e-5):
         super().__init__()
@@ -46,10 +36,10 @@ class AFBlock(nn.Module):
         self.attn = MultiAttention(model_dim, num_heads)
 
         # Feedforward block
-        ffwd_parts = [nn.Linear(model_dim, width), _get_activ_module(activ)]
+        ffwd_parts = [nn.Linear(model_dim, width), nn.ReLU()]
         for i in range(depth-1):
             ffwd_parts.append(nn.Linear(width, width))
-            ffwd_parts.append(_get_activ_module(activ))
+            ffwd_parts.append(nn.ReLU())
         ffwd_parts.append(nn.Linear(width, model_dim))
         self.ffwd = nn.Sequential(*ffwd_parts)
 
@@ -85,11 +75,10 @@ class MyTransformer(nn.Module):
         return self.attn_ffwds(x)
 
 
-class RulesTheoremEncoder(nn.Module):
+class ProverEncoder(nn.Module):
     """ Stolen from: https://pytorch.org/tutorials/beginner/transformer_tutorial.html
     """
-    def __init__(self, num_vars, num_rules, model_dim,
-                 seq_len=None,
+    def __init__(self, num_vars, num_rules, model_dim, seq_len,
                  do_norm = True,
                  layer_norm_eps = 1e-5):
         super().__init__()
@@ -97,9 +86,8 @@ class RulesTheoremEncoder(nn.Module):
         self.num_rules = num_rules
         self.model_dim = model_dim
 
-        seq_len = num_vars + num_rules + 1 if seq_len is None else seq_len
-        self.seq_len = seq_len
         assert seq_len > num_rules + 1
+        self.seq_len = seq_len
 
         if do_norm:
             self.norm = nn.LayerNorm(model_dim, eps=layer_norm_eps)
@@ -151,13 +139,26 @@ class CheckQedDecoder(nn.Module):
     def forward(self, x):
         """ x : (seq_len, batch_size, d)
         """
+        _, N, _ = x.shape
         z = self.ffwd(x)
         z = z[-1,:,:]
         if self.apply_sigmoid:
-            z = F.sigmoid(z)
-        return z
+            z = z.sigmoid()
+        return z.view(N)
 
 
+# Put the above together
+class LogicTransformer(nn.Module):
+    def __init__(self, encoder, transformer, decoder):
+        super().__init__()
+        self.encoder = encoder
+        self.transformer = transformer
+        self.decoder = decoder
 
+    def forward(self, rules, theorem):
+        x = self.encoder(rules, theorem)
+        y = self.transformer(x)
+        qed = self.decoder(y)
+        return qed
 
 
