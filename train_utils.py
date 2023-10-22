@@ -11,9 +11,9 @@ import torch.optim.lr_scheduler as schedulers
 from models import *
 from logic import *
 
-def generate_logic_stuff(config):
-    N, r, n = config["batch_size"], config["num_rules"], config["num_vars"]
-    pa, pb, pt = config["ante_prob"], config["conseq_prob"], config["theorem_prob"]
+def generate_logic_stuff(configs):
+    N, r, n = configs["batch_size"], configs["num_rules"], configs["num_vars"]
+    pa, pb, pt = configs["ante_prob"], configs["conseq_prob"], configs["theorem_prob"]
     rules = random_rules(batch_size=N, num_rules=r, num_vars=n, ante_prob=pa, conseq_prob=pb)
     theorem = (torch.rand(N, n) < pt).long()
     return rules, theorem
@@ -71,42 +71,42 @@ def check_step_stats_to_str(stats):
             f"acc {stats['acc']:.3f}, loss {stats['loss']:.3f}"
 
 
-def config_to_train_stuff(config):
-    encoder = ProverEncoder(num_vars = config["num_vars"],
-                            num_rules = config["num_rules"],
-                            model_dim = config["model_dim"],
-                            seq_len = config["seq_len"])
+def configs_to_train_stuff(configs):
+    encoder = ProverEncoder(num_vars = configs["num_vars"],
+                            num_rules = configs["num_rules"],
+                            model_dim = configs["model_dim"],
+                            seq_len = configs["seq_len"])
 
-    tf = MyTransformer(model_dim = config["model_dim"],
-                       ffwd_width = config["ffwd_width"],
-                       ffwd_depth = config["ffwd_depth"],
-                       num_heads = config["num_heads"],
-                       num_blocks = config["num_blocks"])
+    tf = MyTransformer(model_dim = configs["model_dim"],
+                       ffwd_width = configs["ffwd_width"],
+                       ffwd_depth = configs["ffwd_depth"],
+                       num_heads = configs["num_heads"],
+                       num_blocks = configs["num_blocks"])
 
-    if config["task"] == "check-qed":
-        decoder = QedDecoder(model_dim=config["model_dim"])
-    elif config["task"] == "check-step":
-        decoder = StateDecoder(model_dim=config["model_dim"], num_vars=config["num_vars"])
+    if configs["task"] == "check-qed":
+        decoder = QedDecoder(model_dim=configs["model_dim"])
+    elif configs["task"] == "check-step":
+        decoder = StateDecoder(model_dim=configs["model_dim"], num_vars=configs["num_vars"])
     else:
         raise NotImplementedError()
 
     model = LogicTransformer(encoder, tf, decoder)
 
-    if config["optimizer"] == "adam":
-        optimizer = optim.Adam(model.parameters(), lr=config["lr"], weight_decay=1e-4)
-    elif config["optimizer"] == "adamw":
-        optimizer = optim.AdamW(model.parameters(), lr=config["lr"], weight_decay=1e-4)
-    elif config["optimizer"] == "sgd":
-        optimizer = optim.SGD(model.parameters(), lr=config["lr"])
+    if configs["optimizer"] == "adam":
+        optimizer = optim.Adam(model.parameters(), lr=configs["lr"], weight_decay=1e-4)
+    elif configs["optimizer"] == "adamw":
+        optimizer = optim.AdamW(model.parameters(), lr=configs["lr"], weight_decay=1e-4)
+    elif configs["optimizer"] == "sgd":
+        optimizer = optim.SGD(model.parameters(), lr=configs["lr"])
     else:
         raise NotImplementedError()
 
-    scheduler = schedulers.StepLR(optimizer, step_size=config["step_every"], gamma=config["step_gamma"])
+    scheduler = schedulers.StepLR(optimizer, step_size=configs["step_every"], gamma=configs["step_gamma"])
 
-    if config["task"] == "check-qed":
+    if configs["task"] == "check-qed":
         loss_and_stats = check_qed_loss_and_stats
         stats_to_str = check_qed_stats_to_str
-    elif config["task"] == "check-step":
+    elif configs["task"] == "check-step":
         loss_and_stats = check_step_loss_and_stats
         stats_to_str = check_step_stats_to_str
     else:
@@ -122,12 +122,12 @@ def config_to_train_stuff(config):
 
 
 # Make the big string
-def config_to_saveto_prefix(config):
-    name = config["saveto_name"]
-    n, r = config["num_vars"], config["num_rules"]
-    d, fw, fd = config["model_dim"], config["ffwd_width"], config["ffwd_depth"]
-    nh, nb = config["num_heads"], config["num_blocks"]
-    pa, pb, pt = config["ante_prob"], config["conseq_prob"], config["theorem_prob"]
-    task = config["task"]
+def configs_to_saveto_prefix(configs):
+    name = configs["saveto_name"]
+    n, r = configs["num_vars"], configs["num_rules"]
+    d, fw, fd = configs["model_dim"], configs["ffwd_width"], configs["ffwd_depth"]
+    nh, nb = configs["num_heads"], configs["num_blocks"]
+    pa, pb, pt = configs["ante_prob"], configs["conseq_prob"], configs["theorem_prob"]
+    task = configs["task"]
     return f"{name}_{task}_n{n}_r{r}_d{d}_fw{fw}_fd{fd}_nh{nh}_nb{nb}__pa{pa}_pb{pb}_pt{pt}"
 

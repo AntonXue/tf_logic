@@ -11,16 +11,16 @@ from logic import *
 from train_utils import *
 
 
-def run_one_epoch(model, loss_and_stats, optimizer, stats_to_str, config, phase):
+def run_one_epoch(model, loss_and_stats, optimizer, stats_to_str, configs, phase):
     """ Run one epoch of either training or testing
     """
     assert phase in ["train", "test"]
     _ = model.train() if phase == "train" else model.eval()
     device = next(model.parameters()).device
     stats = {}
-    pbar = tqdm(range(config["num_batches"]))
+    pbar = tqdm(range(configs["num_batches"]))
     for i in pbar:
-        rules, thm = generate_logic_stuff(config)
+        rules, thm = generate_logic_stuff(configs)
         rules, thm = rules.to(device), thm.to(device)
         with torch.set_grad_enabled(phase == "train"):
             if phase == "train":
@@ -42,8 +42,8 @@ def run_one_epoch(model, loss_and_stats, optimizer, stats_to_str, config, phase)
     }
 
 
-def train(train_stuff, config, device="cuda"):
-    """ train_stuff has the models, optimizer, etc. config contains other info
+def train(train_stuff, configs, device="cuda"):
+    """ train_stuff has the models, optimizer, etc. configs contains other info
     """
     model = train_stuff["model"]
     loss_and_stats = train_stuff["loss_and_stats"]
@@ -52,19 +52,19 @@ def train(train_stuff, config, device="cuda"):
     stats_to_str = train_stuff["stats_to_str"]
 
     model.to(device)
-    saveto_prefix = config_to_saveto_prefix(config)
-    last_saveto = os.path.join(config["saveto_dir"], saveto_prefix + "_last.pt")
-    best_saveto = os.path.join(config["saveto_dir"], saveto_prefix + "_best.pt")
+    saveto_prefix = configs_to_saveto_prefix(configs)
+    last_saveto = os.path.join(configs["saveto_dir"], saveto_prefix + "_last.pt")
+    best_saveto = os.path.join(configs["saveto_dir"], saveto_prefix + "_best.pt")
 
     best_test_loss, train_losses, test_losses = 1e5, [], []
-    todo_epochs = range(1, config["num_epochs"]+1)
-    print(f"Training on task {config['task']}")
+    todo_epochs = range(1, configs["num_epochs"]+1)
+    print(f"Training on task {configs['task']}")
     print(f"Wlll save to: {best_saveto}")
     for epoch in todo_epochs:
         last_lr = scheduler.get_last_lr()[0]
         print(f"Epoch {epoch}/{todo_epochs[-1]}, lr {last_lr:g}")
-        train_stats = run_one_epoch(model, loss_and_stats, optimizer, stats_to_str, config, "train")
-        test_stats = run_one_epoch(model, loss_and_stats, optimizer, stats_to_str, config, "test")
+        train_stats = run_one_epoch(model, loss_and_stats, optimizer, stats_to_str, configs, "train")
+        test_stats = run_one_epoch(model, loss_and_stats, optimizer, stats_to_str, configs, "test")
 
         train_loss, test_loss = train_stats["loss"], test_stats["loss"]
         train_losses.append((epoch, train_loss))
@@ -77,7 +77,7 @@ def train(train_stuff, config, device="cuda"):
             "epoch" : epoch,
             "train_losses" : train_losses,
             "test_losses" : test_losses,
-            "config" : config,
+            "configs" : configs,
         }
 
         torch.save(save_dict, last_saveto)
@@ -91,7 +91,7 @@ def train(train_stuff, config, device="cuda"):
     return train_stuff
 
 
-def parse_args_to_config():
+def parse_args_to_configs():
     # Some default numbers to tweak with
     # r, n, nb, nh = 96, 28, 5, 8
     r, n, nb, nh = 8, 10, 4, 4
@@ -131,10 +131,10 @@ def parse_args_to_config():
 
 
 if __name__ == "__main__":
-    config = parse_args_to_config()
-    train_stuff = config_to_train_stuff(config)
+    configs = parse_args_to_configs()
+    train_stuff = configs_to_train_stuff(configs)
 
-    if config["go"]:
-        train(train_stuff, config)
+    if configs["go"]:
+        train(train_stuff, configs)
 
 
