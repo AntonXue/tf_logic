@@ -93,9 +93,11 @@ def config_to_train_stuff(config):
     model = LogicTransformer(encoder, tf, decoder)
 
     if config["optimizer"] == "adam":
-        optimizer = optim.Adam(model.parameters(), lr = config["lr"])
+        optimizer = optim.Adam(model.parameters(), lr=config["lr"], weight_decay=1e-4)
+    elif config["optimizer"] == "adamw":
+        optimizer = optim.AdamW(model.parameters(), lr=config["lr"], weight_decay=1e-4)
     elif config["optimizer"] == "sgd":
-        optimizer = optim.SGD(model.parameters(), lr = config["lr"])
+        optimizer = optim.SGD(model.parameters(), lr=config["lr"])
     else:
         raise NotImplementedError()
 

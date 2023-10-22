@@ -84,17 +84,19 @@ def train(train_stuff, config, device="cuda"):
         if test_loss < best_test_loss or epoch == todo_epochs[0]:
             torch.save(save_dict, best_saveto)
             delta = best_test_loss - test_loss
-            print(f"Saving, new best {test_loss:.3f}, old best {best_test_loss:.3f}, delta {delta:.3f}\n")
+            print(f"Saving, new best {test_loss:.3f}, old best {best_test_loss:.3f}, delta {delta:.3f}")
             best_test_loss = test_loss
+        print("")
 
     return train_stuff
 
 
 def parse_args_to_config():
     # Some default numbers to tweak with
-    r, n, nb, nh = 20, 16, 3, 4
+    # r, n, nb, nh = 96, 28, 5, 8
+    r, n, nb, nh = 8, 10, 4, 4
     d = r * n * 8
-    ffw, ffd, seq_len = 2*d, 3, n+r+n
+    ffw, ffd, seq_len = 2*d, 5, n+r+n
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--num-vars", type=int, default=n)
@@ -113,8 +115,8 @@ def parse_args_to_config():
     parser.add_argument("--num-epochs", type=int, default=100)
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--num-batches", type=int, default=400)
-    parser.add_argument("--optimizer", choices=["adam", "sgd"], default="sgd")
-    parser.add_argument("--lr", type=float, default=1e-5)
+    parser.add_argument("--optimizer", choices=["adam", "adamw", "sgd"], default="adamw")
+    parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--step-every", type=int, default=5)
     parser.add_argument("--step-gamma", type=float, default=0.9)
 
