@@ -1,0 +1,12 @@
+name: tfl
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pytorch-cuda=11.8
+  - torchaudio=2.1.0
+  - torchvision=0.16.0
+  - pytorch=2.1.0
+  - tqdm=4.66.1
+  - transformers=4.34.1
