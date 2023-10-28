@@ -9,7 +9,10 @@ from transformers.utils import ModelOutput
 from .model_utils import *
 
 
-class MyTransformerConfig:
+""" Our custom transformer model
+"""
+
+class MyTfConfig:
     """ The configs
     """
     def __init__(self, embed_dim, ffwd_width, ffwd_depth, num_heads, num_layers,
@@ -29,7 +32,7 @@ class MyTransformerConfig:
 class AFBlock(nn.Module):
     """ A single attention-feedforward block
     """
-    def __init__(self, config: MyTransformerConfig):
+    def __init__(self, config: MyTfConfig):
         super().__init__()
         # Norm layers
         if config.do_norm:
@@ -56,11 +59,11 @@ class AFBlock(nn.Module):
         return x
 
 
-class MyTransformer(nn.Module):
+class MyTfModel(MySeq2SeqModel):
     """ A transformer is consisted of num_layer number of AFBlocks
     """
-    def __init__(self, config: MyTransformerConfig):
-        super().__init__()
+    def __init__(self, config: MyTfConfig):
+        super().__init__(config.embed_dim)
         self.config = config
         self.af_blocks = nn.ModuleList([AFBlock(config) for _ in range(config.num_layers)])
 

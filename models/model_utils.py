@@ -12,3 +12,9 @@ def get_activ(activ_str):
     return str_to_activ_module[activ_str]
 
 
+class MySeq2SeqModel(nn.Module):
+    def __init__(self, embed_dim):
+        super().__init__()
+        self.embed_dim = embed_dim
+
+
