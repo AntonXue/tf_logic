@@ -1,4 +1,5 @@
 from typing import Optional
+from dataclasses import dataclass
 
 import copy
 import math
@@ -12,21 +13,16 @@ from .model_utils import *
 """ Our custom transformer model
 """
 
+@dataclass
 class MyTfConfig:
-    """ The configs
-    """
-    def __init__(self, embed_dim, ffwd_width, ffwd_depth, num_heads, num_layers,
-                 ffwd_activ = "relu",
-                 do_norm = True,
-                 layer_norm_epsilon = 1e-5):
-        self.embed_dim = embed_dim
-        self.ffwd_width = ffwd_width
-        self.ffwd_depth = ffwd_depth
-        self.ffwd_activ = ffwd_activ
-        self.num_heads = num_heads
-        self.num_layers = num_layers
-        self.do_norm = do_norm
-        self.layer_norm_epsilon = layer_norm_epsilon
+    embed_dim: int
+    ffwd_width: int
+    ffwd_depth: int
+    num_heads: int
+    num_layers: int
+    ffwd_activ: str = "relu"
+    do_norm: bool = True
+    layer_norm_epsilon: float = 1e-5
 
 
 class AFBlock(nn.Module):
