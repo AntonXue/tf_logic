@@ -5,7 +5,7 @@ import torch.nn as nn
 import transformers
 from transformers import GPT2Model, GPT2Config
 
-from .model_utils import *
+from .utils import *
 
 """ Some models from Hugging Face
 """

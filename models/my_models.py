@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 from transformers.utils import ModelOutput
 
-from .model_utils import *
+from .utils import *
 
 
 """ Our custom transformer model
@@ -71,13 +71,11 @@ class MyTfModel(MySeq2SeqModel):
         """
         all_hidden_states = () if output_hidden_states else None
 
-        z = x
         for block in self.af_blocks:
-            z = block(z)
+            x = block(x)
             if output_hidden_states:
-                all_hidden_states = all_hidden_states + (z,)
-                
-        return ModelOutput(tensor = z,
-                           all_hidden_states = all_hidden_states)
+                all_hidden_states = all_hidden_states + (x,)
+
+        return ModelOutput(tensor=x, all_hidden_states=all_hidden_states)
 
 
