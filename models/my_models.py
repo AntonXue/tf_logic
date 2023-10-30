@@ -59,12 +59,14 @@ class MyTfModel(MySeq2SeqModel):
     """ A transformer is consisted of num_layer number of AFBlocks
     """
     def __init__(self, config: MyTfConfig):
-        super().__init__(config.embed_dim)
+        super().__init__(config.embed_dim, max_seq_len=None)
         self.config = config
         self.af_blocks = nn.ModuleList([AFBlock(config) for _ in range(config.num_layers)])
 
-    def forward(self, x: torch.Tensor,
-                output_hidden_states: Optional[bool] = None):
+    def forward(
+            self,
+            x: torch.Tensor,
+            output_hidden_states: Optional[bool] = None):
         """ x : (seq_len, batch_size, embed_dim)
         """
         all_hidden_states = () if output_hidden_states else None

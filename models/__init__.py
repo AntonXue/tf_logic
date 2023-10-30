@@ -1,5 +1,7 @@
-from .my_models import *
-from .hf_models import *
+from .model_utils import default, get_activ, MySeq2SeqModel
+from .my_models import MyTfConfig, AFBlock, MyTfModel
+from .hf_models import MyGPT2Config, MyGPT2Model
+from .task_wrappers import *
 
 
 def get_transformer(model_type: str, config=None, **kwargs):

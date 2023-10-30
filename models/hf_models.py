@@ -13,36 +13,42 @@ from .model_utils import *
 @dataclass
 class MyGPT2Config:
     use_pretrained: bool = False
-    pretrained_id: Optional[str] = None
-    gpt2_config_kwargs: Optional[dict] = None
+    pretrained_checkpoint: Optional[str] = None
     gpt2_config: Optional[GPT2Config] = None
+    gpt2_config_kwargs: Optional[dict] = None
+    max_seq_len: Optional[int] = None
 
     def __post_init__(self):
         if self.use_pretrained:
-            # Can't have both pretrained and kwargs
-            assert self.gpt2_config_kwargs is None and self.gpt2_config is None
-            self.pretrained_id = default(self.pretrained_id, "gpt2")
-            self.__setattr__("embed_dim", 768)
+            # If we're using pretrained stuff, can't have these
+            assert self.gpt2_config is None \
+                    and self.gpt2_config_kwargs is None \
+                    and self.max_seq_len is None
+            self.pretrained_checkpoint = default(self.pretrained_checkpoint, "gpt2")
         else:
             if self.gpt2_config is None:
-                config_kwargs = default(self.gpt2_config_kwargs, {})
-                self.gpt2_config = GPT2Config(**config_kwargs)
-            self.__setattr__("embed_dim", self.gpt2_config.n_embd)
+                self.gpt2_config = GPT2Config()
+
+            if self.max_seq_len is not None:
+                self.gpt2_config.__setattr__("n_positions", self.max_seq_len)
+
+            if self.gpt2_config_kwargs is not None:
+                for k, v in self.gpt2_config_kwargs.items():
+                    self.gpt2_config.__setattr__(k, v)
 
 
 class MyGPT2Model(MySeq2SeqModel):
     """ Wrap the GPT2 model from Hugging Face
     """
     def __init__(self, config: MyGPT2Config):
-        super().__init__(config.embed_dim)
-        self.config = config
-
         if config.use_pretrained:
-            self.gpt2 = GPT2Model.from_pretrained(config.pretrained_id)
-            self.config.__setattr__("gpt2_config", self.gpt2.config)
+            gpt2 = GPT2Model.from_pretrained(config.pretrained_checkpoint)
         else:
-            self.gpt2 = GPT2Model(config.gpt2_config)
+            gpt2 = GPT2Model(config.gpt2_config)
 
+        super().__init__(gpt2.config.n_embd, gpt2.config.n_positions)
+        self.config = config
+        self.gpt2 = gpt2
 
     def forward(self, x: torch.Tensor, **kwargs):
         """ x : (seq_len, batch_size, embed_dim)

@@ -1,3 +1,5 @@
+from typing import Optional
+
 import torch
 import torch.nn as nn
 import transformers
@@ -17,7 +19,16 @@ def get_activ(activ_str):
 
 
 class MySeq2SeqModel(nn.Module):
-    def __init__(self, embed_dim):
+    """ embed_dim: the embedding dimensional
+        max_seq_len: the forward function usually assumes a tensor of shape
+                        x: (seq_len, batch_size, embed_dim)
+                    if max_seq_len is None, then there is no bound on seq_len.
+    """
+    def __init__(
+            self,
+            embed_dim: int,
+            max_seq_len: Optional[int] = None):
         super().__init__()
         self.embed_dim = embed_dim
+        self.max_seq_len = max_seq_len
 
