@@ -1,8 +1,9 @@
 from typing import Optional
+from dataclasses import dataclass, asdict
 
 import torch
 import torch.nn as nn
-import transformers
+import torch.nn.functional as F
 
 
 def default(value, default):
@@ -14,14 +15,18 @@ str_to_activ_module = {
     "gelu" : nn.GELU()
 }
 
-def get_activ(activ_str):
+def get_activ(activ_str: str):
     return str_to_activ_module[activ_str]
+
+
+def e(i, d):
+    return torch.eye(d)[:,i]
 
 
 class MySeq2SeqModel(nn.Module):
     """ embed_dim: the embedding dimensional
         max_seq_len: the forward function usually assumes a tensor of shape
-                        x: (seq_len, batch_size, embed_dim)
+                        x: (batch_size, seq_len, embed_dim)
                     if max_seq_len is None, then there is no bound on seq_len.
     """
     def __init__(
@@ -31,4 +36,19 @@ class MySeq2SeqModel(nn.Module):
         super().__init__()
         self.embed_dim = embed_dim
         self.max_seq_len = max_seq_len
+
+
+""" Some definitoin for tasks """
+
+@dataclass
+class TaskConfig: pass
+
+class BaseTaskModel(nn.Module):
+    def __init__(self, config: TaskConfig):
+        super().__init__()
+        self.config = config
+        # Also copy over all the rules
+        for k, v in asdict(config).items():
+            self.__setattr__(k, v)
+
 

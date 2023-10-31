@@ -51,7 +51,7 @@ class MyGPT2Model(MySeq2SeqModel):
         self.gpt2 = gpt2
 
     def forward(self, x: torch.Tensor, **kwargs):
-        """ x : (seq_len, batch_size, embed_dim)
+        """ x : (batch_size, seq_len, embed_dim)
         """
         out = self.gpt2(inputs_embeds=x, **kwargs)
         out.__setitem__("tensor", out["last_hidden_state"])

@@ -67,7 +67,7 @@ class MyTfModel(MySeq2SeqModel):
             self,
             x: torch.Tensor,
             output_hidden_states: Optional[bool] = None):
-        """ x : (seq_len, batch_size, embed_dim)
+        """ x : (batch_size, seq_len, embed_dim)
         """
         all_hidden_states = () if output_hidden_states else None
 

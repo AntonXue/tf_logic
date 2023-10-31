@@ -1,10 +1,10 @@
 from .utils import default, get_activ, MySeq2SeqModel
 from .my_models import MyTfConfig, AFBlock, MyTfModel
 from .hf_models import MyGPT2Config, MyGPT2Model
-from .tasks import *
+from .task_models import *
 
 
-def get_transformer(model_type: str, config=None, **kwargs):
+def get_seq2seq_model(model_type: str, config=None, **kwargs):
     """ Based on a model_type, generate the configs from **kwargs
     """
 
