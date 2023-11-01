@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from transformers.utils import ModelOutput
+from transformers.modeling_outputs import *
 
 from .utils import *
 
@@ -93,7 +93,7 @@ class QedTaskModel(BaseTaskModel):
             self,
             rules: torch.Tensor,
             theorem: torch.Tensor,
-            targets: Optional[torch.Tensor] = None,
+            labels: Optional[torch.Tensor] = None,
             seq2seq_model_kwargs: Optional[dict] = None,
             include_seq2seq_output: Optional[bool] = None):
 
@@ -107,18 +107,21 @@ class QedTaskModel(BaseTaskModel):
         else:
             seq2seq_out = self.seq2seq_model(x)
 
-        qeds = self.qed_head(seq2seq_out["tensor"])
+        qeds = self.qed_head(seq2seq_out["last_hidden_state"])
         logits = qeds[:,0].view(-1)
 
         loss = None
-        if targets is not None:
+        if labels is not None:
             loss_fn = nn.BCELoss()
-            loss = loss_fn(logits.sigmoid(), targets.float().to(logits.device))
+            print(f"logits {logits}")
+            print(f"labels {labels}")
+            loss = loss_fn(logits.sigmoid(), labels.float().to(logits.device))
 
-        return ModelOutput(loss = loss,
-                           logits = logits,
-                           seq2seq_tensor = seq2seq_out["tensor"],
-                           seq2seq_out = seq2seq_out if include_seq2seq_output else None)
+        return SequenceClassifierOutput(
+                loss = loss,
+                logits = logits,
+                hidden_states = seq2seq_out.hidden_states,
+                attentions = seq2seq_out.attentions)
 
 
 """ One-step tasks """
@@ -132,7 +135,7 @@ class StepTaskModel(BaseTaskModel):
     def __init__(self, config: OneStepTaskConfig):
         super().__init__(config)
 
-    def forward(self, rules, state, targets=None):
+    def forward(self, rules, state, labels=None):
         pass
 
 """ Autoregressive stuff """
@@ -148,7 +151,7 @@ class AutoRegStepTaskModel(BaseTaskModel):
     def __init__(self, config: AutoRegStepTaskConfig):
         super().__init__(config)
 
-    def forward(self, rules, theorem, targets=None):
+    def forward(self, rules, theorem, labels=None):
         pass
 
 

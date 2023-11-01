@@ -42,7 +42,7 @@ class QedDataset(Dataset):
         return {
             "rules" : rules[0],
             "theorem" : thm[0],
-            "targets" : qed[0]
+            "labels" : qed[0]
         }
 
 

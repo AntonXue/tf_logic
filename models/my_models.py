@@ -5,8 +5,7 @@ import copy
 import math
 import torch
 import torch.nn as nn
-from transformers.utils import ModelOutput
-
+from transformers.modeling_outputs import BaseModelOutput
 from .utils import *
 
 
@@ -48,9 +47,10 @@ class AFBlock(nn.Module):
         self.ffwd = nn.Sequential(*ffwd_parts)
 
     def forward(self, x: torch.Tensor):
-        x = self.norm1(x + self.attn(x, x, x)[0])
-        x = self.norm2(x + self.ffwd(x))
-        return x
+        z, a = self.attn(x, x, x)
+        z = self.norm1(x + z)
+        z = self.norm2(z + self.ffwd(z))
+        return z, a
 
 
 class MyTfModel(MySeq2SeqModel):
@@ -60,15 +60,30 @@ class MyTfModel(MySeq2SeqModel):
         self.config = config
         self.af_blocks = nn.ModuleList([AFBlock(config) for _ in range(config.num_layers)])
 
-    def forward(self, x: torch.Tensor, output_hidden_states: Optional[bool] = None):
+    def forward(
+            self,
+            x: torch.Tensor,
+            output_hidden_states: Optional[bool] = None,
+            output_attentions : Optional[bool] = None):
         """ x : (batch_size, seq_len, embed_dim) """
+
         all_hidden_states = () if output_hidden_states else None
+        all_attentions = () if output_attentions else None
 
         for block in self.af_blocks:
-            x = block(x)
+            x, a = block(x)
+
             if output_hidden_states:
                 all_hidden_states = all_hidden_states + (x,)
 
-        return ModelOutput(tensor=x, all_hidden_states=all_hidden_states)
+            if output_attentions:
+                all_attentions = all_attentions + (a,)
+
+        # Will have to change from BaseModelOutput if we want to add more keys
+        return BaseModelOutput(
+            last_hidden_state = x,
+            hidden_states = all_hidden_states,
+            attentions = all_attentions
+        )
 
 

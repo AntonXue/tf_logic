@@ -51,7 +51,7 @@ class MyGPT2Model(MySeq2SeqModel):
     def forward(self, x: torch.Tensor, **kwargs):
         """ x : (batch_size, seq_len, embed_dim) """
         out = self.gpt2(inputs_embeds=x, **kwargs)
-        out.__setitem__("tensor", out["last_hidden_state"])
+        # GPT2Model outputs a BaseModelOutputWithPastAndCrossAttentions
         return out
 
 
