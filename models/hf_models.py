@@ -11,6 +11,7 @@ from .utils import *
 
 @dataclass
 class MyGPT2Config:
+    """ Use this to initialize MyGPT2Model """
     use_pretrained: bool = False
     pretrained_checkpoint: Optional[str] = None
     gpt2_config: Optional[GPT2Config] = None
@@ -48,11 +49,9 @@ class MyGPT2Model(MySeq2SeqModel):
         self.config = config
         self.gpt2 = gpt2
 
-
-    def forward(self, x: torch.Tensor, **kwargs):
+    def forward(self, x: torch.FloatTensor, **kwargs):
         """ x : (batch_size, seq_len, embed_dim) """
         out = self.gpt2(inputs_embeds=x, **kwargs)
-        # GPT2Model outputs a BaseModelOutputWithPastAndCrossAttentions
-        return out
+        return out  # This is a BaseModelOutputWithPastAndCrossAttentions
 
 

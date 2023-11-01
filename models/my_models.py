@@ -1,18 +1,17 @@
-from typing import Optional
+from typing import Optional, Tuple
 from dataclasses import dataclass
-
 import copy
 import math
 import torch
 import torch.nn as nn
-from transformers.modeling_outputs import BaseModelOutput
+from transformers.utils import ModelOutput
 from .utils import *
-
 
 """ Our custom transformer model """
 
 @dataclass
 class MyTfConfig:
+    """ Use this to initialize MyTfModel """
     embed_dim: int
     ffwd_width: int
     ffwd_depth: int
@@ -21,6 +20,14 @@ class MyTfConfig:
     ffwd_activ: str = "relu"
     do_norm: bool = True
     layer_norm_epsilon: float = 1e-5
+
+
+@dataclass
+class MyTfOutput(ModelOutput):
+    """ At the moment this is the same as BaseModelOutput, but may change """
+    last_hidden_state: torch.FloatTensor = None
+    hidden_states: Optional[Tuple[torch.FloatTensor]] = None
+    attentions: Optional[Tuple[torch.FloatTensor]] = None
 
 
 class AFBlock(nn.Module):
@@ -46,7 +53,7 @@ class AFBlock(nn.Module):
         ffwd_parts.append(nn.Linear(config.ffwd_width, config.embed_dim))
         self.ffwd = nn.Sequential(*ffwd_parts)
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.FloatTensor):
         z, a = self.attn(x, x, x)
         z = self.norm1(x + z)
         z = self.norm2(z + self.ffwd(z))
@@ -62,11 +69,10 @@ class MyTfModel(MySeq2SeqModel):
 
     def forward(
             self,
-            x: torch.Tensor,
+            x: torch.FloatTensor,
             output_hidden_states: Optional[bool] = None,
             output_attentions : Optional[bool] = None):
         """ x : (batch_size, seq_len, embed_dim) """
-
         all_hidden_states = () if output_hidden_states else None
         all_attentions = () if output_attentions else None
 
@@ -79,11 +85,9 @@ class MyTfModel(MySeq2SeqModel):
             if output_attentions:
                 all_attentions = all_attentions + (a,)
 
-        # Will have to change from BaseModelOutput if we want to add more keys
-        return BaseModelOutput(
+        return MyTfOutput(
             last_hidden_state = x,
             hidden_states = all_hidden_states,
-            attentions = all_attentions
-        )
+            attentions = all_attentions)
 
 
