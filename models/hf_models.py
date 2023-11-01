@@ -48,6 +48,7 @@ class MyGPT2Model(MySeq2SeqModel):
         self.config = config
         self.gpt2 = gpt2
 
+
     def forward(self, x: torch.Tensor, **kwargs):
         """ x : (batch_size, seq_len, embed_dim) """
         out = self.gpt2(inputs_embeds=x, **kwargs)

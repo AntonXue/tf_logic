@@ -113,8 +113,10 @@ class QedTaskModel(BaseTaskModel):
         loss = None
         if labels is not None:
             loss_fn = nn.BCELoss()
-            print(f"logits {logits}")
-            print(f"labels {labels}")
+            preds = (logits > 0).long()
+            # print(f"logits {logits.cpu().detach()}")
+            # print(f"preds  {preds}")
+            # print(f"labels {labels.cpu()}, acc {(preds==labels).float().mean()}\n")
             loss = loss_fn(logits.sigmoid(), labels.float().to(logits.device))
 
         return SequenceClassifierOutput(
