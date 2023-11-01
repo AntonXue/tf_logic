@@ -10,8 +10,7 @@ from transformers.utils import ModelOutput
 from .utils import *
 
 
-""" Our custom transformer model
-"""
+""" Our custom transformer model """
 
 @dataclass
 class MyTfConfig:
@@ -26,8 +25,7 @@ class MyTfConfig:
 
 
 class AFBlock(nn.Module):
-    """ A single attention-feedforward block
-    """
+    """ A single attention-feedforward block """
     def __init__(self, config: MyTfConfig):
         super().__init__()
         # Norm layers
@@ -56,19 +54,14 @@ class AFBlock(nn.Module):
 
 
 class MyTfModel(MySeq2SeqModel):
-    """ A transformer is consisted of num_layer number of AFBlocks
-    """
+    """ A transformer is consisted of num_layer number of AFBlocks """
     def __init__(self, config: MyTfConfig):
         super().__init__(config.embed_dim, max_seq_len=None)
         self.config = config
         self.af_blocks = nn.ModuleList([AFBlock(config) for _ in range(config.num_layers)])
 
-    def forward(
-            self,
-            x: torch.Tensor,
-            output_hidden_states: Optional[bool] = None):
-        """ x : (batch_size, seq_len, embed_dim)
-        """
+    def forward(self, x: torch.Tensor, output_hidden_states: Optional[bool] = None):
+        """ x : (batch_size, seq_len, embed_dim) """
         all_hidden_states = () if output_hidden_states else None
 
         for block in self.af_blocks:

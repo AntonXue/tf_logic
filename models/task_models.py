@@ -9,12 +9,26 @@ from transformers.utils import ModelOutput
 
 from .utils import *
 
+
+""" Some definition for tasks """
+
+@dataclass
+class TaskConfig: pass
+
+class BaseTaskModel(nn.Module):
+    def __init__(self, config: TaskConfig):
+        super().__init__()
+        self.config = config
+        # Also copy over all the rules
+        for k, v in asdict(config).items():
+            self.__setattr__(k, v)
+
 """ One-shot QED """
 
 @dataclass
 class QedTaskConfig(TaskConfig):
-    num_vars: int
     num_rules: int
+    num_vars: int
     seq2seq_model: MySeq2SeqModel
     max_seq_len: int = 1024
 
@@ -24,9 +38,8 @@ class QedTaskConfig(TaskConfig):
 
 
 class QedTaskModel(BaseTaskModel):
-    """ One-shot QED task (!!! ambitious !!!)
-    """
-    def __init__(self, seq2seq_model: MySeq2SeqModel, config: QedTaskConfig):
+    """ One-shot QED task (!!! ambitious !!!) """
+    def __init__(self, config: QedTaskConfig):
         # super call does __setattr__for configs
         super().__init__(config)
 
@@ -41,7 +54,7 @@ class QedTaskModel(BaseTaskModel):
         self.sep_token = torch.cat([n2_zeros, sep_tag])
 
         self.token_dim = token_dim = 2 * self.num_vars + num_tags
-        self.embed_dim = embed_dim = seq2seq_model.embed_dim
+        self.embed_dim = embed_dim = self.seq2seq_model.embed_dim
         self.encoder = nn.Sequential(
                 nn.Linear(token_dim, embed_dim),
                 nn.ReLU(),
@@ -86,7 +99,7 @@ class QedTaskModel(BaseTaskModel):
 
         tokens = self._prepare_input_tokens(rules, theorem)
         x = self.encoder(tokens) # (batch_size, seq_len, embed_dim)
-        pos_embeds = self.positional_embedding(torch.arange(0, x.size(1)))
+        pos_embeds = self.positional_embedding(torch.arange(0, x.size(1)).to(x.device))
         x = x + pos_embeds.view(1, x.size(1), -1)
 
         if seq2seq_model_kwargs:
@@ -115,12 +128,11 @@ class OneStepTaskConfig(TaskConfig):
     pass
 
 class StepTaskModel(BaseTaskModel):
-    """ Check whether we can get s' = one_step(rules, s)
-    """
+    """ Check whether we can get s' = one_step(rules, s) """
     def __init__(self, config: OneStepTaskConfig):
         super().__init__(config)
 
-    def forward(self, rules, theorem, targets=None):
+    def forward(self, rules, state, targets=None):
         pass
 
 """ Autoregressive stuff """

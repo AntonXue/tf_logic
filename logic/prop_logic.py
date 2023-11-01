@@ -1,8 +1,15 @@
+from typing import Optional
 import torch
 
 
-def random_rules(batch_size, num_rules, num_vars, ante_prob, conseq_prob,
-                 ensure_facts = True):
+def random_rules(
+        batch_size: int,
+        num_rules: int,
+        num_vars: int,
+        ante_prob: float,
+        conseq_prob: float,
+        ensure_facts = True):
+    """ Generate some random rules """
     N, r, n, pa, pb = batch_size, num_rules, num_vars, ante_prob, conseq_prob
     assert 0 < pa and pa < 1
     assert 0 < pb and pb < 1
@@ -17,23 +24,21 @@ def random_rules(batch_size, num_rules, num_vars, ante_prob, conseq_prob,
     return rules.long()  # (N,r,2n)
 
 
-def antes_conseqs(rules):
-    """ Split the antecedents and consequents
-    """
+def antes_conseqs(rules: torch.Tensor):
+    """ Split the antecedents and consequents """
     assert rules.ndim == 3 and rules.size(2) % 2 == 0
     return rules.chunk(2, dim=2)
 
 
-def all_leq(x, y, eps=1e-5):
-    """ Do leq testing on the last coordinate with tolerance eps
-    """
+def all_leq(x: torch.Tensor, y: torch.Tensor, eps: float = 1e-5):
+    """ Do leq testing on the last coordinate with tolerance eps """
     assert x.ndim == y.ndim
     n = x.size(-1)
     z = (x <= y + eps).sum(dim=-1) # (*,)
     return (n <= z + eps).long()
 
 
-def step_rules(rules, state, inf_mode=None):
+def step_rules(rules: torch.Tensor, state: torch.Tensor, inf_mode: Optional[str] = None):
     """ Apply one step of the rules.
         Inference modes:
             'residual': s' = s + sum_{a,b} b * M(a,s)
@@ -57,7 +62,7 @@ def step_rules(rules, state, inf_mode=None):
     return succ.long(), hits.long()   # (N,n), (N,r)
 
 
-def compose_rules(rules1, rules2, inf_mode=None):
+def compose_rules(rules1: torch.Tensor, rules2: torch.Tensor, inf_mode: Optional[str] = None):
     """ Compose rules1 @> rules2
         Given: rules1 = {a1 -> b1}, rules2 = {a2 -> b2}
         Then:  rules3 = {a1 -> s1}, where s1 = rules2(rules1(a1)) for each a1
@@ -77,9 +82,8 @@ def compose_rules(rules1, rules2, inf_mode=None):
     return comp_rules.long()  # (N,r,2n)
 
 
-def prove_theorem(rules, theorem, inf_mode=None):
-    """ Run a proof and return a bunch of metadata
-    """
+def prove_theorem(rules: torch.Tensor, theorem: torch.Tensor, inf_mode: Optional[str] = None):
+    """ Run a proof and return a bunch of metadata """
     N, r, n2 = rules.shape
     _, n = theorem.shape
     assert n2 == n*2

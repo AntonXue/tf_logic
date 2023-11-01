@@ -29,26 +29,9 @@ class MySeq2SeqModel(nn.Module):
                         x: (batch_size, seq_len, embed_dim)
                     if max_seq_len is None, then there is no bound on seq_len.
     """
-    def __init__(
-            self,
-            embed_dim: int,
-            max_seq_len: Optional[int] = None):
+    def __init__(self, embed_dim: int, max_seq_len: Optional[int] = None):
         super().__init__()
         self.embed_dim = embed_dim
         self.max_seq_len = max_seq_len
-
-
-""" Some definitoin for tasks """
-
-@dataclass
-class TaskConfig: pass
-
-class BaseTaskModel(nn.Module):
-    def __init__(self, config: TaskConfig):
-        super().__init__()
-        self.config = config
-        # Also copy over all the rules
-        for k, v in asdict(config).items():
-            self.__setattr__(k, v)
 
 

@@ -7,8 +7,7 @@ from transformers import GPT2Model, GPT2Config
 
 from .utils import *
 
-""" Some models from Hugging Face
-"""
+""" Some models from Hugging Face """
 
 @dataclass
 class MyGPT2Config:
@@ -38,8 +37,7 @@ class MyGPT2Config:
 
 
 class MyGPT2Model(MySeq2SeqModel):
-    """ Wrap the GPT2 model from Hugging Face
-    """
+    """ Wrap the GPT2 model from Hugging Face """
     def __init__(self, config: MyGPT2Config):
         if config.use_pretrained:
             gpt2 = GPT2Model.from_pretrained(config.pretrained_checkpoint)
@@ -51,8 +49,7 @@ class MyGPT2Model(MySeq2SeqModel):
         self.gpt2 = gpt2
 
     def forward(self, x: torch.Tensor, **kwargs):
-        """ x : (batch_size, seq_len, embed_dim)
-        """
+        """ x : (batch_size, seq_len, embed_dim) """
         out = self.gpt2(inputs_embeds=x, **kwargs)
         out.__setitem__("tensor", out["last_hidden_state"])
         return out
