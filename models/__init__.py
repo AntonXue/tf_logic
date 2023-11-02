@@ -1,4 +1,4 @@
-from .utils import default, get_activ, MySeq2SeqModel
+from .common import default, get_activ, MySeq2SeqModel
 from .my_models import MyTfConfig, AFBlock, MyTfModel
 from .hf_models import MyGPT2Config, MyGPT2Model
 from .task_models import *

@@ -5,7 +5,7 @@ import math
 import torch
 import torch.nn as nn
 from transformers.utils import ModelOutput
-from .utils import *
+from .common import *
 
 """ Our custom transformer model """
 

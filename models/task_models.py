@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from transformers.utils import ModelOutput
 from transformers.modeling_outputs import *
 
-from .utils import *
+from .common import *
 
 
 """ Some definition for tasks """
