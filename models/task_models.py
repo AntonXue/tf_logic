@@ -70,7 +70,7 @@ class OneShotQedTaskModel(BaseTaskModel):
         self.qed_head = nn.Sequential(
                 nn.Linear(embed_dim, embed_dim),
                 nn.ReLU(),
-                nn.Linear(embed_dim, 1))
+                nn.Linear(embed_dim, 2))
 
         self.positional_embedding = nn.Embedding(self.max_seq_len, embed_dim)
 
@@ -103,12 +103,11 @@ class OneShotQedTaskModel(BaseTaskModel):
         seq2seq_out = self.seq2seq_model(x, **seq2seq_model_kwargs)
 
         qeds = self.qed_head(seq2seq_out["last_hidden_state"])
-        logits = qeds[:,0].view(-1)
+        logits = qeds[:,0]
         loss = None
         if labels is not None:
-            loss_fn = nn.BCELoss()
-            preds = (logits > 0).long()
-            loss = loss_fn(logits.sigmoid(), labels.float().to(device))
+            loss_fn = nn.CrossEntropyLoss()
+            loss = loss_fn(logits, labels.to(device))
 
         # return SequenceClassifierOutput(
         return OneShotQedTaskOutput(
