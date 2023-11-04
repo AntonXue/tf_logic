@@ -35,16 +35,23 @@ class MyGPT2Model(MySeq2SeqModel):
         else:
             gpt2 = GPT2Model(config.gpt2_config)
 
-        super().__init__(gpt2.config.n_embd, gpt2.config.n_positions)
+        super().__init__(
+                embed_dim = gpt2.config.n_embd,
+                max_seq_len = gpt2.config.n_positions)
         self.config = config
         self.gpt2 = gpt2
 
-    def forward(self, x: torch.Tensor, use_input_ids: Optional[bool] = None, **kwargs):
+    def forward(
+            self,
+            x: torch.Tensor,
+            labels: Optional[torch.Tensor] = None,
+            use_input_ids: Optional[bool] = None,
+            **kwargs):
         """ x : (batch_size, seq_len, embed_dim) """
         if use_input_ids:
-            out = self.gpt2(input_ids=x, **kwargs)
+            out = self.gpt2(input_ids=x, labels=labels, **kwargs)
         else:
-            out = self.gpt2(inputs_embeds=x, **kwargs)
+            out = self.gpt2(inputs_embeds=x, labels=labels, **kwargs)
         return out  # This is a BaseModelOutputWithPastAndCrossAttentions
 
 
@@ -59,17 +66,28 @@ class MyGPT2ForSeqCls(MySeqClsModel):
             assert hasattr(config.gpt2_config, "problem_type") and hasattr(config.gpt2_config, "num_labels")
             gpt2 = GPT2ForSequenceClassification(config.gpt2_config)
 
-        super().__init__(gpt2.config.n_embd, gpt2.config.num_labels,
-                         gpt2.config.problem_type, gpt2.config.n_positions)
+        super().__init__(
+                embed_dim = gpt2.config.n_embd,
+                num_labels = gpt2.config.num_labels,
+                max_seq_len = gpt2.config.n_positions,
+                problem_type = gpt2.config.problem_type)
         self.config = config
         self.gpt2 = gpt2
 
-    def forward(self, x: torch.Tensor, use_input_ids: Optional[bool] = None, **kwargs):
+    def forward(
+            self,
+            x: torch.Tensor,
+            labels: Optional[torch.Tensor] = None,
+            use_input_ids: Optional[bool] = None,
+            **kwargs):
         """ x : (batch_size, seq_len, embed_dim) """
         if use_input_ids:
-            out = self.gpt2(input_ids=x, **kwargs)
+            out = self.gpt2(input_ids=x, labels=labels, **kwargs)
         else:
-            out = self.gpt2(inputs_embeds=x, **kwargs)
+            # GPT2 is weird
+            if self.problem_type == "multi_label_classification" and labels is not None:
+                labels = labels.float()
+            out = self.gpt2(inputs_embeds=x, labels=labels, **kwargs)
         return out
 
 

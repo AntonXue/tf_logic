@@ -75,7 +75,9 @@ class AFBlock(nn.Module):
 class MyTfModel(MySeq2SeqModel):
     """ A transformer is consisted of num_layer number of AFBlocks """
     def __init__(self, config: MyTfConfig):
-        super().__init__(config.embed_dim, max_seq_len=None)
+        super().__init__(
+                embed_dim = config.embed_dim,
+                max_seq_len = None)
         self.config = config
         self.af_blocks = nn.ModuleList([AFBlock(config) for _ in range(config.num_layers)])
 
@@ -118,7 +120,7 @@ class MyTfForSeqCls(MySeqClsModel):
     def __init__(self, config: MyTfConfig):
         assert hasattr(config, "num_labels") and hasattr(config, "problem_type")
         super().__init__(
-                config.embed_dim,
+                embed_dim = config.embed_dim,
                 num_labels = config.num_labels,
                 max_seq_len = None,
                 problem_type = config.problem_type)
