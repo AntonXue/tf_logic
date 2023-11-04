@@ -141,7 +141,7 @@ class AutoRegFixedStepsDataset(Dataset):
 
 """ Stringified versions of some datasets """
 
-class OneShotQedText(nn.Dataset):
+class OneShotQedText(Dataset):
     def __init__(self):
         pass
 

@@ -36,7 +36,12 @@ class MySeq2SeqModel(nn.Module):
 
 
 class MySeqClsModel(nn.Module):
-    def __init__(self, embed_dim: int, num_labels: int, max_seq_len: Optional[int] = None):
+    def __init__(
+            self,
+            embed_dim: int,
+            num_labels: int,
+            max_seq_len: Optional[int] = None,
+            problem_type: Optional[str] = None):
         """ embed_dim: the embedding dimension
             num_labels: how many output labels
             max_seq_len: how many
@@ -45,4 +50,6 @@ class MySeqClsModel(nn.Module):
         self.embed_dim = embed_dim
         self.num_labels = num_labels
         self.max_seq_len = max_seq_len
+        self.problem_type = problem_type
+
 

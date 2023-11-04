@@ -9,17 +9,30 @@ from .common import *
 
 """ Our custom transformer model """
 
-@dataclass
 class MyTfConfig:
-    """ Use this to initialize MyTfModel """
-    embed_dim: int
-    ffwd_width: int
-    ffwd_depth: int
-    num_heads: int
-    num_layers: int
-    activ: str = "relu"
-    do_norm: bool = True
-    layer_norm_epsilon: float = 1e-5
+    """ Use this to initialize MyTfModel and its related classes """
+    def __init__(self,
+            embed_dim: int = 512,
+            ffwd_width: int = 1024,
+            ffwd_depth: int = 4,
+            num_heads: int = 4,
+            num_layers: int = 8,
+            activ: str = "relu",
+            do_norm: bool = True,
+            layer_norm_epsilon: float = 1e-5,
+            **kwargs):
+        self.embed_dim = embed_dim
+        self.ffwd_width = ffwd_width
+        self.ffwd_depth = ffwd_depth
+        self.num_heads = num_heads
+        self.num_layers = num_layers
+        self.activ = activ
+        self.do_norm = do_norm
+        self.layer_norm_epsilon = layer_norm_epsilon
+
+        for k, v in kwargs.items():
+            assert not hasattr(self, k) # Make sure to not overwrite something
+            self.__setattr__(k, v)
 
 
 @dataclass
@@ -93,17 +106,8 @@ class MyTfModel(MySeq2SeqModel):
 """ Other modules built on top of the basic transformer """
 
 @dataclass
-class MyTfForSeqClsConfig:
-    mytf_config: MyTfConfig
-    num_labels: int
-
-    def __post_init__(self):
-        for k, v in asdict(self.mytf_config).items():
-            self.__setattr__(k, v)
-
-
-@dataclass
 class MyTfForSeqClsOutput(ModelOutput):
+    loss: Optional[torch.Tensor] = None
     logits: Optional[torch.FloatTensor] = None
     last_hidden_state: Optional[torch.FloatTensor] = None
     hidden_states: Optional[List[torch.FloatTensor]] = None
@@ -111,21 +115,47 @@ class MyTfForSeqClsOutput(ModelOutput):
 
 
 class MyTfForSeqCls(MySeqClsModel):
-    def __init__(self, config: MyTfForSeqClsConfig):
-        super().__init__(config.embed_dim, num_labels=config.num_labels, max_seq_len=None)
+    def __init__(self, config: MyTfConfig):
+        assert hasattr(config, "num_labels") and hasattr(config, "problem_type")
+        super().__init__(
+                config.embed_dim,
+                num_labels = config.num_labels,
+                max_seq_len = None,
+                problem_type = config.problem_type)
         self.config = config
+
+        if config.problem_type == "regression":
+            assert self.config.num_labels == 1
+        elif config.problem_type in ["single_label_classification", "multi_label_classification"]:
+            assert self.config.num_labels > 1
+        else:
+            raise NotImplementedError()
+
         self.mytf = MyTfModel(config)
-        self.num_labels = config.num_labels
         self.cls_head = nn.Linear(config.embed_dim, config.num_labels)
 
     def forward(
             self,
             x: torch.FloatTensor,
             output_hidden_states: Optional[bool] = None,
-            output_attentions : Optional[bool] = None):
+            output_attentions : Optional[bool] = None,
+            labels: Optional[torch.LongTensor] = None):
         tf_out = self.mytf(x, output_hidden_states=output_hidden_states, output_attentions=output_attentions)
-        logits = self.cls_head(tf_out.last_hidden_state)[:,0]
+        logits = self.cls_head(tf_out.last_hidden_state)[:,0]   # (batch_size, num_labels)
+
+        loss = None
+        if labels is not None:
+            if self.config.problem_type == "regression":
+                loss = nn.MSELoss()(logits.squeeze(), labels.view(-1))
+            elif self.config.problem_type == "single_label_classification":
+                loss = nn.CrossEntropyLoss()(logits, labels.view(-1))
+            elif self.config.problem_type == "multi_label_classification":
+                loss = nn.BCEWithLogitsLoss()(logits, labels.float())
+            else:
+                raise NotImplementedError()
+
         return MyTfForSeqClsOutput(
+                loss = loss,
                 logits = logits,
                 last_hidden_state = tf_out.last_hidden_state,
                 hidden_states = tf_out.hidden_states,

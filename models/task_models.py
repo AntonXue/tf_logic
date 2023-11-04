@@ -29,18 +29,18 @@ class BaseTaskModel(nn.Module):
 @dataclass
 class OneShotQedTaskConfig(BaseTaskConfig):
     num_vars: int
-    seq2seq_model: MySeq2SeqModel
+    seqcls_model: MySeqClsModel
     max_seq_len: int = 1024
 
     def __post_init__(self):
-        if self.seq2seq_model.max_seq_len:
-            assert self.max_seq_len <= self.seq2seq_model.max_seq_len
+        if self.seqcls_model.max_seq_len:
+            assert self.max_seq_len <= self.seqcls_model.max_seq_len
 
 @dataclass
 class OneShotQedTaskOutput(ModelOutput):
     loss: Optional[torch.FloatTensor] = None
     logits: Optional[torch.FloatTensor] = None
-    seq2seq_output: Optional[ModelOutput] = None
+    seqcls_output: Optional[ModelOutput] = None
 
 
 class OneShotQedTaskModel(BaseTaskModel):
@@ -48,6 +48,8 @@ class OneShotQedTaskModel(BaseTaskModel):
     def __init__(self, config: OneShotQedTaskConfig):
         # super call does __setattr__for configs
         super().__init__(config)
+        assert self.seqcls_model.problem_type == "single_label_classification" and \
+                self.seqcls_model.num_labels == 2
 
         self.num_tags = num_tags = 4
         self.cls_tag = cls_tag = e(0, num_tags)
@@ -60,18 +62,8 @@ class OneShotQedTaskModel(BaseTaskModel):
         self.sep_token = torch.cat([n2_zeros, sep_tag])
 
         self.token_dim = token_dim = 2 * self.num_vars + num_tags
-        self.embed_dim = embed_dim = self.seq2seq_model.embed_dim
-        self.encoder = nn.Sequential(
-                nn.Linear(token_dim, embed_dim),
-                nn.ReLU(),
-                nn.Linear(embed_dim, embed_dim),
-                nn.LayerNorm(embed_dim))
-
-        self.qed_head = nn.Sequential(
-                nn.Linear(embed_dim, embed_dim),
-                nn.ReLU(),
-                nn.Linear(embed_dim, 2))
-
+        self.embed_dim = embed_dim = self.seqcls_model.embed_dim
+        self.encoder = nn.Linear(token_dim, embed_dim)
         self.positional_embedding = nn.Embedding(self.max_seq_len, embed_dim)
 
     def _prepare_input_tokens(self, rules: torch.Tensor, theorem: torch.Tensor):
@@ -100,20 +92,13 @@ class OneShotQedTaskModel(BaseTaskModel):
         pos_embeds = self.positional_embedding(torch.arange(0, x.size(1)).to(device))
         x = x + pos_embeds.view(1, x.size(1), -1)
 
-        seq2seq_out = self.seq2seq_model(x, **seq2seq_model_kwargs)
-
-        qeds = self.qed_head(seq2seq_out["last_hidden_state"])
-        logits = qeds[:,0]
-        loss = None
-        if labels is not None:
-            loss_fn = nn.CrossEntropyLoss()
-            loss = loss_fn(logits, labels.to(device))
+        seqcls_out = self.seqcls_model(x, labels=labels, **seq2seq_model_kwargs)
 
         # return SequenceClassifierOutput(
         return OneShotQedTaskOutput(
-                loss = loss,
-                logits = logits,
-                seq2seq_output = seq2seq_out)
+                loss = seqcls_out.loss,
+                logits = seqcls_out.logits,
+                seqcls_output = seqcls_out)
 
 
 """ One-step tasks """
