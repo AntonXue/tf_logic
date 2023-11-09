@@ -1,9 +1,9 @@
 from typing import Optional, Union
 from dataclasses import dataclass
 import torch
-from transformers import AutoConfig, GPT2Config, \
-        AutoModelForSequenceClassification, GPT2ForSequenceClassification, \
-        BertForSequenceClassification, LlamaForSequenceClassification
+from transformers import AutoConfig, GPT2Config, AutoModelForSequenceClassification, \
+        GPT2ForSequenceClassification, BertForSequenceClassification, \
+        RobertaForSequenceClassification, LlamaForSequenceClassification
 from transformers.modeling_outputs import SequenceClassifierOutput
 import logging
 
@@ -52,6 +52,16 @@ class HFSeqClsConfig:
                 "max_position_embeddings" : self.max_seq_len,
             }
 
+        elif self.model_name == "roberta":
+            config_kwargs = {
+                "hidden_size": self.embed_dim,
+                "num_hidden_layers": self.num_layers,
+                "num_attention_heads": self.num_heads,
+                "num_labels" : self.num_labels,
+                "problem_type": self.problem_type,
+                "max_position_embeddings": self.max_seq_len
+            }
+
         elif self.model_name == "code_llama":
             config_kwargs = {
                 "hidden_size": self.embed_dim,
@@ -92,6 +102,8 @@ class HFSeqClsModel(nn.Module):
             return self.model.transformer.embed_dim
         elif isinstance(self.model, BertForSequenceClassification):
             return self.model.bert.embeddings.word_embeddings.embedding_dim
+        elif isinstance(self.model, RobertaForSequenceClassification):
+            return self.model.roberta.embeddings.word_embeddings.embedding_dim
         elif isinstance(self.model, LlamaForSequenceClassification):
             return self.model.model.embed_tokens.embedding_dim
         else:
