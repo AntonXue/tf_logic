@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import torch
 from transformers import AutoConfig, GPT2Config, \
         AutoModelForSequenceClassification, GPT2ForSequenceClassification, \
-        BertForSequenceClassification
+        BertForSequenceClassification, LlamaForSequenceClassification
 from transformers.modeling_outputs import SequenceClassifierOutput
 import logging
 
@@ -15,6 +15,7 @@ from .common import *
 class HFSeqClsConfig:
     model_name: str
     embed_dim: Optional[int] = None
+    num_heads: Optional[int] = None
     num_layers: Optional[int] = None
     num_labels: Optional[int] = None
     problem_type: Optional[str] = "multi_label_classification"
@@ -33,6 +34,7 @@ class HFSeqClsConfig:
         if self.model_name == "gpt2":
             config_kwargs = {
                 "n_embd": self.embed_dim,
+                "n_head" : self.num_heads,
                 "n_layer" : self.num_layers,
                 "num_labels" : self.num_labels,
                 "problem_type" : self.problem_type,
@@ -43,11 +45,23 @@ class HFSeqClsConfig:
         elif self.model_name == "bert":
             config_kwargs = {
                 "hidden_size": self.embed_dim,
+                "num_attention_heads": self.num_heads,
                 "num_hidden_layers" : self.num_layers,
                 "num_labels" : self.num_labels,
                 "problem_type" : self.problem_type,
                 "max_position_embeddings" : self.max_seq_len,
             }
+
+        elif self.model_name == "code_llama":
+            config_kwargs = {
+                "hidden_size": self.embed_dim,
+                "num_hidden_layers": self.num_layers,
+                "num_attention_heads": self.num_heads,
+                "num_labels" : self.num_labels,
+                "problem_type": self.problem_type,
+                "max_position_embeddings": self.max_seq_len
+            }
+
         else:
             raise ValueError(f"Unsupported model {self.model_name}")
 
@@ -78,17 +92,14 @@ class HFSeqClsModel(nn.Module):
             return self.model.transformer.embed_dim
         elif isinstance(self.model, BertForSequenceClassification):
             return self.model.bert.embeddings.word_embeddings.embedding_dim
+        elif isinstance(self.model, LlamaForSequenceClassification):
+            return self.model.model.embed_tokens.embedding_dim
         else:
             raise ValueError()
 
     @property
     def num_labels(self):
-        if isinstance(self.model, GPT2ForSequenceClassification):
-            return self.model.num_labels
-        elif isinstance(self.model, BertForSequenceClassification):
-            return self.model.num_labels
-        else:
-            raise ValueError()
+        return self.model.num_labels
 
     def forward_iter_batch(
             self,
@@ -145,7 +156,8 @@ class HFSeqClsModel(nn.Module):
             labels = labels.float()
 
         # GPT-2 can only handle batch size == 1 when using inputs_embeds
-        if isinstance(self.model, GPT2ForSequenceClassification):
+        if isinstance(self.model, GPT2ForSequenceClassification) or \
+                isinstance(self.model, LlamaForSequenceClassification):
             out = self.forward_iter_batch(x, labels, **kwargs)
 
         else:
