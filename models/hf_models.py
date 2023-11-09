@@ -1,13 +1,15 @@
 from typing import Optional, Union
 from dataclasses import dataclass
 import torch
+import transformers
 from transformers import AutoConfig, GPT2Config, AutoModelForSequenceClassification, \
         GPT2ForSequenceClassification, BertForSequenceClassification, \
         RobertaForSequenceClassification, LlamaForSequenceClassification
 from transformers.modeling_outputs import SequenceClassifierOutput
-import logging
 
 from .common import *
+
+transformers.logging.set_verbosity_error()  # Be quiet!!
 
 """ Hugging Face models for sequence classification """
 
@@ -21,7 +23,6 @@ class HFSeqClsConfig:
     problem_type: Optional[str] = "multi_label_classification"
     max_seq_len: Optional[int] = None
     overwriting_config_kwargs: Optional[dict] = None
-    verbose_model_loggers: Optional[bool] = None
 
     def __post_init__(self):
         if self.problem_type == "regression":
@@ -92,9 +93,6 @@ class HFSeqClsModel(nn.Module):
         self.config = config
         self.model_config = AutoConfig.for_model(config.model_name, **config.model_config_kwargs)
         self.model = AutoModelForSequenceClassification.from_config(self.model_config)
-
-        if not config.verbose_model_loggers and isinstance(self.model, GPT2ForSequenceClassification):
-            logging.getLogger("transformers.models.gpt2.modeling_gpt2").setLevel(logging.ERROR)
 
     @property
     def embed_dim(self):
