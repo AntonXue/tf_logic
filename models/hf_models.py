@@ -143,17 +143,18 @@ class HFSeqClsModel(nn.Module):
                 attentions += (torch.cat([out.attentions[k] for out in all_outs], dim=0),)
 
         return SequenceClassifierOutput(
-                loss = loss,
-                logits = logits,
-                hidden_states = hidden_states,
-                attentions = attentions)
+            loss = loss,
+            logits = logits,
+            hidden_states = hidden_states,
+            attentions = attentions)
 
     def forward(
-            self,
-            x: Union[torch.FloatTensor, torch.LongTensor],
-            labels: Optional[torch.LongTensor] = None,
-            use_input_ids: Optional[bool] = None,
-            **kwargs):
+        self,
+        x: Union[torch.FloatTensor, torch.LongTensor],
+        labels: Optional[torch.LongTensor] = None,
+        use_input_ids: Optional[bool] = None,
+        **kwargs
+    ):
         """ use_inputs_ids == True:  x: (batch_size, seq_len)
             use_inputs_ids == False: x: (batch_size, seq_len, embed_dim)
         """
@@ -167,7 +168,7 @@ class HFSeqClsModel(nn.Module):
 
         # GPT-2 can only handle batch size == 1 when using inputs_embeds
         if isinstance(self.model, GPT2ForSequenceClassification) or \
-                isinstance(self.model, LlamaForSequenceClassification):
+            isinstance(self.model, LlamaForSequenceClassification):
             out = self.forward_iter_batch(x, labels, **kwargs)
 
         else:

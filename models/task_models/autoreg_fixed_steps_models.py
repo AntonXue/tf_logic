@@ -60,11 +60,12 @@ class AutoRegFixedStepsEmbedsTaskModel(TaskModel):
         return states_tokens
 
     def forward(
-            self,
-            rules: torch.LongTensor,
-            state: Optional[torch.LongTensor] = None,
-            labels: Optional[torch.LongTensor] = None,
-            seqcls_model_kwargs: Optional[dict] = None):
+        self,
+        rules: torch.LongTensor,
+        state: Optional[torch.LongTensor] = None,
+        labels: Optional[torch.LongTensor] = None,
+        seqcls_model_kwargs: Optional[dict] = None
+    ):
         """ rules: (N,r,2n), state: (N,n) """
         N, _, _ = rules.shape
         device = rules.device
@@ -104,9 +105,9 @@ class AutoRegFixedStepsEmbedsTaskModel(TaskModel):
             loss = loss_fn(all_succ_logits.sigmoid(), labels.float().to(device))
 
         return AutoRegFixedStepsTaskOutput(
-                loss = loss,
-                logits = all_succ_logits,
-                all_seqcls_outputs = all_seqcls_outs)
+            loss = loss,
+            logits = all_succ_logits,
+            all_seqcls_outputs = all_seqcls_outs)
 
 
 class AutoRegFixedStepsStringTaskModel(TaskModel):

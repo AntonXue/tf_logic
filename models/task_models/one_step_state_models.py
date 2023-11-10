@@ -60,11 +60,12 @@ class OneStepStateEmbedsTaskModel(TaskModel):
         return torch.cat([cls_token, rules_tokens, sep_token, state_token], dim=1) # (N,r+3,token_dim)
 
     def forward(
-            self,
-            rules: torch.LongTensor,
-            state: torch.LongTensor,
-            labels: Optional[torch.LongTensor] = None,
-            seqcls_model_kwargs: Optional[dict] = None):
+        self,
+        rules: torch.LongTensor,
+        state: torch.LongTensor,
+        labels: Optional[torch.LongTensor] = None,
+        seqcls_model_kwargs: Optional[dict] = None
+    ):
         """ rules: (N,r,2n), state: (N,n), labels: (N,n) """
         device = rules.device
         seqcls_model_kwargs = default(seqcls_model_kwargs, {})
@@ -77,9 +78,9 @@ class OneStepStateEmbedsTaskModel(TaskModel):
         seqcls_out = self.seqcls_model(x, labels=labels, **seqcls_model_kwargs)
 
         return OneStepStateTaskOutput(
-                loss = seqcls_out.loss,
-                logits = seqcls_out.logits,
-                seqcls_output = seqcls_out)
+            loss = seqcls_out.loss,
+            logits = seqcls_out.logits,
+            seqcls_output = seqcls_out)
 
 
 class OneStepStateStringTaskModel(TaskModel):

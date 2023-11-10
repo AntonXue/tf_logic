@@ -10,7 +10,6 @@ from .task_models.autoreg_fixed_steps_models import *
 
 def get_seq2seq_model(model_name: str, config=None, **kwargs):
     """ Based on a model_name, generate the configs from **kwargs """
-
     if model_name == "mytf":
         config = default(config, MyTfConfig(**kwargs))
         return MyTfModel(config)
@@ -19,12 +18,8 @@ def get_seq2seq_model(model_name: str, config=None, **kwargs):
         raise NotImplementedError()
 
 
-def get_seqcls_model(
-        model_name: str,
-        config = None,
-        **kwargs):
+def get_seqcls_model(model_name: str, config=None, **kwargs):
     """ Based on a model_name, generate the configs from **kwargs """
-
     if model_name == "mytf":
         config = default(config, MyTfConfig(**kwargs))
         return MyTfSeqClsModel(config)
@@ -35,14 +30,14 @@ def get_seqcls_model(
 
 
 def get_task_model(
-        task_name: Optional[str] = None,
-        task_config: Optional[TaskConfig] = None,
-        num_vars: Optional[int] = None, # This is num_labels for succ and autoreg
-        num_steps: Optional[int] = None,
-        model_name: Optional[str] = None,
-        **kwargs):
+    task_name: Optional[str] = None,
+    task_config: Optional[TaskConfig] = None,
+    num_vars: Optional[int] = None, # This is num_labels for succ and autoreg
+    num_steps: Optional[int] = None,
+    model_name: Optional[str] = None,
+    **kwargs
+):
     """ Instantiate a model_name for a particular task """
-
     # If the task_config is provided, then that's easy for us and we don't even need the task_name string
     if task_config is not None:
         if isinstance(task_config, OneShotQedTaskConfig):
@@ -80,24 +75,24 @@ def get_task_model(
     if task_name == "oneshot_qed":
         assert num_vars is not None
         task_config = OneShotQedTaskConfig(
-                num_vars = num_vars,
-                seqcls_model = seqcls_model)
+            num_vars = num_vars,
+            seqcls_model = seqcls_model)
         return OneShotQedEmbedsTaskModel(task_config)
 
     elif task_name == "predict_successor":
         assert num_vars is not None
         task_config = OneStepStateTaskConfig(
-                num_vars = num_vars,
-                seqcls_model = seqcls_model)
+            num_vars = num_vars,
+            seqcls_model = seqcls_model)
         return OneStepStateEmbedsTaskModel(task_config)
 
     elif task_name == "autoreg_fixed_steps":
         assert num_vars is not None
         assert num_steps is not None
         task_config = AutoRegFixedStepsTaskConfig(
-                num_vars = num_vars,
-                num_steps = num_steps,
-                seqcls_model = seqcls_model)
+            num_vars = num_vars,
+            num_steps = num_steps,
+            seqcls_model = seqcls_model)
         return AutoRegFixedStepsEmbedsTaskModel(task_config)
 
     else:

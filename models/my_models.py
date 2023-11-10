@@ -10,18 +10,19 @@ from .common import *
 class MyTfConfig:
     """ Use this to initialize MyTfModel and its related classes """
     def __init__(
-            self,
-            embed_dim: int = 512,
-            ffwd_width: int = 1024,
-            ffwd_depth: int = 4,
-            num_heads: int = 4,
-            num_layers: int = 8,
-            activ: str = "relu",
-            do_norm: bool = True,
-            layer_norm_epsilon: float = 1e-5,
-            num_labels: Optional[int] = None,
-            problem_type: Optional[str] = None,
-            **kwargs):
+        self,
+        embed_dim: int = 512,
+        ffwd_width: int = 1024,
+        ffwd_depth: int = 4,
+        num_heads: int = 4,
+        num_layers: int = 8,
+        activ: str = "relu",
+        do_norm: bool = True,
+        layer_norm_epsilon: float = 1e-5,
+        num_labels: Optional[int] = None,
+        problem_type: Optional[str] = None,
+        **kwargs
+    ):
         self.embed_dim = embed_dim
         self.num_heads = num_heads
         self.num_layers = num_layers
@@ -87,10 +88,11 @@ class MyTfModel(nn.Module):
         return config.embed_dim
 
     def forward(
-            self,
-            x: torch.FloatTensor,
-            output_hidden_states: Optional[bool] = None,
-            output_attentions : Optional[bool] = None):
+        self,
+        x: torch.FloatTensor,
+        output_hidden_states: Optional[bool] = None,
+        output_attentions : Optional[bool] = None
+    ):
         """ x : (batch_size, seq_len, embed_dim) """
         all_hidden_states = [] if output_hidden_states else None
         all_attentions = [] if output_attentions else None
@@ -127,7 +129,9 @@ class MyTfSeqClsModel(nn.Module):
 
         if config.problem_type == "regression":
             assert config.num_labels >= 1
-        elif config.problem_type in ["single_label_classification", "multi_label_classification"]:
+        elif config.problem_type == "single_label_classification":
+            assert config.num_labels > 1
+        elif config.problem_type == "multi_label_classification":
             assert config.num_labels > 1
         else:
             raise ValueError(f"Bad problem type {self.config.problem_type}")
@@ -146,11 +150,12 @@ class MyTfSeqClsModel(nn.Module):
         return self.config.num_labels
 
     def forward(
-            self,
-            x: torch.FloatTensor,
-            output_hidden_states: Optional[bool] = None,
-            output_attentions : Optional[bool] = None,
-            labels: Optional[torch.LongTensor] = None):
+        self,
+        x: torch.FloatTensor,
+        output_hidden_states: Optional[bool] = None,
+        output_attentions : Optional[bool] = None,
+        labels: Optional[torch.LongTensor] = None
+    ):
         x = self.encoder(x)
         tf_out = self.mytf(x, output_hidden_states=output_hidden_states, output_attentions=output_attentions)
         logits = self.cls_head(tf_out.last_hidden_state)[:,0]   # (batch_size, num_labels)
@@ -167,10 +172,10 @@ class MyTfSeqClsModel(nn.Module):
                 raise NotImplementedError()
 
         return MyTfSeqClsOutput(
-                loss = loss,
-                logits = logits,
-                last_hidden_state = tf_out.last_hidden_state,
-                hidden_states = tf_out.hidden_states,
-                attentions = tf_out.attentions)
+            loss = loss,
+            logits = logits,
+            last_hidden_state = tf_out.last_hidden_state,
+            hidden_states = tf_out.hidden_states,
+            attentions = tf_out.attentions)
 
 

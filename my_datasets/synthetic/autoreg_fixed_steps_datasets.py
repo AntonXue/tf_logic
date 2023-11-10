@@ -29,12 +29,12 @@ class AutoRegFixedStepsEmbedsDataset(Dataset):
     def __getitem__(self, idx):
         torch.manual_seed(self.config.seed + idx)
         rules = proplog.random_rules(
-                batch_size = 1,
-                num_rules = self.config.num_rules,
-                num_vars = self.config.num_vars,
-                ante_prob = self.config.ante_prob,
-                conseq_prob = self.config.conseq_prob,
-                ensure_facts = self.config.ensure_facts)
+            batch_size = 1,
+            num_rules = self.config.num_rules,
+            num_vars = self.config.num_vars,
+            ante_prob = self.config.ante_prob,
+            conseq_prob = self.config.conseq_prob,
+            ensure_facts = self.config.ensure_facts)
 
         init_state = (torch.rand(1, self.config.num_vars) < self.config.state_prob).long()
         tmp = init_state

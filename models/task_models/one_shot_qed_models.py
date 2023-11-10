@@ -56,11 +56,12 @@ class OneShotQedEmbedsTaskModel(TaskModel):
         return torch.cat([cls_token, rules_tokens, sep_token, thm_token], dim=1) # (N,r+3,token_dim)
 
     def forward(
-            self,
-            rules: torch.LongTensor,
-            theorem: torch.LongTensor,
-            labels: Optional[torch.LongTensor] = None,
-            seqcls_model_kwargs: Optional[dict] = None):
+        self,
+        rules: torch.LongTensor,
+        theorem: torch.LongTensor,
+        labels: Optional[torch.LongTensor] = None,
+        seqcls_model_kwargs: Optional[dict] = None
+    ):
         """ rules: (N, r, 2n), theorem: (N,n), labels: (N,) """
         device = rules.device
         seqcls_model_kwargs = default(seqcls_model_kwargs, {})
@@ -72,9 +73,9 @@ class OneShotQedEmbedsTaskModel(TaskModel):
 
         seqcls_out = self.seqcls_model(x, labels=labels, **seqcls_model_kwargs)
         return OneShotQedTaskOutput(
-                loss = seqcls_out.loss,
-                logits = seqcls_out.logits,
-                seqcls_output = seqcls_out)
+            loss = seqcls_out.loss,
+            logits = seqcls_out.logits,
+            seqcls_output = seqcls_out)
 
 
 class OneShotQedStringTaskModel(TaskModel):

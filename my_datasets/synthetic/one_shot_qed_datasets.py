@@ -30,12 +30,12 @@ class OneShotQedEmbedsDataset(Dataset):
     def __getitem__(self, idx):
         torch.manual_seed(self.config.seed + idx)  # How to guarantee determinism
         rules = proplog.random_rules(
-                batch_size = 1,
-                num_rules = self.config.num_rules,
-                num_vars = self.config.num_vars,
-                ante_prob = self.config.ante_prob,
-                conseq_prob = self.config.conseq_prob,
-                ensure_facts = self.config.ensure_facts)
+            batch_size = 1,
+            num_rules = self.config.num_rules,
+            num_vars = self.config.num_vars,
+            ante_prob = self.config.ante_prob,
+            conseq_prob = self.config.conseq_prob,
+            ensure_facts = self.config.ensure_facts)
 
         thm = (torch.rand(1, self.config.num_vars) < self.config.theorem_prob).long()
         qed = proplog.prove_theorem(rules, thm)["qed"]
