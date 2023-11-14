@@ -10,3 +10,9 @@ from models import *
 from .synthetic import *
 
 
+class AutoTrainer:
+    @classmethod
+    def for_synthetic(cls, args: SyntheticArguments, **kwargs):
+        return make_trainer_for_synthetic(args, **kwargs)
+
+
