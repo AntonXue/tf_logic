@@ -1,19 +1,27 @@
+import sys
+from pathlib import Path
 from dataclasses import dataclass, field, asdict
 from typing import Optional
 import torch
-from transformers import Trainer, TrainingArguments
+from transformers import Trainer, TrainingArguments, HfArgumentParser
+import wandb
 
-from .common import *
+""" Our imports """
+sys.path.insert(0, str(Path(__file__).parent.parent.resolve()))
 
 from models import AutoTFLModel
 from my_datasets import *
+from experiments_init import *
+from evaluation_utils import *
 
+
+""" Parser for Hugging Face """
 
 @dataclass
 class SyntheticExperimentArguments:
     """ This class captures ALL the possible synthetic experiments we may want to run """
     output_dir: str = field(
-        default = "synthetic_experiments_dump",
+        default = str(Path(DUMP_DIR, "synthetic_experiments")),
         metadata = {"help": "Output directory of synthetic experiments"}
     )
 
@@ -174,7 +182,7 @@ def make_trainer_for_synthetic(
             dataset_len = args.eval_len,
             seed = args.seed)
 
-        task_model = AutoTFLModel.from_kwargs(
+        tfl_model = AutoTFLModel.from_kwargs(
             task_name = "one_shot",
             num_vars = args.num_vars,
             model_name = args.model_name,
@@ -194,7 +202,7 @@ def make_trainer_for_synthetic(
             logging_steps = args.logging_steps)
 
         return Trainer(
-            task_model,
+            tfl_model,
             training_args,
             train_dataset = train_dataset,
             eval_dataset = eval_dataset,
@@ -220,7 +228,7 @@ def make_trainer_for_synthetic(
             dataset_len = args.eval_len,
             seed = args.seed)
 
-        task_model = AutoTFLModel.from_kwargs(
+        tfl_model = AutoTFLModel.from_kwargs(
             task_name = "next_state",
             num_vars = args.num_vars,
             model_name = args.model_name,
@@ -240,7 +248,7 @@ def make_trainer_for_synthetic(
             logging_steps = args.logging_steps)
 
         return Trainer(
-            task_model,
+            tfl_model,
             training_args,
             train_dataset = train_dataset,
             eval_dataset = eval_dataset,
@@ -268,7 +276,7 @@ def make_trainer_for_synthetic(
             dataset_len = args.eval_len,
             seed = args.seed)
 
-        task_model = AutoTFLModel.from_kwargs(
+        tfl_model = AutoTFLModel.from_kwargs(
             task_name = "autoreg_ksteps",
             num_vars = args.num_vars,
             num_steps = args.num_steps,
@@ -289,7 +297,7 @@ def make_trainer_for_synthetic(
             logging_steps = args.logging_steps)
 
         return Trainer(
-            task_model,
+            tfl_model,
             training_args,
             train_dataset = train_dataset,
             eval_dataset = eval_dataset,
@@ -297,5 +305,16 @@ def make_trainer_for_synthetic(
 
     else:
         raise ValueError(f"Unrecognized exp_name {args.syn_exp_name}")
+
+
+
+""" Main stuff """
+
+if __name__ == "__main__":
+    parser = HfArgumentParser(SyntheticExperimentArguments)
+    synexp_args = parser.parse_args_into_dataclasses()[0]
+    trainer = make_trainer_for_synthetic(synexp_args)
+    trainer.train()
+    wandb.finish()
 
 

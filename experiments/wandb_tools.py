@@ -1,17 +1,14 @@
 import os
+from pathlib import Path
 import wandb
 import argparse
 import json
 from tqdm import tqdm
 
-""" Some wandb and directory setup """
+from experiments_init import *
 
-WANDB_PROJECT = "transformer_friends"
-os.environ["WANDB_PROJECT"] = WANDB_PROJECT
-os.environ["WANDB_LOG_MODEL"] = "checkpoint"
-
-OUTPUT_DIR = "wandb_dump"
-
+DOWNLOAD_DIR = str(Path(DUMP_DIR, "my_downloads"))
+Path(DOWNLOAD_DIR).mkdir(parents=True, exist_ok=True)
 
 """ Functionalities """
 
@@ -33,7 +30,6 @@ def delete_runs_with_prefix(prefix):
 
 def download_run_summaries_with_prefix(prefix):
     print(f"Downloading runs with prefix '{prefix}' ...")
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
     api = wandb.Api()
     count = 0
     for run in api.runs(WANDB_PROJECT):
@@ -44,7 +40,7 @@ def download_run_summaries_with_prefix(prefix):
         if "_wandb" in summary_dict:
             del summary_dict["_wandb"]
 
-        summary_file = os.path.join(OUTPUT_DIR, "summary_" + run.name + ".json")
+        summary_file = str(Path(DOWNLOAD_DIR, "summary_" + run.name + ".json"))
         with open(summary_file, "w") as fp:
             json.dump(summary_dict, fp, indent=4)
 

@@ -162,3 +162,5 @@ cython_debug/
 
 # Vim
 *.swp
+_dump/
+

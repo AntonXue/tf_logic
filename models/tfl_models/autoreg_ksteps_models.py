@@ -32,7 +32,7 @@ class AutoRegKStepsEmbedsTFLModel(TFLModel):
         self.rule_tag = e(2, self.token_dim)
         self.state_tag = e(3, self.token_dim)
         self.encoder = nn.Linear(self.token_dim, self.embed_dim)
-        self.positional_embedding = nn.Embedding(self.max_seq_len, self.embed_dim)
+        self.pos_embedding = nn.Embedding(self.max_seq_len, self.embed_dim)
 
     def _tokenize_rules(self, rules: torch.Tensor):
         return F.pad(rules, (self.num_tags, 0)) + self.rule_tag.view(1,1,-1).to(rules.device)
@@ -66,7 +66,7 @@ class AutoRegKStepsEmbedsTFLModel(TFLModel):
 
         for t in range(self.num_steps):
             x = self.encoder(torch.cat(all_seq_tokens, dim=1).float())
-            pos_embeds = self.positional_embedding(torch.arange(0, x.size(1)).to(device))
+            pos_embeds = self.pos_embedding(torch.arange(0, x.size(1)).to(device))
             x = x + pos_embeds.view(1, x.size(1), -1)
 
             # We do NOT pass labels here quite yet

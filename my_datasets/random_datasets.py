@@ -1,7 +1,8 @@
 import torch
 from torch.utils.data import Dataset
 
-import logic.prop_logic as proplog
+from . import logic
+
 
 class OneShotEmbedsDataset(Dataset):
     """ For task of checking one-shot QED, generate a bunch of random rules """
@@ -31,7 +32,7 @@ class OneShotEmbedsDataset(Dataset):
 
     def __getitem__(self, idx):
         torch.manual_seed(self.seed + idx)  # How to guarantee determinism
-        rules = proplog.random_rules(
+        rules = logic.random_rules(
             batch_size = 1,
             num_rules = self.num_rules,
             num_vars = self.num_vars,
@@ -40,7 +41,7 @@ class OneShotEmbedsDataset(Dataset):
             ensure_facts = self.ensure_facts)
 
         thm = (torch.rand(1, self.num_vars) < self.theorem_prob).long()
-        qed = proplog.prove_theorem(rules, thm)["qed"]
+        qed = logic.prove_theorem(rules, thm)["qed"]
         return {
             "rules" : rules[0],
             "theorem" : thm[0],
@@ -79,7 +80,7 @@ class NextStateEmbedsDataset(Dataset):
 
     def __getitem__(self, idx):
         torch.manual_seed(self.seed + idx)
-        rules = proplog.random_rules(
+        rules = logic.random_rules(
             batch_size = 1,
             num_rules = self.num_rules,
             num_vars = self.num_vars,
@@ -88,7 +89,7 @@ class NextStateEmbedsDataset(Dataset):
             ensure_facts = self.ensure_facts)
 
         state = (torch.rand(1, self.num_vars) < self.state_prob).long()
-        succ, _ = proplog.step_rules(rules, state)
+        succ, _ = logic.step_rules(rules, state)
 
         return {
             "rules" : rules[0],
@@ -129,7 +130,7 @@ class AutoRegKStepsEmbedsDataset(Dataset):
 
     def __getitem__(self, idx):
         torch.manual_seed(self.seed + idx)
-        rules = proplog.random_rules(
+        rules = logic.random_rules(
             batch_size = 1,
             num_rules = self.num_rules,
             num_vars = self.num_vars,
@@ -141,7 +142,7 @@ class AutoRegKStepsEmbedsDataset(Dataset):
         tmp = init_state
         succs = ()
         for t in range(self.num_steps):
-            tmp, _ = proplog.step_rules(rules, tmp)
+            tmp, _ = logic.step_rules(rules, tmp)
             succs = succs + (tmp,)
 
         succs = torch.cat(succs, dim=0).long()

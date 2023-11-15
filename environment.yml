@@ -7,6 +7,7 @@ channels:
 dependencies:
   - python=3.10
   - pytorch::pytorch=2.0.1
+  - pytorch::pytorch-cuda
   - nvidia::cudatoolkit
   - transformers=4.35.0
   - evaluate

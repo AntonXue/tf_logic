@@ -32,7 +32,7 @@ class NextStateEmbedsTFLModel(TFLModel):
         self.state_tag = e(3, self.token_dim)
         self.fpad_shape = (self.num_tags, 0)
         self.encoder = nn.Linear(self.token_dim, self.embed_dim)
-        self.positional_embedding = nn.Embedding(self.max_seq_len, self.embed_dim)
+        self.pos_embedding = nn.Embedding(self.max_seq_len, self.embed_dim)
 
     def _prepare_input_tokens(self, rules: torch.Tensor, state: torch.Tensor):
         N, r, _ = rules.shape
@@ -57,7 +57,7 @@ class NextStateEmbedsTFLModel(TFLModel):
 
         tokens = self._prepare_input_tokens(rules, state)
         x = self.encoder(tokens.float()) # (batch_size, seq_len, embed_dim)
-        pos_embeds = self.positional_embedding(torch.arange(0, x.size(1)).to(device))
+        pos_embeds = self.pos_embedding(torch.arange(0, x.size(1)).to(device))
         x = x + pos_embeds.view(1, x.size(1), -1)
 
         seqcls_out = self.seqcls_model(x, labels=labels, **seqcls_model_kwargs)
