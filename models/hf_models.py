@@ -78,6 +78,7 @@ class HFSeqClsConfig:
 
         # The RHS of the OR (|) overwrites the LHS
         kwargs = config_kwargs | default(self.overwriting_config_kwargs, {})
+
         # Delete entries where the keys is None (i.e., were not specified)
         for k in list(kwargs.keys()):
             if kwargs[k] is None:

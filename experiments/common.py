@@ -1,10 +1,6 @@
 import os
-import wandb
 import torch
 import numpy as np
-
-os.environ["WANDB_PROJECT"] = "transformer_friends"
-os.environ["WANDB_LOG_MODEL"] = "checkpoint"
 
 
 def one_shot_metrics(eval_preds):

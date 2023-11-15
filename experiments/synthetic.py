@@ -5,104 +5,157 @@ from transformers import Trainer, TrainingArguments
 
 from .common import *
 
-from models import *
+from models import AutoTFLModel
 from my_datasets import *
 
 
-class SyntheticArguments: pass
-
-
 @dataclass
-class SyntheticOneShotArguments(SyntheticArguments):
-    num_rules: int
-    num_vars: int
+class SyntheticExperimentArguments:
+    """ This class captures ALL the possible synthetic experiments we may want to run """
+    output_dir: str = field(
+        default = "synthetic_experiments_dump",
+        metadata = {"help": "Output directory of synthetic experiments"}
+    )
 
-    model_name: str
-    embed_dim: int
-    num_layers: int
-    num_heads: int
+    syn_exp_name: Optional[str] = field(
+        default = None,
+        metadata = {"help": "The experiment to run"}
+    )
 
-    train_len: int
-    test_len: int
-    ante_prob: float
-    conseq_prob: float
-    theorem_prob: float
-    seed: int = 1234
+    """ Model details """
 
-    num_epochs: int = 100
+    model_name: Optional[str] = field(
+        default = None,
+        metadata = {"help": "The seq2seq model to use"}
+    )
 
-    @property
-    def wandb_run_name(self):
-        return f"SynOneShot_nr{self.num_rules}_nv{self.num_vars}" + \
-               f"_{self.model_name}_d{self.embed_dim}_L{self.num_layers}_H{self.num_heads}" + \
-               f"_ap{self.ante_prob:.2f}_bp{self.conseq_prob}_tp{self.theorem_prob}" + \
-               f"_ntr{self.train_len}_ntt{self.test_len}"
+    embed_dim: Optional[int] = field(
+        default = None,
+        metadata = {"help": "The model's embedding (i.e., hidden) dimension."}
+    )
 
+    num_layers: Optional[int] = field(
+        default = None,
+        metadata = {"help": "The model's number of transformer layers."}
+    )
 
-@dataclass
-class SyntheticNextStateArguments(SyntheticArguments):
-    num_rules: int
-    num_vars: int
-
-    model_name: str
-    embed_dim: int
-    num_layers: int
-    num_heads: int
-
-    train_len: int
-    test_len: int
-    ante_prob: float
-    conseq_prob: float
-    state_prob: float
-    seed: int = 1234
-
-    num_epochs: int = 100
-
-    @property
-    def wandb_run_name(self):
-        return f"SynNextState_nr{self.num_rules}_nv{self.num_vars}" + \
-               f"_{self.model_name}_d{self.embed_dim}_L{self.num_layers}_H{self.num_heads}" + \
-               f"_ap{self.ante_prob:.2f}_bp{self.conseq_prob}_sp{self.state_prob}" + \
-               f"_ntr{self.train_len}_ntt{self.test_len}"
+    num_heads : Optional[int] = field(
+        default = None,
+        metadata = {"help": "The model's number of attention heads."}
+    )
 
 
-@dataclass
-class SyntheticAutoRegKStepsArguments(SyntheticArguments):
-    num_rules: int
-    num_vars: int
-    num_steps: int
+    """ Dataset details """
 
-    model_name: str
-    embed_dim: int
-    num_layers: int
-    num_heads: int
+    num_rules: Optional[int] = field(
+        default = None,
+        metadata = {"help": "The number of rules to use."}
+    )
 
-    train_len: int
-    test_len: int
-    ante_prob: float
-    conseq_prob: float
-    state_prob: float
-    seed: int = 1234
+    num_vars: Optional[int] = field(
+        default = None,
+        metadata = {"help": "The number of propositional variables to use."}
+    )
 
-    num_epochs: int = 100
+    num_steps: Optional[int] = field(
+        default = None,
+        metadata = {"help": "The number of steps; used for autoreg_ksteps."}
+    )
 
-    @property
-    def wandb_run_name(self):
-        return f"SynARKSteps_nr{self.num_rules}_nv{self.num_vars}_ns{self.num_steps}" + \
-               f"_{self.model_name}_d{self.embed_dim}_L{self.num_layers}_H{self.num_heads}" + \
-               f"_ap{self.ante_prob:.2f}_bp{self.conseq_prob}_sp{self.state_prob}" + \
-               f"_ntr{self.train_len}_ntt{self.test_len}"
+    ante_prob: Optional[float] = field(
+        default = None,
+        metadata = {"help": "The probability of a variable in the antecedent being true."}
+    )
+
+    conseq_prob: Optional[float] = field(
+        default = None,
+        metadata = {"help": "The probability of a variable in the consequent being true."}
+    )
+
+    theorem_prob: Optional[float] = field(
+        default = None,
+        metadata = {"help": "The probability of a variable in the theorem being true."}
+    )
+
+    state_prob: Optional[float] = field(
+        default = None,
+        metadata = {"help": "The probability of a variable in an initial state being true."}
+    )
+
+    train_len: Optional[int] = field(
+        default = None,
+        metadata = {"help": "The number of elements in the training dataset."}
+    )
+
+    eval_len: Optional[int] = field(
+        default = None,
+        metadata = {"help": "The number of elements in the eval (i.e., validation) dataset."}
+    )
+
+    """ Training details """
+
+    train_batch_size: Optional[int] = field(
+        default = 8,
+        metadata = {"help": "The train batch size."}
+    )
+    
+    eval_batch_size: Optional[int] = field(
+        default = 8,
+        metadata = {"help": "The eval (i.e., validation) batch size."}
+    )
+
+    auto_find_batch_size: Optional[bool] = field(
+        default = True,
+        metadata = {"help": "Automatically scale batch size if it encounters out-of-memory."}
+    )
+ 
+    num_epochs: Optional[int] = field(
+        default = 100,
+        metadata = {"help": "The number of epochs for training."}
+    )
+
+    seed: Optional[int] = field(
+        default = 1234,
+        metadata = {"help": "RNG seed"}
+    )
+
+    logging_steps: int = field(
+        default = 5,
+        metadata = {"help": "How often the Hugging Face Trainer logs"}
+    )
+
+
+
+def synexp_args_to_wandb_run_name(args: SyntheticExperimentArguments):
+    if args.syn_exp_name == "one_shot":
+        return f"SynOneShot_nr{args.num_rules}_nv{args.num_vars}" + \
+               f"_{args.model_name}_d{args.embed_dim}_L{args.num_layers}_H{args.num_heads}" + \
+               f"_ap{args.ante_prob:.2f}_bp{args.conseq_prob}_tp{args.theorem_prob}" + \
+               f"_ntr{args.train_len}_ntt{args.eval_len}"
+
+    elif args.syn_exp_name == "next_state":
+        return f"SynNextState_nr{args.num_rules}_nv{args.num_vars}" + \
+               f"_{args.model_name}_d{args.embed_dim}_L{args.num_layers}_H{args.num_heads}" + \
+               f"_ap{args.ante_prob:.2f}_bp{args.conseq_prob}_sp{args.state_prob}" + \
+               f"_ntr{args.train_len}_ntt{args.eval_len}"
+
+    elif args.syn_exp_name == "autoreg_ksteps":
+        return f"SynARKSteps_nr{args.num_rules}_nv{args.num_vars}_ns{args.num_steps}" + \
+               f"_{args.model_name}_d{args.embed_dim}_L{args.num_layers}_H{args.num_heads}" + \
+               f"_ap{args.ante_prob:.2f}_bp{args.conseq_prob}_sp{args.state_prob}" + \
+               f"_ntr{args.train_len}_ntt{args.eval_len}"
+
+    else:
+        raise ValueError(f"Unrecognized syn_exp_name {args.syn_exp_name}")
 
 
 def make_trainer_for_synthetic(
-    args: SyntheticArguments,
-    output_dir: str = "synthetic_experiments_dump",
+    args: SyntheticExperimentArguments,
     report_to: str = "wandb"
 ):
     """ Make a Hugging Face Trainer object """
-    assert hasattr(args, "wandb_run_name")
 
-    if isinstance(args, SyntheticOneShotArguments):
+    if args.syn_exp_name == "one_shot":
         train_dataset = OneShotEmbedsDataset(
             num_rules = args.num_rules,
             num_vars = args.num_vars,
@@ -112,13 +165,13 @@ def make_trainer_for_synthetic(
             dataset_len = args.train_len,
             seed = args.seed)
 
-        test_dataset = OneShotEmbedsDataset(
+        eval_dataset = OneShotEmbedsDataset(
             num_rules = args.num_rules,
             num_vars = args.num_vars,
             ante_prob = args.ante_prob,
             conseq_prob = args.conseq_prob,
             theorem_prob = args.theorem_prob,
-            dataset_len = args.test_len,
+            dataset_len = args.eval_len,
             seed = args.seed)
 
         task_model = AutoTFLModel.from_kwargs(
@@ -130,22 +183,25 @@ def make_trainer_for_synthetic(
             num_heads = args.num_heads)
 
         training_args = TrainingArguments(
-            output_dir,
+            args.output_dir,
             num_train_epochs = args.num_epochs,
+            per_device_train_batch_size = args.train_batch_size,
+            per_device_eval_batch_size = args.eval_batch_size,
+            auto_find_batch_size = args.auto_find_batch_size,
             evaluation_strategy = "epoch",
             report_to = report_to,
-            run_name = args.wandb_run_name,
-            logging_steps = 5)
+            run_name = synexp_args_to_wandb_run_name(args),
+            logging_steps = args.logging_steps)
 
         return Trainer(
             task_model,
             training_args,
             train_dataset = train_dataset,
-            eval_dataset = test_dataset,
+            eval_dataset = eval_dataset,
             compute_metrics = one_shot_metrics)
 
 
-    elif isinstance(args, SyntheticNextStateArguments):
+    elif args.syn_exp_name == "next_state":
         train_dataset = NextStateEmbedsDataset(
             num_rules = args.num_rules,
             num_vars = args.num_vars,
@@ -155,13 +211,13 @@ def make_trainer_for_synthetic(
             dataset_len = args.train_len,
             seed = args.seed)
 
-        test_dataset = NextStateEmbedsDataset(
+        eval_dataset = NextStateEmbedsDataset(
             num_rules = args.num_rules,
             num_vars = args.num_vars,
             ante_prob = args.ante_prob,
             conseq_prob = args.conseq_prob,
             state_prob = args.state_prob,
-            dataset_len = args.test_len,
+            dataset_len = args.eval_len,
             seed = args.seed)
 
         task_model = AutoTFLModel.from_kwargs(
@@ -173,22 +229,25 @@ def make_trainer_for_synthetic(
             num_heads = args.num_heads)
 
         training_args = TrainingArguments(
-            output_dir,
+            args.output_dir,
             num_train_epochs = args.num_epochs,
+            per_device_train_batch_size = args.train_batch_size,
+            per_device_eval_batch_size = args.eval_batch_size,
+            auto_find_batch_size = args.auto_find_batch_size,
             evaluation_strategy = "epoch",
             report_to = report_to,
-            run_name = args.wandb_run_name,
-            logging_steps = 5)
+            run_name = synexp_args_to_wandb_run_name(args),
+            logging_steps = args.logging_steps)
 
         return Trainer(
             task_model,
             training_args,
             train_dataset = train_dataset,
-            eval_dataset = test_dataset,
+            eval_dataset = eval_dataset,
             compute_metrics = next_state_metrics)
 
 
-    elif isinstance(args, SyntheticAutoRegKStepsArguments):
+    elif args.syn_exp_name == "autoreg_ksteps":
         train_dataset = AutoRegKStepsEmbedsDataset(
             num_rules = args.num_rules,
             num_vars = args.num_vars,
@@ -199,14 +258,14 @@ def make_trainer_for_synthetic(
             dataset_len = args.train_len,
             seed = args.seed)
 
-        test_dataset = AutoRegKStepsEmbedsDataset(
+        eval_dataset = AutoRegKStepsEmbedsDataset(
             num_rules = args.num_rules,
             num_vars = args.num_vars,
             num_steps = args.num_steps,
             ante_prob = args.ante_prob,
             conseq_prob = args.conseq_prob,
             state_prob = args.state_prob,
-            dataset_len = args.test_len,
+            dataset_len = args.eval_len,
             seed = args.seed)
 
         task_model = AutoTFLModel.from_kwargs(
@@ -219,21 +278,24 @@ def make_trainer_for_synthetic(
             num_heads = args.num_heads)
 
         training_args = TrainingArguments(
-            output_dir,
+            args.output_dir,
             num_train_epochs = args.num_epochs,
+            per_device_train_batch_size = args.train_batch_size,
+            per_device_eval_batch_size = args.eval_batch_size,
+            auto_find_batch_size = args.auto_find_batch_size,
             evaluation_strategy = "epoch",
             report_to = report_to,
-            run_name = args.wandb_run_name,
-            logging_steps = 5)
+            run_name = synexp_args_to_wandb_run_name(args),
+            logging_steps = args.logging_steps)
 
         return Trainer(
             task_model,
             training_args,
             train_dataset = train_dataset,
-            eval_dataset = test_dataset,
+            eval_dataset = eval_dataset,
             compute_metrics = autoreg_ksteps_metrics)
 
     else:
-        raise ValueError(f"Unrecognized args {args}")
+        raise ValueError(f"Unrecognized exp_name {args.syn_exp_name}")
 
 
