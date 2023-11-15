@@ -31,7 +31,7 @@ class OneShotEmbedsTFLModel(TFLModel):
         self.theorem_tag = e(3, self.token_dim)
 
         self.encoder = nn.Linear(self.token_dim, self.embed_dim)
-        self.positional_embedding = nn.Embedding(config.max_seq_len, self.embed_dim)
+        self.positional_embedding = nn.Embedding(self.max_seq_len, self.embed_dim)
 
     def _prepare_input_tokens(self, rules: torch.Tensor, theorem: torch.Tensor):
         N, r, _ = rules.shape

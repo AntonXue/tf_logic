@@ -31,11 +31,9 @@ class TFLModel(nn.Module):
     def __init__(self, seqcls_model: nn.Module, config: TFLConfig):
         super().__init__()
         self.seqcls_model = seqcls_model
-        assert hasattr(self.seqcls_model, "model_name")
-        assert hasattr(self.seqcls_model, "embed_dim")
-        assert hasattr(self.seqcls_model, "num_labels")
-
+        self.model_name = seqcls_model.model_name
         self.embed_dim = seqcls_model.embed_dim
+        self.num_labels = seqcls_model.num_labels
 
         # transformer.Trainer with wandb checks whether the model has a config attr,
         # and will force us to implement a to_dict function if so.

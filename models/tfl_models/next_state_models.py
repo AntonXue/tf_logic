@@ -32,7 +32,7 @@ class NextStateEmbedsTFLModel(TFLModel):
         self.state_tag = e(3, self.token_dim)
         self.fpad_shape = (self.num_tags, 0)
         self.encoder = nn.Linear(self.token_dim, self.embed_dim)
-        self.positional_embedding = nn.Embedding(config.max_seq_len, self.embed_dim)
+        self.positional_embedding = nn.Embedding(self.max_seq_len, self.embed_dim)
 
     def _prepare_input_tokens(self, rules: torch.Tensor, state: torch.Tensor):
         N, r, _ = rules.shape

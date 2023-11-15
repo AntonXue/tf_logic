@@ -140,6 +140,10 @@ class MyTfSeqClsModel(nn.Module):
     def num_labels(self):
         return self.config.num_labels
 
+    @property
+    def problem_type(self):
+        return self.config.problem_type
+
     def forward(
         self,
         x: torch.FloatTensor,

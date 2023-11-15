@@ -116,6 +116,10 @@ class HFSeqClsModel(nn.Module):
     def num_labels(self):
         return self.model.num_labels
 
+    @property
+    def problem_type(self):
+        return self.config.problem_type
+
     def forward_iter_batch(
             self,
             x: torch.FloatTensor,
