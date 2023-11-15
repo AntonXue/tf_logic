@@ -81,3 +81,4 @@ class OneShotQedEmbedsTaskModel(TaskModel):
 class OneShotQedStringTaskModel(TaskModel):
     pass
 
+

@@ -1,4 +1,4 @@
-from typing import Optional, List, Union
+from typing import Optional, Tuple, Union
 from dataclasses import dataclass
 import torch
 import torch.nn as nn
@@ -8,43 +8,42 @@ from .common import *
 """ Our custom transformer model """
 
 class MyTfConfig:
-    """ Use this to initialize MyTfModel and its related classes """
+    """ Use this to initialize MyTfModel and its related classes.
+        The following setup lets us conveniently initialize with Nones.
+    """
     def __init__(
         self,
-        embed_dim: int = 512,
-        ffwd_width: int = 1024,
-        ffwd_depth: int = 4,
-        num_heads: int = 4,
-        num_layers: int = 8,
-        activ: str = "relu",
-        do_norm: bool = True,
-        layer_norm_epsilon: float = 1e-5,
+        embed_dim: Optional[int] = None,
+        ffwd_width: Optional[int] = None,
+        ffwd_depth: Optional[int] = None,
+        num_heads: Optional[int] = None,
+        num_layers: Optional[int] = None,
+        activ: Optional[str] = None,
+        do_norm: Optional[bool] = None,
+        layer_norm_epsilon: Optional[float] = None,
         num_labels: Optional[int] = None,
         problem_type: Optional[str] = None,
-        **kwargs
+        max_seq_len: Optional[int] = None
     ):
-        self.embed_dim = embed_dim
-        self.num_heads = num_heads
-        self.num_layers = num_layers
-        self.ffwd_width = ffwd_width
-        self.ffwd_depth = ffwd_depth
-        self.activ = activ
-        self.do_norm = do_norm
-        self.layer_norm_epsilon = layer_norm_epsilon
-        self.num_labels = num_labels
-        self.problem_type = problem_type
-
-        for k, v in kwargs.items():
-            assert not hasattr(self, k) # Make sure to not overwrite something
-            self.__setattr__(k, v)
+        self.embed_dim = default(embed_dim, 512)
+        self.ffwd_width = default(ffwd_width, 1024)
+        self.ffwd_depth = default(ffwd_depth, 4)
+        self.num_heads = default(num_heads, 4)
+        self.num_layers = default(num_layers, 8)
+        self.activ = default(activ, "relu")
+        self.do_norm = default(do_norm, True)
+        self.layer_norm_epsilon = default(layer_norm_epsilon, 1e-5)
+        self.num_labels = default(num_labels, None)
+        self.problem_type = default(problem_type, None)
+        self.max_seq_len = default(max_seq_len, 1024)
 
 
 @dataclass
 class MyTfOutput(ModelOutput):
     """ At the moment this is the same as BaseModelOutput, but may change """
     last_hidden_state: Optional[torch.FloatTensor] = None
-    hidden_states: Optional[List[torch.FloatTensor]] = None
-    attentions: Optional[List[torch.FloatTensor]] = None
+    hidden_states: Optional[Tuple[torch.FloatTensor]] = None
+    attentions: Optional[Tuple[torch.FloatTensor]] = None
 
 
 class AFBlock(nn.Module):
@@ -82,10 +81,15 @@ class MyTfModel(nn.Module):
         super().__init__()
         self.config = config
         self.af_blocks = nn.ModuleList([AFBlock(config) for _ in range(config.num_layers)])
+        self.pos_embedding = nn.Embedding(config.max_seq_len, config.embed_dim)
+
+    @property
+    def model_name(self):
+        return "mytf"
 
     @property
     def embed_dim(self):
-        return config.embed_dim
+        return self.config.embed_dim
 
     def forward(
         self,
@@ -94,17 +98,19 @@ class MyTfModel(nn.Module):
         output_attentions : Optional[bool] = None
     ):
         """ x : (batch_size, seq_len, embed_dim) """
-        all_hidden_states = [] if output_hidden_states else None
-        all_attentions = [] if output_attentions else None
+        x = x + self.pos_embedding(torch.arange(0, x.size(1)).to(x.device))
+
+        all_hidden_states = (x,) if output_hidden_states else None
+        all_attentions = () if output_attentions else None
 
         for block in self.af_blocks:
             x, a = block(x)
 
             if output_hidden_states:
-                all_hidden_states.append(x)
+                all_hidden_states += (x,)
 
             if output_attentions:
-                all_attentions.append(a)
+                all_attentions += (a,)
 
         return MyTfOutput(
             last_hidden_state = x,
@@ -119,8 +125,8 @@ class MyTfSeqClsOutput(ModelOutput):
     loss: Optional[torch.Tensor] = None
     logits: Optional[torch.FloatTensor] = None
     last_hidden_state: Optional[torch.FloatTensor] = None
-    hidden_states: Optional[List[torch.FloatTensor]] = None
-    attentions: Optional[List[torch.FloatTensor]] = None
+    hidden_states: Optional[Tuple[torch.FloatTensor]] = None
+    attentions: Optional[Tuple[torch.FloatTensor]] = None
 
 
 class MyTfSeqClsModel(nn.Module):
@@ -134,12 +140,16 @@ class MyTfSeqClsModel(nn.Module):
         elif config.problem_type == "multi_label_classification":
             assert config.num_labels > 1
         else:
-            raise ValueError(f"Bad problem type {self.config.problem_type}")
+            raise ValueError(f"Bad problem type {config.problem_type}")
 
         self.config = config
         self.mytf = MyTfModel(config)
         self.encoder = nn.Linear(config.embed_dim, config.embed_dim)
         self.cls_head = nn.Linear(config.embed_dim, config.num_labels)
+
+    @property
+    def model_name(self):
+        return "mytf"
 
     @property
     def embed_dim(self):
@@ -148,6 +158,10 @@ class MyTfSeqClsModel(nn.Module):
     @property
     def num_labels(self):
         return self.config.num_labels
+
+    @property
+    def problem_type(self):
+        return self.config.problem_type
 
     def forward(
         self,

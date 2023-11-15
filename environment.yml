@@ -1,14 +1,19 @@
 name: tfl
 channels:
-  - conda-forge
-  - defaults
   - pytorch
   - nvidia
+  - defaults
+  - conda-forge
 dependencies:
   - python=3.10
-  - pytorch-cuda=11.8
-  - torchaudio=2.1.0
-  - torchvision=0.16.0
-  - pytorch=2.1.0
+  - pytorch::pytorch=2.0.1
+  - pytorch::pytorch-cuda
+  - nvidia::cudatoolkit
+  - transformers=4.35.0
+  - evaluate
+  - accelerate
   - tqdm=4.66.1
-  - transformers=4.34.1
+  - matplotlib=3.8.1
+  - notebook=7.0.6
+  - wandb=0.15.12
+prefix: /home/antonxue/lib/miniconda3/envs/tfl

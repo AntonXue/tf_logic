@@ -78,6 +78,7 @@ class HFSeqClsConfig:
 
         # The RHS of the OR (|) overwrites the LHS
         kwargs = config_kwargs | default(self.overwriting_config_kwargs, {})
+
         # Delete entries where the keys is None (i.e., were not specified)
         for k in list(kwargs.keys()):
             if kwargs[k] is None:
@@ -95,6 +96,10 @@ class HFSeqClsModel(nn.Module):
         self.model = AutoModelForSequenceClassification.from_config(self.model_config)
 
     @property
+    def model_name(self):
+        return self.config.model_name
+
+    @property
     def embed_dim(self):
         if isinstance(self.model, GPT2ForSequenceClassification):
             return self.model.transformer.embed_dim
@@ -110,6 +115,10 @@ class HFSeqClsModel(nn.Module):
     @property
     def num_labels(self):
         return self.model.num_labels
+
+    @property
+    def problem_type(self):
+        return self.config.problem_type
 
     def forward_iter_batch(
             self,
