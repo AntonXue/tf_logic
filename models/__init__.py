@@ -6,6 +6,7 @@ from .hf_models import HFSeqClsConfig, HFSeqClsModel
 from .tfl_models.one_shot_models import *
 from .tfl_models.next_state_models import *
 from .tfl_models.autoreg_ksteps_models import *
+from transformers import AutoModelForSequenceClassification
 
 
 class AutoSeqClsModel:
@@ -73,5 +74,20 @@ class AutoTFLModel:
 
         else:
             raise ValueError(f"Unrecognized task_name {task_name}")
+        
+    @classmethod
+    def from_pretrained(
+        cls,
+        task_name: str,
+        model_name: str,
+        **kwargs
+    ):
+        if task_name == "one_shot_str":
+            # TODO: Refactor this later (move to HFSeqCls)
+            return AutoModelForSequenceClassification.from_pretrained(
+                    model_name, num_labels=2
+                )
+        else:
+            raise NotImplementedError(f"{task_name} not supported")
 
 

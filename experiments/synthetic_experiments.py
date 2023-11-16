@@ -3,7 +3,7 @@ from pathlib import Path
 from dataclasses import dataclass, field, asdict
 from typing import Optional
 import torch
-from transformers import Trainer, TrainingArguments, HfArgumentParser
+from transformers import Trainer, TrainingArguments, HfArgumentParser, AutoTokenizer, DataCollatorWithPadding
 import wandb
 
 """ Our imports """
@@ -140,6 +140,12 @@ def synexp_args_to_wandb_run_name(args: SyntheticExperimentArguments):
                f"_{args.model_name}_d{args.embed_dim}_L{args.num_layers}_H{args.num_heads}" + \
                f"_ap{args.ante_prob:.2f}_bp{args.conseq_prob}_tp{args.theorem_prob}" + \
                f"_ntr{args.train_len}_ntt{args.eval_len}"
+    
+    elif args.syn_exp_name == "one_shot_str":
+        return f"SynOneShotStr_nr{args.num_rules}_nv{args.num_vars}" + \
+               f"_{args.model_name}" + \
+               f"_ap{args.ante_prob:.2f}_bp{args.conseq_prob}_tp{args.theorem_prob}" + \
+               f"_ntr{args.train_len}_ntt{args.eval_len}"
 
     elif args.syn_exp_name == "next_state":
         return f"SynNextState_nr{args.num_rules}_nv{args.num_vars}" + \
@@ -206,6 +212,57 @@ def make_trainer_for_synthetic(
             training_args,
             train_dataset = train_dataset,
             eval_dataset = eval_dataset,
+            compute_metrics = one_shot_metrics)
+    
+    if args.syn_exp_name == "one_shot_str":
+        # Get the tokenizer to create the dataset
+        tokenizer = AutoTokenizer.from_pretrained(args.model_name)
+        tokenizer.pad_token = tokenizer.eos_token
+        data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
+
+        train_dataset = OneShotTextDataset(
+            num_rules = args.num_rules,
+            num_vars = args.num_vars,
+            ante_prob = args.ante_prob,
+            conseq_prob = args.conseq_prob,
+            theorem_prob = args.theorem_prob,
+            dataset_len = args.train_len,
+            seed = args.seed,
+            tokenizer = tokenizer)
+
+        eval_dataset = OneShotTextDataset(
+            num_rules = args.num_rules,
+            num_vars = args.num_vars,
+            ante_prob = args.ante_prob,
+            conseq_prob = args.conseq_prob,
+            theorem_prob = args.theorem_prob,
+            dataset_len = args.eval_len,
+            seed = args.seed,
+            tokenizer = tokenizer)
+        
+        tfl_model = AutoTFLModel.from_pretrained(
+            task_name = "one_shot_str",
+            model_name = args.model_name)
+        tfl_model.config.pad_token_id = tokenizer.pad_token_id
+
+        training_args = TrainingArguments(
+            args.output_dir,
+            num_train_epochs = args.num_epochs,
+            per_device_train_batch_size = args.train_batch_size,
+            per_device_eval_batch_size = args.eval_batch_size,
+            auto_find_batch_size = args.auto_find_batch_size,
+            evaluation_strategy = "epoch",
+            report_to = report_to,
+            run_name = synexp_args_to_wandb_run_name(args),
+            logging_steps = args.logging_steps)
+
+        return Trainer(
+            tfl_model,
+            training_args,
+            train_dataset = train_dataset,
+            eval_dataset = eval_dataset,
+            tokenizer = tokenizer,
+            data_collator = data_collator,
             compute_metrics = one_shot_metrics)
 
 
