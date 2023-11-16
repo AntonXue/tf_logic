@@ -67,6 +67,23 @@ class OneShotEmbedsTFLModel(TFLModel):
             seqcls_output = seqcls_out)
 
 
-class OneShotStringTFLModel(TFLModel):
-    pass
+class OneShotStringTFLModel(nn.Module):
+    def __init__(self, seqcls_model: nn.Module, config: OneShotTFLConfig = None):
+        super().__init__()
+        self.seqcls_model = seqcls_model
+    
+    def forward(
+        self,
+        input_ids: torch.LongTensor,
+        attention_mask: torch.LongTensor,
+        labels: Optional[torch.LongTensor] = None,
+        seqcls_model_kwargs: Optional[dict] = None
+    ):
+        seqcls_model_kwargs = default(seqcls_model_kwargs, {})
+
+        seqcls_out = self.seqcls_model(input_ids, labels=labels, use_input_ids=True, attention_mask=attention_mask, **seqcls_model_kwargs)
+        return OneShotTFLOutput(
+            loss = seqcls_out.loss,
+            logits = seqcls_out.logits,
+            seqcls_output = seqcls_out)
 

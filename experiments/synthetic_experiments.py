@@ -52,6 +52,10 @@ class SyntheticExperimentArguments:
         metadata = {"help": "The model's number of attention heads."}
     )
 
+    use_pretrained : Optional[bool] = field(
+        default = False,
+        metadata = {"help": "Weights from the pretrained model are loaded if True. Note that this restricts changes to the model (default num_heads, num_layers, etc. will be used)"}
+    )
 
     """ Dataset details """
 
@@ -142,8 +146,9 @@ def synexp_args_to_wandb_run_name(args: SyntheticExperimentArguments):
                f"_ntr{args.train_len}_ntt{args.eval_len}"
     
     elif args.syn_exp_name == "one_shot_str":
+        model_str = f"_{args.model_name}-pretrained" if args.use_pretrained else f"_{args.model_name}_d{args.embed_dim}_L{args.num_layers}_H{args.num_heads}"
         return f"SynOneShotStr_nr{args.num_rules}_nv{args.num_vars}" + \
-               f"_{args.model_name}" + \
+               f"{model_str}" + \
                f"_ap{args.ante_prob:.2f}_bp{args.conseq_prob}_tp{args.theorem_prob}" + \
                f"_ntr{args.train_len}_ntt{args.eval_len}"
 
@@ -238,12 +243,25 @@ def make_trainer_for_synthetic(
             theorem_prob = args.theorem_prob,
             dataset_len = args.eval_len,
             seed = args.seed,
-            tokenizer = tokenizer)
+            tokenizer = tokenizer,
+            # TODO: Support longest padding for config loaded models
+            # Need to move the tokenization to batch-level
+            padding = "longest" if args.use_pretrained else "max_length")
         
-        tfl_model = AutoTFLModel.from_pretrained(
-            task_name = "one_shot_str",
-            model_name = args.model_name)
-        tfl_model.config.pad_token_id = tokenizer.pad_token_id
+        if args.use_pretrained:
+            tfl_model = AutoTFLModel.from_pretrained(
+                task_name = "one_shot_str",
+                model_name = args.model_name)
+            tfl_model.config.pad_token_id = tokenizer.pad_token_id
+        else:
+            tfl_model = AutoTFLModel.from_kwargs(
+                task_name = "one_shot_str",
+                num_vars = args.num_vars,
+                model_name = args.model_name,
+                embed_dim = args.embed_dim,
+                num_layers = args.num_layers,
+                num_heads = args.num_heads)
+            tfl_model.seqcls_model.model.config.pad_token_id = tokenizer.pad_token_id
 
         training_args = TrainingArguments(
             args.output_dir,

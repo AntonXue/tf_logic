@@ -162,6 +162,7 @@ class HFSeqClsModel(nn.Module):
         x: Union[torch.FloatTensor, torch.LongTensor],
         labels: Optional[torch.LongTensor] = None,
         use_input_ids: Optional[bool] = None,
+        attention_mask: Optional[torch.LongTensor] = None,
         **kwargs
     ):
         """ use_inputs_ids == True:  x: (batch_size, seq_len)
@@ -169,7 +170,7 @@ class HFSeqClsModel(nn.Module):
         """
         # When using input ids, the result is simpler
         if use_input_ids:
-            return self.model(input_ids=x, labels=labels, **kwargs)
+            return self.model(input_ids=x, labels=labels, attention_mask=attention_mask, **kwargs)
 
         # Otherwise we assme inputs_embeds
         if self.config.problem_type == "multi_label_classification" and labels is not None:

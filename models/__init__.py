@@ -50,6 +50,15 @@ class AutoTFLModel:
             seqcls_model = AutoSeqClsModel.from_kwargs(model_name, **kwargs)
             config = OneShotTFLConfig(num_vars=num_vars)
             return OneShotEmbedsTFLModel(seqcls_model, config)
+        
+        elif task_name == "one_shot_str":
+            num_vars = kwargs.pop("num_vars")
+
+            kwargs["problem_type"] = "single_label_classification"
+            kwargs["num_labels"] = 2
+
+            seqcls_model = AutoSeqClsModel.from_kwargs(model_name, **kwargs)
+            return OneShotStringTFLModel(seqcls_model)
 
         elif task_name == "next_state":
             num_vars = kwargs.pop("num_vars")

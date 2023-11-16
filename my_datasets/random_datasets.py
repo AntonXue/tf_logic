@@ -61,7 +61,8 @@ class OneShotTextDataset(Dataset):
         dataset_len: int,
         ensure_facts: bool = True,
         seed: int = 1234,
-        tokenizer: object = None
+        tokenizer: object = None,
+        padding: str = "longest"
     ):
         self.num_rules = num_rules
         self.num_vars = num_vars
@@ -72,6 +73,7 @@ class OneShotTextDataset(Dataset):
         self.ensure_facts = ensure_facts
         self.seed = seed
         self.tokenizer = tokenizer
+        self.padding = padding
 
     def __len__(self):
         """ We can indefinitely generate more, but set an artificial cap """
@@ -100,7 +102,7 @@ class OneShotTextDataset(Dataset):
         if not self.tokenizer:
             return Exception("Tokenizer not provided.")
         
-        encoding = self.tokenizer(entry_str, truncation=True)
+        encoding = self.tokenizer(entry_str, truncation=True, padding=self.padding)
         return {
             "data": entry_str,
             "label": qed[0],
