@@ -12,18 +12,16 @@ class OneShotEmbedsDataset(Dataset):
         num_vars: int,
         ante_prob: float,
         conseq_prob: float,
-        theorem_prob: float,
         dataset_len: int,
-        ensure_facts: bool = True,
+        chain_len: int = 3,
         seed: int = 1234
     ):
         self.num_rules = num_rules
         self.num_vars = num_vars
         self.ante_prob = ante_prob
         self.conseq_prob = conseq_prob
-        self.theorem_prob = theorem_prob
+        self.chain_len = chain_len
         self.dataset_len = dataset_len
-        self.ensure_facts = ensure_facts
         self.seed = seed
 
     def __len__(self):
@@ -32,23 +30,32 @@ class OneShotEmbedsDataset(Dataset):
 
     def __getitem__(self, idx):
         torch.manual_seed(self.seed + idx)  # How to guarantee determinism
-        rules = logic.random_rules(
-            batch_size = 1,
+        rules_dict = logic.random_rules_with_chain(
             num_rules = self.num_rules,
             num_vars = self.num_vars,
             ante_prob = self.ante_prob,
             conseq_prob = self.conseq_prob,
-            ensure_facts = self.ensure_facts)
+            chain_len = self.chain_len,
+            return_dict = True)
+        rules, bad_bits = rules_dict["rules"], rules_dict["bad_bits"]
 
-        thm = (torch.rand(1, self.num_vars) < self.theorem_prob).long()
-        qed = logic.prove_theorem(rules, thm)["qed"]
+        proof = logic.prove_theorem(rules.unsqueeze(0), torch.ones(1,self.num_vars))
+        thm = proof["states"][0,-1] # The theorem is the iteration fixpoint
+        label = torch.tensor(1).long()
+
+        # Flip a coin to attempt to make it unprovable, if possible
+        if torch.randn(()) > 0 and thm[bad_bits[0]] == 0:
+                thm[bad_bits[0]] = 1
+                label = torch.tensor(0).long()
+
         return {
-            "rules" : rules[0],
-            "theorem" : thm[0],
-            "labels" : qed[0]
+            "rules" : rules,
+            "theorem" : thm,
+            "labels" : label
         }
 
-class OneShotTextDataset(Dataset):
+
+class OneShotStringDataset(Dataset):
     """ For task of checking one-shot QED, generate a bunch of random rules 
     The rules and theorem are represented as strings"""
     def __init__(
@@ -59,7 +66,6 @@ class OneShotTextDataset(Dataset):
         conseq_prob: float,
         theorem_prob: float,
         dataset_len: int,
-        ensure_facts: bool = True,
         seed: int = 1234,
         tokenizer: object = None,
         padding: str = "longest"
@@ -70,7 +76,6 @@ class OneShotTextDataset(Dataset):
         self.conseq_prob = conseq_prob
         self.theorem_prob = theorem_prob
         self.dataset_len = dataset_len
-        self.ensure_facts = ensure_facts
         self.seed = seed
         self.tokenizer = tokenizer
         self.padding = padding
@@ -86,8 +91,7 @@ class OneShotTextDataset(Dataset):
             num_rules = self.num_rules,
             num_vars = self.num_vars,
             ante_prob = self.ante_prob,
-            conseq_prob = self.conseq_prob,
-            ensure_facts = self.ensure_facts)
+            conseq_prob = self.conseq_prob)
 
         thm = (torch.rand(1, self.num_vars) < self.theorem_prob).long()
         qed = logic.prove_theorem(rules, thm)["qed"]
@@ -121,7 +125,7 @@ class NextStateEmbedsDataset(Dataset):
         conseq_prob: float,
         state_prob: float,
         dataset_len: int,
-        ensure_facts: bool = True,
+        chain_len: int = 3,
         seed: int = 1234
     ):
         self.num_rules = num_rules
@@ -129,8 +133,8 @@ class NextStateEmbedsDataset(Dataset):
         self.ante_prob = ante_prob
         self.conseq_prob = conseq_prob
         self.state_prob = state_prob
+        self.chain_len = chain_len
         self.dataset_len = dataset_len
-        self.ensure_facts = ensure_facts
         self.seed = seed
 
     def __len__(self):
@@ -139,25 +143,24 @@ class NextStateEmbedsDataset(Dataset):
 
     def __getitem__(self, idx):
         torch.manual_seed(self.seed + idx)
-        rules = logic.random_rules(
-            batch_size = 1,
+        rules = logic.random_rules_with_chain(
             num_rules = self.num_rules,
             num_vars = self.num_vars,
             ante_prob = self.ante_prob,
             conseq_prob = self.conseq_prob,
-            ensure_facts = self.ensure_facts)
+            chain_len = self.chain_len)
 
         state = (torch.rand(1, self.num_vars) < self.state_prob).long()
-        succ, _ = logic.step_rules(rules, state)
+        succ, _ = logic.step_rules(rules.unsqueeze(0), state)
 
         return {
-            "rules" : rules[0],
+            "rules" : rules,
             "state" : state[0],
             "labels" : succ[0]
         }
 
 
-class NextStateTextDataset(Dataset):
+class NextStateStringDataset(Dataset):
     pass
 
 
@@ -171,7 +174,6 @@ class AutoRegKStepsEmbedsDataset(Dataset):
         conseq_prob: float,
         state_prob: float,
         dataset_len: int,
-        ensure_facts: bool = True,
         seed: int = 1234
     ):
         self.num_rules = num_rules
@@ -181,7 +183,6 @@ class AutoRegKStepsEmbedsDataset(Dataset):
         self.conseq_prob = conseq_prob
         self.state_prob = state_prob
         self.dataset_len = dataset_len
-        self.ensure_facts = ensure_facts
         self.seed = seed
 
     def __len__(self):
@@ -190,12 +191,11 @@ class AutoRegKStepsEmbedsDataset(Dataset):
     def __getitem__(self, idx):
         torch.manual_seed(self.seed + idx)
         rules = logic.random_rules(
-            batch_size = 1,
             num_rules = self.num_rules,
             num_vars = self.num_vars,
             ante_prob = self.ante_prob,
             conseq_prob = self.conseq_prob,
-            ensure_facts = self.ensure_facts)
+            chain_len = self.num_steps)
 
         init_state = (torch.rand(1, self.num_vars) < self.state_prob).long()
         tmp = init_state
@@ -213,7 +213,7 @@ class AutoRegKStepsEmbedsDataset(Dataset):
         }
 
 
-class AutoRegKStepsTextDataset(Dataset):
+class AutoRegKStepsStringDataset(Dataset):
     pass
 
 

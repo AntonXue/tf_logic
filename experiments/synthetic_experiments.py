@@ -15,6 +15,8 @@ from experiments_init import *
 from evaluation_utils import *
 
 
+from tqdm import tqdm
+
 """ Parser for Hugging Face """
 
 @dataclass
@@ -84,14 +86,14 @@ class SyntheticExperimentArguments:
         metadata = {"help": "The probability of a variable in the consequent being true."}
     )
 
-    theorem_prob: Optional[float] = field(
-        default = None,
-        metadata = {"help": "The probability of a variable in the theorem being true."}
-    )
-
     state_prob: Optional[float] = field(
         default = None,
         metadata = {"help": "The probability of a variable in an initial state being true."}
+    )
+
+    chain_len: Optional[int] = field(
+        default = 3,
+        metadata = {"help": "The attmeped length of the deduction chain for a random dataset."}
     )
 
     train_len: Optional[int] = field(
@@ -132,17 +134,16 @@ class SyntheticExperimentArguments:
     )
 
     logging_steps: int = field(
-        default = 5,
+        default = 10,
         metadata = {"help": "How often the Hugging Face Trainer logs"}
     )
-
 
 
 def synexp_args_to_wandb_run_name(args: SyntheticExperimentArguments):
     if args.syn_exp_name == "one_shot":
         return f"SynOneShot_nr{args.num_rules}_nv{args.num_vars}" + \
                f"_{args.model_name}_d{args.embed_dim}_L{args.num_layers}_H{args.num_heads}" + \
-               f"_ap{args.ante_prob:.2f}_bp{args.conseq_prob}_tp{args.theorem_prob}" + \
+               f"_ap{args.ante_prob:.2f}_bp{args.conseq_prob}_cl{args.chain_len}" + \
                f"_ntr{args.train_len}_ntt{args.eval_len}"
     
     elif args.syn_exp_name == "one_shot_str":
@@ -168,6 +169,52 @@ def synexp_args_to_wandb_run_name(args: SyntheticExperimentArguments):
         raise ValueError(f"Unrecognized syn_exp_name {args.syn_exp_name}")
 
 
+def trainer_stats_for_wandb(
+    args: SyntheticExperimentArguments,
+    trainer: Trainer
+):
+    """ Make some statistics to report to wandb """
+    if args.syn_exp_name == "one_shot":
+        num_train_qeds = torch.tensor(0)
+        for i in range(len(trainer.train_dataset)):
+            num_train_qeds += trainer.train_dataset[i]["labels"]
+
+        num_eval_qeds = torch.tensor(0)
+        for i in range(len(trainer.eval_dataset)):
+            num_eval_qeds += trainer.eval_dataset[i]["labels"]
+
+        return {
+            "train_len": len(trainer.train_dataset),
+            "train_qeds": num_train_qeds.item(),
+            "eval_len" : len(trainer.eval_dataset),
+            "eval_qeds": num_eval_qeds.item()
+        }
+
+    elif args.syn_exp_name == "next_state":
+        num_train_succ_diffs = torch.tensor(0)
+        for i in range(len(trainer.train_dataset)):
+            item = trainer.train_dataset[i]
+            num_train_succ_diffs += (item["state"] - item["labels"]).sum().abs() > 0
+
+        num_eval_succ_diffs = torch.tensor(0)
+        for item in range(len(trainer.eval_dataset)):
+            item = trainer.eval_dataset[i]
+            num_eval_succ_diffs += (item["state"] - item["labels"]).sum().abs() > 0
+
+        return {
+            "train_len": len(trainer.train_dataset),
+            "train_succ_diffs": num_train_succ_diffs.item(),
+            "eval_len": len(trainer.eval_dataset),
+            "eval_succ_diffs": num_eval_succ_diffs.item()
+        }
+
+    elif arg.syn_exp_name == "autoreg_ksteps":
+        return {}
+
+    else:
+        raise ValueError(f"Unrecognized syn_exp_name {args.syn_exp_name}")
+
+
 def make_trainer_for_synthetic(
     args: SyntheticExperimentArguments,
     report_to: str = "wandb"
@@ -180,7 +227,7 @@ def make_trainer_for_synthetic(
             num_vars = args.num_vars,
             ante_prob = args.ante_prob,
             conseq_prob = args.conseq_prob,
-            theorem_prob = args.theorem_prob,
+            chain_len = args.chain_len,
             dataset_len = args.train_len,
             seed = args.seed)
 
@@ -189,7 +236,7 @@ def make_trainer_for_synthetic(
             num_vars = args.num_vars,
             ante_prob = args.ante_prob,
             conseq_prob = args.conseq_prob,
-            theorem_prob = args.theorem_prob,
+            chain_len = args.chain_len,
             dataset_len = args.eval_len,
             seed = args.seed)
 
@@ -219,13 +266,13 @@ def make_trainer_for_synthetic(
             eval_dataset = eval_dataset,
             compute_metrics = one_shot_metrics)
     
-    if args.syn_exp_name == "one_shot_str":
+    elif args.syn_exp_name == "one_shot_str":
         # Get the tokenizer to create the dataset
         tokenizer = AutoTokenizer.from_pretrained(args.model_name)
         tokenizer.pad_token = tokenizer.eos_token
         data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
 
-        train_dataset = OneShotTextDataset(
+        train_dataset = OneShotStringDataset(
             num_rules = args.num_rules,
             num_vars = args.num_vars,
             ante_prob = args.ante_prob,
@@ -235,7 +282,7 @@ def make_trainer_for_synthetic(
             seed = args.seed,
             tokenizer = tokenizer)
 
-        eval_dataset = OneShotTextDataset(
+        eval_dataset = OneShotStringDataset(
             num_rules = args.num_rules,
             num_vars = args.num_vars,
             ante_prob = args.ante_prob,
@@ -382,14 +429,17 @@ def make_trainer_for_synthetic(
         raise ValueError(f"Unrecognized exp_name {args.syn_exp_name}")
 
 
-
 """ Main stuff """
 
 if __name__ == "__main__":
     parser = HfArgumentParser(SyntheticExperimentArguments)
-    synexp_args = parser.parse_args_into_dataclasses()[0]
-    trainer = make_trainer_for_synthetic(synexp_args)
-    trainer.train()
-    wandb.finish()
+    args = parser.parse_args_into_dataclasses()[0]
+    trainer = make_trainer_for_synthetic(args)
 
+    # Log some preliminary training stats
+    trainer_stats = trainer_stats_for_wandb(args, trainer)
+    trainer.train()
+
+    wandb.run.summary["trainer_stats"] = trainer_stats
+    wandb.finish()
 

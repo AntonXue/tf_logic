@@ -12,7 +12,7 @@ Path(DOWNLOAD_DIR).mkdir(parents=True, exist_ok=True)
 
 """ Functionalities """
 
-def delete_runs_with_prefix(prefix):
+def delete_runs_with_prefix(prefix: str):
     print(f"Deleting runs with prefix '{prefix}' ...")
     api = wandb.Api()
     deleted_runs = []
@@ -28,7 +28,7 @@ def delete_runs_with_prefix(prefix):
         print(f"- ({id}) {name}")
 
 
-def download_run_summaries_with_prefix(prefix):
+def download_run_summaries_with_prefix(prefix: str, overwrite: bool):
     print(f"Downloading runs with prefix '{prefix}' ...")
     api = wandb.Api()
     count = 0
@@ -36,16 +36,16 @@ def download_run_summaries_with_prefix(prefix):
         if not run.name.startswith(prefix):
             continue
 
-        summary_dict = dict(run.summary)
-        if "_wandb" in summary_dict:
-            del summary_dict["_wandb"]
+        for f in run.files():
+            if f.name == "wandb-summary.json":
+                local_path = str(Path(DOWNLOAD_DIR, run.name + "_summary.json"))
+                if Path(local_path).exists() and not overwrite:
+                    print(f"! {local_path}")
+                    continue
 
-        summary_file = str(Path(DOWNLOAD_DIR, "summary_" + run.name + ".json"))
-        with open(summary_file, "w") as fp:
-            json.dump(summary_dict, fp, indent=4)
-
-        print(f"+ {summary_file}")
-        count += 1
+                wandb.util.download_file_from_url(local_path, f.url, api.api_key)
+                print(f"+ {local_path}")
+                count += 1
 
     print(f"Downloaded {count} runs")
 
@@ -56,6 +56,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--download-syn-runs", action="store_true", default=False)
     parser.add_argument("--delete-syn-runs", action="store_true", default=False)
+    parser.add_argument("--overwrite", action="store_true", default=False)
     args, unknown = parser.parse_known_args()
     return dict(args._get_kwargs())
 
@@ -65,7 +66,7 @@ if __name__ == "__main__":
     args = parse_args()
 
     if args["download_syn_runs"]:
-        download_run_summaries_with_prefix("Syn")
+        download_run_summaries_with_prefix("Syn", args["overwrite"])
 
     if args["delete_syn_runs"]:
         delete_runs_with_prefix("Syn")
