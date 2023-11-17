@@ -1,5 +1,4 @@
 from typing import Optional, Union
-from dataclasses import dataclass
 import torch
 import transformers
 from transformers import AutoConfig, GPT2Config, AutoModelForSequenceClassification, \
@@ -13,78 +12,94 @@ transformers.logging.set_verbosity_error()  # Be quiet!!
 
 """ Hugging Face models for sequence classification """
 
-@dataclass
 class HFSeqClsConfig:
-    model_name: str
-    embed_dim: Optional[int] = None
-    num_heads: Optional[int] = None
-    num_layers: Optional[int] = None
-    num_labels: Optional[int] = None
-    problem_type: Optional[str] = "multi_label_classification"
-    max_seq_len: Optional[int] = None
-    overwriting_config_kwargs: Optional[dict] = None
+    def __init__(
+        self,
+        model_name: str,
+        embed_dim: Optional[int] = None,
+        num_heads: Optional[int] = None,
+        num_layers: Optional[int] = None,
+        num_labels: Optional[int] = None,
+        problem_type: Optional[str] = "multi_label_classification",
+        max_seq_len: Optional[int] = None,
+        overwriting_config_kwargs: Optional[dict] = None,
+        use_pretrained: Optional[bool] = None,
+        pretrained_kwargs: Optional[dict] = None,
+    ):
+        self.model_name = model_name
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+        self.num_layers = num_layers
+        self.num_labels = num_labels
+        self.problem_type = problem_type
+        self.max_seq_len = max_seq_len
+        self.overwriting_config_kwargs = overwriting_config_kwargs
+        self.use_pretrained = use_pretrained
 
-    def __post_init__(self):
-        if self.problem_type == "regression":
-            assert self.num_labels == 1
-        elif self.problem_type in ["single_label_classification", "multi_label_classification"]:
-            assert self.num_labels > 1
-        else:
-            raise ValueError(f"Unrecognized problem type {self.problem_type}")
-
-        if self.model_name == "gpt2":
+        # transformers.GPT2Config
+        if model_name == "gpt2":
             config_kwargs = {
-                "n_embd": self.embed_dim,
-                "n_head" : self.num_heads,
-                "n_layer" : self.num_layers,
-                "num_labels" : self.num_labels,
-                "problem_type" : self.problem_type,
-                "n_positions" : self.max_seq_len,
+                "n_embd": embed_dim,
+                "n_head" : num_heads,
+                "n_layer" : num_layers,
+                "num_labels" : num_labels,
+                "problem_type" : problem_type,
+                "n_positions" : max_seq_len,
                 "pad_token_id" : GPT2Config().eos_token_id
             }
 
-        elif self.model_name == "bert":
+            self.pretrained_model_name = "gpt2"
+
+        # transformers.BertConfig
+        elif model_name == "bert":
             config_kwargs = {
-                "hidden_size": self.embed_dim,
-                "num_attention_heads": self.num_heads,
-                "num_hidden_layers" : self.num_layers,
-                "num_labels" : self.num_labels,
-                "problem_type" : self.problem_type,
-                "max_position_embeddings" : self.max_seq_len,
+                "hidden_size": embed_dim,
+                "num_attention_heads": num_heads,
+                "num_hidden_layers" : num_layers,
+                "num_labels" : num_labels,
+                "problem_type" : problem_type,
+                "max_position_embeddings" : max_seq_len,
             }
 
-        elif self.model_name == "roberta":
-            config_kwargs = {
-                "hidden_size": self.embed_dim,
-                "num_hidden_layers": self.num_layers,
-                "num_attention_heads": self.num_heads,
-                "num_labels" : self.num_labels,
-                "problem_type": self.problem_type,
-                "max_position_embeddings": self.max_seq_len
-            }
+            self.pretrained_model_name = "bert-base-uncased"
 
-        elif self.model_name == "code_llama":
+        # transformers.RobertaConfig
+        elif model_name == "roberta":
             config_kwargs = {
-                "hidden_size": self.embed_dim,
-                "num_hidden_layers": self.num_layers,
-                "num_attention_heads": self.num_heads,
-                "num_labels" : self.num_labels,
-                "problem_type": self.problem_type,
-                "max_position_embeddings": self.max_seq_len
+                "hidden_size": embed_dim,
+                "num_hidden_layers": num_layers,
+                "num_attention_heads": num_heads,
+                "num_labels" : num_labels,
+                "problem_type": problem_type,
+                "max_position_embeddings": max_seq_len
             }
+            self.pretrained_model_name = "roberta-base"
+
+        # transformers.LlamaConfig
+        elif model_name == "code_llama":
+            config_kwargs = {
+                "hidden_size": embed_dim,
+                "num_hidden_layers": num_layers,
+                "num_attention_heads": num_heads,
+                "num_labels" : num_labels,
+                "problem_type": problem_type,
+                "max_position_embeddings": max_seq_len
+            }
+            self.pretrained_model_name = "code_llama"
 
         else:
-            raise ValueError(f"Unsupported model {self.model_name}")
+            raise ValueError(f"Unsupported model {model_name}")
 
         # The RHS of the OR (|) overwrites the LHS
-        kwargs = config_kwargs | default(self.overwriting_config_kwargs, {})
+        kwargs = config_kwargs | default(overwriting_config_kwargs, {})
 
         # Delete entries where the keys is None (i.e., were not specified)
         for k in list(kwargs.keys()):
             if kwargs[k] is None:
                 del kwargs[k]
 
-        self.__setattr__("model_config_kwargs", kwargs)
+        self.model_config_kwargs = kwargs
+        self.pretrained_kwargs = kwargs # These two are identical at the moment
 
 
 class HFSeqClsModel(nn.Module):
@@ -92,8 +107,16 @@ class HFSeqClsModel(nn.Module):
     def __init__(self, config: HFSeqClsConfig):
         super().__init__()
         self.config = config
-        self.model_config = AutoConfig.for_model(config.model_name, **config.model_config_kwargs)
-        self.model = AutoModelForSequenceClassification.from_config(self.model_config)
+
+        if config.use_pretrained:
+            self.model = AutoModelForSequenceClassification.from_pretrained(
+                config.pretrained_model_name,
+                ignore_mismatched_sizes = True, # TODO: ignore_mismatched_sizes seems to fail for bert
+                **config.pretrained_kwargs)
+            self.model_config = self.model.config
+        else:
+            self.model_config = AutoConfig.for_model(config.model_name, **config.model_config_kwargs)
+            self.model = AutoModelForSequenceClassification.from_config(self.model_config)
 
     @property
     def model_name(self):

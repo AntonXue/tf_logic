@@ -24,13 +24,20 @@ class AutoSeqClsModel:
         if model_name == "mytf":
             return MyTfSeqClsModel(MyTfConfig(**kwargs))
         else:
-            return HFSeqClsModel(HFSeqClsConfig(model_name=model_name, **kwargs))
+            return HFSeqClsModel(HFSeqClsConfig(model_name, **kwargs))
+
+    @classmethod
+    def from_pretrained(cls, model_name, **kwargs):
+        if model_name == "mytf":
+            return MyTfSeqClsModel(MyTfConfig(**kwargs))
+        else:
+            return HFSeqClsModel(HFSeqClsConfig(model_name, use_pretrained=True, **kwargs))
 
 
 class AutoTFLModel:
     @classmethod
     def from_config(cls, config):
-        pass
+        pass    # TODO
 
     @classmethod
     def from_kwargs(
@@ -50,7 +57,7 @@ class AutoTFLModel:
             seqcls_model = AutoSeqClsModel.from_kwargs(model_name, **kwargs)
             config = OneShotTFLConfig(num_vars=num_vars)
             return OneShotEmbedsTFLModel(seqcls_model, config)
-        
+
         elif task_name == "one_shot_str":
             num_vars = kwargs.pop("num_vars")
 
@@ -83,7 +90,7 @@ class AutoTFLModel:
 
         else:
             raise ValueError(f"Unrecognized task_name {task_name}")
-        
+
     @classmethod
     def from_pretrained(
         cls,
@@ -91,11 +98,47 @@ class AutoTFLModel:
         model_name: str,
         **kwargs
     ):
-        if task_name == "one_shot_str":
-            # TODO: Refactor this later (move to HFSeqCls)
-            return AutoModelForSequenceClassification.from_pretrained(
-                    model_name, num_labels=2
-                )
+        # The order of popping and inserting into the kwargs matters!
+        if task_name == "one_shot":
+            num_vars = kwargs.pop("num_vars")
+
+            kwargs["problem_type"] = "single_label_classification"
+            kwargs["num_labels"] = 2
+
+            seqcls_model = AutoSeqClsModel.from_pretrained(model_name, **kwargs)
+            config = OneShotTFLConfig(num_vars=num_vars)
+            return OneShotEmbedsTFLModel(seqcls_model, config)
+
+        elif task_name == "one_shot_str":
+            num_vars = kwargs.pop("num_vars")
+
+            kwargs["problem_type"] = "single_label_classification"
+            kwargs["num_labels"] = 2
+
+            seqcls_model = AutoSeqClsModel.from_pretrained(model_name, **kwargs)
+            return OneShotStringTFLModel(seqcls_model)
+
+        elif task_name == "next_state":
+            num_vars = kwargs.pop("num_vars")
+
+            kwargs["problem_type"] = "multi_label_classification"
+            kwargs["num_labels"] = num_vars
+
+            seqcls_model = AutoSeqClsModel.from_pretrained(model_name, **kwargs)
+            config = NextStateTFLConfig(num_vars=num_vars)
+            return NextStateEmbedsTFLModel(seqcls_model, config)
+
+        elif task_name == "autoreg_ksteps":
+            num_vars = kwargs.pop("num_vars")
+            num_steps = kwargs.pop("num_steps")
+
+            kwargs["problem_type"] = "multi_label_classification"
+            kwargs["num_labels"] = num_vars
+
+            seqcls_model = AutoSeqClsModel.from_pretrained(model_name, **kwargs)
+            config = AutoRegKStepsTFLConfig(num_vars=num_vars, num_steps=num_steps)
+            return AutoRegKStepsEmbedsTFLModel(seqcls_model, config)
+
         else:
             raise NotImplementedError(f"{task_name} not supported")
 
