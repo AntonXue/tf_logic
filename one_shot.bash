@@ -1,8 +1,8 @@
 ### One-shot experiments
 
 
-TRAIN_LEN=10000
-EVAL_LEN=1000
+TRAIN_LEN=100
+EVAL_LEN=100
 NUM_EPOCHS=25
 
 python3 experiments/synthetic_experiments.py \

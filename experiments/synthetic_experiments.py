@@ -208,8 +208,23 @@ def trainer_stats_for_wandb(
             "eval_succ_diffs": num_eval_succ_diffs.item()
         }
 
-    elif arg.syn_exp_name == "autoreg_ksteps":
-        return {}
+    elif args.syn_exp_name == "autoreg_ksteps":
+        num_train_kstep_diffs = torch.tensor(0)
+        for i in range(len(trainer.train_dataset)):
+            item = trainer.train_dataset[i]
+            num_train_kstep_diffs += (item["state"] - item["labels"][-1]).sum().abs() > 0
+
+        num_eval_kstep_diffs = torch.tensor(0)
+        for item in range(len(trainer.eval_dataset)):
+            item = trainer.eval_dataset[i]
+            num_eval_kstep_diffs += (item["state"] - item["labels"][-1]).sum().abs() > 0
+
+        return {
+            "train_len": len(trainer.train_dataset),
+            "train_kstep_diffs": num_train_kstep_diffs.item(),
+            "eval_len": len(trainer.eval_dataset),
+            "eval_kstep_diffs": num_eval_kstep_diffs.item()
+        }
 
     else:
         raise ValueError(f"Unrecognized syn_exp_name {args.syn_exp_name}")

@@ -174,6 +174,7 @@ class AutoRegKStepsEmbedsDataset(Dataset):
         conseq_prob: float,
         state_prob: float,
         dataset_len: int,
+        chain_len: int = 3,
         seed: int = 1234
     ):
         self.num_rules = num_rules
@@ -182,6 +183,7 @@ class AutoRegKStepsEmbedsDataset(Dataset):
         self.ante_prob = ante_prob
         self.conseq_prob = conseq_prob
         self.state_prob = state_prob
+        self.chain_len = chain_len
         self.dataset_len = dataset_len
         self.seed = seed
 
@@ -190,24 +192,25 @@ class AutoRegKStepsEmbedsDataset(Dataset):
 
     def __getitem__(self, idx):
         torch.manual_seed(self.seed + idx)
-        rules = logic.random_rules(
+        rules = logic.random_rules_with_chain(
             num_rules = self.num_rules,
             num_vars = self.num_vars,
             ante_prob = self.ante_prob,
             conseq_prob = self.conseq_prob,
-            chain_len = self.num_steps)
+            chain_len = self.chain_len,
+            return_dict = False)
 
         init_state = (torch.rand(1, self.num_vars) < self.state_prob).long()
         tmp = init_state
         succs = ()
         for t in range(self.num_steps):
-            tmp, _ = logic.step_rules(rules, tmp)
+            tmp, _ = logic.step_rules(rules.unsqueeze(0), tmp)
             succs = succs + (tmp,)
 
         succs = torch.cat(succs, dim=0).long()
 
         return {
-            "rules": rules[0],
+            "rules": rules,
             "state": init_state[0],
             "labels" : succs
         }
