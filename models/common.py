@@ -41,3 +41,4 @@ class TFLModel(nn.Module):
         for k, v in asdict(config).items():
             self.__setattr__(k, v)
 
+

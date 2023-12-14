@@ -14,8 +14,7 @@ class MyTfConfig:
     def __init__(
         self,
         embed_dim: Optional[int] = None,
-        ffwd_width: Optional[int] = None,
-        ffwd_depth: Optional[int] = None,
+        ffwd_dim: Optional[int] = None,
         num_heads: Optional[int] = None,
         num_layers: Optional[int] = None,
         activ: Optional[str] = None,
@@ -26,8 +25,7 @@ class MyTfConfig:
         max_seq_len: Optional[int] = None
     ):
         self.embed_dim = default(embed_dim, 512)
-        self.ffwd_width = default(ffwd_width, 1024)
-        self.ffwd_depth = default(ffwd_depth, 4)
+        self.ffwd_dim = default(ffwd_dim, 1024)
         self.num_heads = default(num_heads, 4)
         self.num_layers = default(num_layers, 8)
         self.activ = default(activ, "relu")
@@ -62,11 +60,10 @@ class AFBlock(nn.Module):
         self.attn = nn.MultiheadAttention(config.embed_dim, config.num_heads)
 
         # Feedforward block construction
-        ffwd_parts = [nn.Linear(config.embed_dim, config.ffwd_width), get_activ(config.activ)]
-        for i in range(config.ffwd_depth-1):
-            ffwd_parts += [nn.Linear(config.ffwd_width, config.ffwd_width), get_activ(config.activ)]
-        ffwd_parts.append(nn.Linear(config.ffwd_width, config.embed_dim))
-        self.ffwd = nn.Sequential(*ffwd_parts)
+        self.ffwd = nn.Sequential(
+            nn.Linear(config.embed_dim, config.ffwd_dim),
+            nn.ReLU(),
+            nn.Linear(config.ffwd_dim, config.embed_dim))
 
     def forward(self, x: torch.FloatTensor):
         z, a = self.attn(x, x, x)

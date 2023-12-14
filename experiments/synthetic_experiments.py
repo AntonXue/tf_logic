@@ -272,7 +272,9 @@ def make_trainer_for_synthetic(
             evaluation_strategy = "epoch",
             report_to = report_to,
             run_name = synexp_args_to_wandb_run_name(args),
-            logging_steps = args.logging_steps)
+            logging_steps = args.logging_steps,
+            warmup_ratio = 0.10,
+            save_steps = 1000)
 
         return Trainer(
             tfl_model,
@@ -334,7 +336,9 @@ def make_trainer_for_synthetic(
             evaluation_strategy = "epoch",
             report_to = report_to,
             run_name = synexp_args_to_wandb_run_name(args),
-            logging_steps = args.logging_steps)
+            logging_steps = args.logging_steps,
+            warmup_ratio = 0.10,
+            save_steps = 1000)
 
         return Trainer(
             tfl_model,
@@ -382,7 +386,9 @@ def make_trainer_for_synthetic(
             evaluation_strategy = "epoch",
             report_to = report_to,
             run_name = synexp_args_to_wandb_run_name(args),
-            logging_steps = args.logging_steps)
+            logging_steps = args.logging_steps,
+            warmup_ratio = 0.10,
+            save_steps = 1000)
 
         return Trainer(
             tfl_model,
@@ -431,7 +437,9 @@ def make_trainer_for_synthetic(
             evaluation_strategy = "epoch",
             report_to = report_to,
             run_name = synexp_args_to_wandb_run_name(args),
-            logging_steps = args.logging_steps)
+            logging_steps = args.logging_steps,
+            warmup_ratio = 0.10,
+            save_steps = 1000)
 
         return Trainer(
             tfl_model,
