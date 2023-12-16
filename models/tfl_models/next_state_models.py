@@ -49,15 +49,12 @@ class NextStateEmbedsTFLModel(TFLModel):
         rules: torch.LongTensor,
         state: torch.LongTensor,
         labels: Optional[torch.LongTensor] = None,
-        seqcls_model_kwargs: Optional[dict] = None
+        seqcls_model_kwargs: dict = {}
     ):
         """ rules: (N,r,2n), state: (N,n), labels: (N,n) """
-        device = rules.device
-        seqcls_model_kwargs = default(seqcls_model_kwargs, {})
-
         tokens = self._prepare_input_tokens(rules, state)
         x = self.encoder(tokens.float()) # (batch_size, seq_len, embed_dim)
-        pos_embeds = self.pos_embedding(torch.arange(0, x.size(1)).to(device))
+        pos_embeds = self.pos_embedding(torch.arange(0, x.size(1)).to(rules.device))
         x = x + pos_embeds.view(1, x.size(1), -1)
 
         seqcls_out = self.seqcls_model(x, labels=labels, **seqcls_model_kwargs)
@@ -70,5 +67,45 @@ class NextStateEmbedsTFLModel(TFLModel):
 
 class NextStateStringTFLModel(TFLModel):
     pass
+
+
+
+@dataclass
+class NextStateFromTokensTFLConfig(TFLConfig):
+    num_vars: int
+    max_seq_len: int = 1024
+
+
+@dataclass
+class NextStateFromTokensTFLOutput(ModelOutput):
+    loss: Optional[torch.FloatTensor] = None
+    logits: Optional[torch.FloatTensor] = None
+    seqcls_output: Optional[ModelOutput] = None
+
+
+
+class NextStateFromTokensEmbedsTFLModel(TFLModel):
+    def __init__(self, seqcls_model: nn.Module, config: NextStateFromTokensTFLConfig):
+        super().__init__(seqcls_model, config)
+        self.token_dim = 1 + 2 * self.num_vars
+        self.encoder = nn.Linear(self.token_dim, self.embed_dim)
+        self.pos_embedding = nn.Embedding(self.max_seq_len, self.embed_dim)
+
+    def forward(
+        self,
+        tokens: torch.LongTensor,
+        labels: Optional[torch.LongTensor] = None,
+        seqcls_model_kwargs:dict = {},
+    ):
+        """ tokens: (batch_size, seq_len, token_dim) """
+        x = self.encoder(tokens.float())
+        pos_embeds = self.pos_embedding(torch.arange(0, x.size(1)).to(x.device))
+        x = x + pos_embeds.view(1, x.size(1), -1)
+
+        seqcls_out = self.seqcls_model(x, labels=labels, **seqcls_model_kwargs)
+        return NextStateFromTokensTFLOutput(
+            loss = seqcls_out.loss,
+            logits = seqcls_out.logits,
+            seqcls_output = seqcls_out)
 
 

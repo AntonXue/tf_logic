@@ -46,13 +46,12 @@ class AutoRegKStepsEmbedsTFLModel(TFLModel):
         rules: torch.LongTensor,
         state: Optional[torch.LongTensor] = None,
         labels: Optional[torch.LongTensor] = None,
-        seqcls_model_kwargs: Optional[dict] = None
+        seqcls_model_kwargs: dict = {}
     ):
         """ rules: (N,r,2n), state: (N,n) """
         N, _, _ = rules.shape
         device = rules.device
         state = default(state, torch.zeros(N,self.num_vars).long().to(device))
-        seqcls_model_kwargs = default(seqcls_model_kwargs, {})
 
         cls_token = self.cls_tag.view(1,1,-1).repeat(N,1,1).to(device)  # (N,1,token_dim)
         sep_token = self.sep_tag.view(1,1,-1).repeat(N,1,1).to(device)  # (N,1,token_dim)

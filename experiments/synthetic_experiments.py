@@ -15,8 +15,6 @@ from experiments_init import *
 from evaluation_utils import *
 
 
-from tqdm import tqdm
-
 """ Parser for Hugging Face """
 
 @dataclass
@@ -96,6 +94,21 @@ class SyntheticExperimentArguments:
         metadata = {"help": "The attmeped length of the deduction chain for a random dataset."}
     )
 
+    min_num_rules: Optional[int] = field(
+        default = 5,
+        metadata = {"help": "The minimum number of rules to randomly generate."}
+    )
+
+    max_num_rules: Optional[int] = field(
+        default = 10,
+        metadata = {"help": "The maximum number of rules to randomly generate."}
+    )
+
+    max_num_states: Optional[int] = field(
+        default = 5,
+        metadata = {"help": "The maximum number of states to randomly generate."}
+    )
+
     train_len: Optional[int] = field(
         default = None,
         metadata = {"help": "The number of elements in the training dataset."}
@@ -135,7 +148,7 @@ class SyntheticExperimentArguments:
 
     logging_steps: int = field(
         default = 10,
-        metadata = {"help": "How often the Hugging Face Trainer logs"}
+        metadata = {"help": "How often the HF's Trainer logs."}
     )
 
 
@@ -155,6 +168,13 @@ def synexp_args_to_wandb_run_name(args: SyntheticExperimentArguments):
 
     elif args.syn_exp_name == "next_state":
         return f"SynNextState_nr{args.num_rules}_nv{args.num_vars}" + \
+               f"_{args.model_name}_d{args.embed_dim}_L{args.num_layers}_H{args.num_heads}" + \
+               f"_ap{args.ante_prob:.2f}_bp{args.conseq_prob}_sp{args.state_prob}" + \
+               f"_ntr{args.train_len}_ntt{args.eval_len}"
+
+    elif args.syn_exp_name == "next_state_from_tokens":
+        return f"SynNextState_nr({args.min_num_rules},{args.max_num_rules})" +\
+               f"_nv{args.num_vars}({args.max_num_states})" + \
                f"_{args.model_name}_d{args.embed_dim}_L{args.num_layers}_H{args.num_heads}" + \
                f"_ap{args.ante_prob:.2f}_bp{args.conseq_prob}_sp{args.state_prob}" + \
                f"_ntr{args.train_len}_ntt{args.eval_len}"
@@ -208,6 +228,12 @@ def trainer_stats_for_wandb(
             "eval_succ_diffs": num_eval_succ_diffs.item()
         }
 
+    elif args.syn_exp_name == "next_state_from_tokens":
+        return {
+            "train_len": len(trainer.train_dataset),
+            "eval_len": len(trainer.eval_dataset),
+        }
+
     elif args.syn_exp_name == "autoreg_ksteps":
         num_train_kstep_diffs = torch.tensor(0)
         for i in range(len(trainer.train_dataset)):
@@ -253,7 +279,7 @@ def make_trainer_for_synthetic(
             conseq_prob = args.conseq_prob,
             chain_len = args.chain_len,
             dataset_len = args.eval_len,
-            seed = args.seed)
+            seed = args.seed + 1)
 
         tfl_model = AutoTFLModel.from_kwargs(
             task_name = "one_shot",
@@ -273,7 +299,7 @@ def make_trainer_for_synthetic(
             report_to = report_to,
             run_name = synexp_args_to_wandb_run_name(args),
             logging_steps = args.logging_steps,
-            warmup_ratio = 0.10,
+            warmup_ratio = 0.20,
             save_steps = 1000)
 
         return Trainer(
@@ -306,7 +332,7 @@ def make_trainer_for_synthetic(
             conseq_prob = args.conseq_prob,
             theorem_prob = args.theorem_prob,
             dataset_len = args.eval_len,
-            seed = args.seed,
+            seed = args.seed + 1,
             tokenizer = tokenizer,
             # TODO: Support longest padding for config loaded models
             # Need to move the tokenization to batch-level
@@ -337,7 +363,7 @@ def make_trainer_for_synthetic(
             report_to = report_to,
             run_name = synexp_args_to_wandb_run_name(args),
             logging_steps = args.logging_steps,
-            warmup_ratio = 0.10,
+            warmup_ratio = 0.20,
             save_steps = 1000)
 
         return Trainer(
@@ -367,7 +393,7 @@ def make_trainer_for_synthetic(
             conseq_prob = args.conseq_prob,
             state_prob = args.state_prob,
             dataset_len = args.eval_len,
-            seed = args.seed)
+            seed = args.seed + 1)
 
         tfl_model = AutoTFLModel.from_kwargs(
             task_name = "next_state",
@@ -387,7 +413,59 @@ def make_trainer_for_synthetic(
             report_to = report_to,
             run_name = synexp_args_to_wandb_run_name(args),
             logging_steps = args.logging_steps,
-            warmup_ratio = 0.10,
+            warmup_ratio = 0.20,
+            save_steps = 1000)
+
+        return Trainer(
+            tfl_model,
+            training_args,
+            train_dataset = train_dataset,
+            eval_dataset = eval_dataset,
+            compute_metrics = next_state_metrics)
+
+
+    elif args.syn_exp_name == "next_state_from_tokens":
+        train_dataset = NextStateFromTokensEmbedsDataset(
+            num_vars = args.num_vars,
+            min_num_rules = args.min_num_rules,
+            max_num_rules = args.max_num_rules,
+            ante_prob = args.ante_prob,
+            conseq_prob = args.conseq_prob,
+            state_prob = args.state_prob,
+            max_num_states = args.max_num_states,
+            dataset_len = args.train_len,
+            seed = args.seed)
+
+        eval_dataset = NextStateFromTokensEmbedsDataset(
+            num_vars = args.num_vars,
+            min_num_rules = args.min_num_rules,
+            max_num_rules = args.max_num_rules,
+            ante_prob = args.ante_prob,
+            conseq_prob = args.conseq_prob,
+            state_prob = args.state_prob,
+            max_num_states = args.max_num_states,
+            dataset_len = args.eval_len,
+            seed = args.seed + 1)
+
+        tfl_model = AutoTFLModel.from_kwargs(
+            task_name = "next_state_from_tokens",
+            num_vars = args.num_vars,
+            model_name = args.model_name,
+            embed_dim = args.embed_dim,
+            num_layers = args.num_layers,
+            num_heads = args.num_heads)
+
+        training_args = TrainingArguments(
+            args.output_dir,
+            num_train_epochs = args.num_epochs,
+            per_device_train_batch_size = args.train_batch_size,
+            per_device_eval_batch_size = args.eval_batch_size,
+            auto_find_batch_size = args.auto_find_batch_size,
+            evaluation_strategy = "epoch",
+            report_to = report_to,
+            run_name = synexp_args_to_wandb_run_name(args),
+            logging_steps = args.logging_steps,
+            warmup_ratio = 0.20,
             save_steps = 1000)
 
         return Trainer(
@@ -417,7 +495,7 @@ def make_trainer_for_synthetic(
             conseq_prob = args.conseq_prob,
             state_prob = args.state_prob,
             dataset_len = args.eval_len,
-            seed = args.seed)
+            seed = args.seed + 1)
 
         tfl_model = AutoTFLModel.from_kwargs(
             task_name = "autoreg_ksteps",
@@ -438,7 +516,7 @@ def make_trainer_for_synthetic(
             report_to = report_to,
             run_name = synexp_args_to_wandb_run_name(args),
             logging_steps = args.logging_steps,
-            warmup_ratio = 0.10,
+            warmup_ratio = 0.20,
             save_steps = 1000)
 
         return Trainer(
@@ -447,6 +525,7 @@ def make_trainer_for_synthetic(
             train_dataset = train_dataset,
             eval_dataset = eval_dataset,
             compute_metrics = autoreg_ksteps_metrics)
+
 
     else:
         raise ValueError(f"Unrecognized exp_name {args.syn_exp_name}")

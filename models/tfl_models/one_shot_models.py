@@ -49,11 +49,10 @@ class OneShotEmbedsTFLModel(TFLModel):
         rules: torch.LongTensor,
         theorem: torch.LongTensor,
         labels: Optional[torch.LongTensor] = None,
-        seqcls_model_kwargs: Optional[dict] = None
+        seqcls_model_kwargs: dict = {}
     ):
         """ rules: (N, r, 2n), theorem: (N,n), labels: (N,) """
         device = rules.device
-        seqcls_model_kwargs = default(seqcls_model_kwargs, {})
 
         tokens = self._prepare_input_tokens(rules, theorem)
         x = self.encoder(tokens.float()) # (batch_size, seq_len, embed_dim)

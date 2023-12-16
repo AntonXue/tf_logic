@@ -77,6 +77,16 @@ class AutoTFLModel:
             config = NextStateTFLConfig(num_vars=num_vars)
             return NextStateEmbedsTFLModel(seqcls_model, config)
 
+        elif task_name == "next_state_from_tokens":
+            num_vars = kwargs.pop("num_vars")
+
+            kwargs["problem_type"] = "multi_label_classification"
+            kwargs["num_labels"] = num_vars
+
+            seqcls_model = AutoSeqClsModel.from_kwargs(model_name, **kwargs)
+            config = NextStateFromTokensTFLConfig(num_vars=num_vars)
+            return NextStateFromTokensEmbedsTFLModel(seqcls_model, config)
+
         elif task_name == "autoreg_ksteps":
             num_vars = kwargs.pop("num_vars")
             num_steps = kwargs.pop("num_steps")
@@ -87,6 +97,7 @@ class AutoTFLModel:
             seqcls_model = AutoSeqClsModel.from_kwargs(model_name, **kwargs)
             config = AutoRegKStepsTFLConfig(num_vars=num_vars, num_steps=num_steps)
             return AutoRegKStepsEmbedsTFLModel(seqcls_model, config)
+
 
         else:
             raise ValueError(f"Unrecognized task_name {task_name}")

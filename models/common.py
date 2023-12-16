@@ -30,15 +30,27 @@ class TFLConfig: pass
 class TFLModel(nn.Module):
     def __init__(self, seqcls_model: nn.Module, config: TFLConfig):
         super().__init__()
+        assert hasattr(seqcls_model, "model_name")
+        assert hasattr(seqcls_model, "embed_dim")
+        assert hasattr(seqcls_model, "num_labels")
         self.seqcls_model = seqcls_model
-        self.model_name = seqcls_model.model_name
-        self.embed_dim = seqcls_model.embed_dim
-        self.num_labels = seqcls_model.num_labels
 
-        # transformer.Trainer with wandb checks whether the model has a config attr,
-        # and will force us to implement a to_dict function if so.
+        # HF's transformer.Trainer with wandb checks whether the model has a
+        # config attr and will force us to implement a to_dict function if so.
         # self.config = config
         for k, v in asdict(config).items():
             self.__setattr__(k, v)
+
+    @property
+    def model_name(self):
+        return self.seqcls_model.model_name
+
+    @property
+    def embed_dim(self):
+        return self.seqcls_model.embed_dim
+
+    @property
+    def num_labels(self):
+        return self.seqcls_model.num_labels
 
 
