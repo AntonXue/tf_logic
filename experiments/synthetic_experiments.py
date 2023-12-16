@@ -173,8 +173,8 @@ def synexp_args_to_wandb_run_name(args: SyntheticExperimentArguments):
                f"_ntr{args.train_len}_ntt{args.eval_len}"
 
     elif args.syn_exp_name == "next_state_from_tokens":
-        return f"SynNextState_nr({args.min_num_rules},{args.max_num_rules})" +\
-               f"_nv{args.num_vars}({args.max_num_states})" + \
+        return f"SynNextStateFromTokens_nr{args.min_num_rules}-{args.max_num_rules}" +\
+               f"_nv{args.num_vars}_ns{args.max_num_states}" + \
                f"_{args.model_name}_d{args.embed_dim}_L{args.num_layers}_H{args.num_heads}" + \
                f"_ap{args.ante_prob:.2f}_bp{args.conseq_prob}_sp{args.state_prob}" + \
                f"_ntr{args.train_len}_ntt{args.eval_len}"
