@@ -175,6 +175,7 @@ class NextStateFromTokensEmbedsDataset(Dataset):
         ante_prob: float,
         conseq_prob: float,
         state_prob: float,
+        min_num_states: int,
         max_num_states: int,
         dataset_len: int,
         seed: int = 1234,
@@ -184,6 +185,7 @@ class NextStateFromTokensEmbedsDataset(Dataset):
         assert min_num_rules > 2
         assert min_num_rules < max_num_rules
         assert max_num_states > 2
+        assert min_num_states < max_num_states
 
         self.num_vars = num_vars
         self.min_num_rules = min_num_rules
@@ -191,6 +193,7 @@ class NextStateFromTokensEmbedsDataset(Dataset):
         self.ante_prob = ante_prob
         self.conseq_prob = conseq_prob
         self.state_prob = state_prob
+        self.min_num_states = min_num_states
         self.max_num_states = max_num_states
         self.dataset_len = dataset_len
         self.seed = seed
@@ -204,7 +207,7 @@ class NextStateFromTokensEmbedsDataset(Dataset):
 
         # Generate some states, starting from a big_state from which we derive other stuff
         big_state = (torch.rand(1,self.num_vars) < self.state_prob).long()
-        num_states = random.randint(1, self.max_num_states)
+        num_states = random.randint(self.min_num_states, self.max_num_states)
         other_states = (torch.rand(num_states-1, self.num_vars) < 0.5) * big_state
         all_states = torch.cat([big_state, other_states], dim=0)
 

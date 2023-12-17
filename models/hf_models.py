@@ -17,6 +17,7 @@ class HFSeqClsConfig:
         self,
         model_name: str,
         embed_dim: Optional[int] = None,
+        ffwd_dim: Optional[int] = None,
         num_heads: Optional[int] = None,
         num_layers: Optional[int] = None,
         num_labels: Optional[int] = None,
@@ -40,12 +41,13 @@ class HFSeqClsConfig:
         if model_name == "gpt2":
             config_kwargs = {
                 "n_embd": embed_dim,
-                "n_head" : num_heads,
-                "n_layer" : num_layers,
-                "num_labels" : num_labels,
-                "problem_type" : problem_type,
-                "n_positions" : max_seq_len,
-                "pad_token_id" : GPT2Config().eos_token_id
+                "n_inner": ffwd_dim,
+                "n_head": num_heads,
+                "n_layer": num_layers,
+                "num_labels": num_labels,
+                "problem_type": problem_type,
+                "n_positions": max_seq_len,
+                "pad_token_id": GPT2Config().eos_token_id
             }
 
             self.pretrained_model_name = "gpt2"
@@ -54,11 +56,12 @@ class HFSeqClsConfig:
         elif model_name == "bert":
             config_kwargs = {
                 "hidden_size": embed_dim,
+                "intermediate_size": ffwd_dim,
                 "num_attention_heads": num_heads,
-                "num_hidden_layers" : num_layers,
-                "num_labels" : num_labels,
-                "problem_type" : problem_type,
-                "max_position_embeddings" : max_seq_len,
+                "num_hidden_layers": num_layers,
+                "num_labels": num_labels,
+                "problem_type": problem_type,
+                "max_position_embeddings": max_seq_len,
             }
 
             self.pretrained_model_name = "bert-base-uncased"
@@ -67,6 +70,7 @@ class HFSeqClsConfig:
         elif model_name == "roberta":
             config_kwargs = {
                 "hidden_size": embed_dim,
+                "intermediate_size": ffwd_dim,
                 "num_hidden_layers": num_layers,
                 "num_attention_heads": num_heads,
                 "num_labels" : num_labels,
@@ -79,6 +83,7 @@ class HFSeqClsConfig:
         elif model_name == "code_llama":
             config_kwargs = {
                 "hidden_size": embed_dim,
+                "intermediate_size": ffwd_dim,
                 "num_hidden_layers": num_layers,
                 "num_attention_heads": num_heads,
                 "num_labels" : num_labels,

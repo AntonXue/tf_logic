@@ -42,6 +42,11 @@ class SyntheticExperimentArguments:
         metadata = {"help": "The model's embedding (i.e., hidden) dimension."}
     )
 
+    ffwd_dim: Optional[int] = field(
+        default = None,
+        metadata = {"help": "The transformer's MLP dimension."}
+    )
+
     num_layers: Optional[int] = field(
         default = None,
         metadata = {"help": "The model's number of transformer layers."}
@@ -104,8 +109,13 @@ class SyntheticExperimentArguments:
         metadata = {"help": "The maximum number of rules to randomly generate."}
     )
 
-    max_num_states: Optional[int] = field(
+    min_num_states: Optional[int] = field(
         default = 5,
+        metadata = {"help": "The minimum number of states to randomly generate."}
+    )
+
+    max_num_states: Optional[int] = field(
+        default = 10,
         metadata = {"help": "The maximum number of states to randomly generate."}
     )
 
@@ -125,7 +135,7 @@ class SyntheticExperimentArguments:
         default = 8,
         metadata = {"help": "The train batch size."}
     )
-    
+
     eval_batch_size: Optional[int] = field(
         default = 8,
         metadata = {"help": "The eval (i.e., validation) batch size."}
@@ -135,7 +145,7 @@ class SyntheticExperimentArguments:
         default = True,
         metadata = {"help": "Automatically scale batch size if it encounters out-of-memory."}
     )
- 
+
     num_epochs: Optional[int] = field(
         default = 100,
         metadata = {"help": "The number of epochs for training."}
@@ -153,38 +163,44 @@ class SyntheticExperimentArguments:
 
 
 def synexp_args_to_wandb_run_name(args: SyntheticExperimentArguments):
+    model_str = f"{args.model_name}" + \
+                (f"_pt" if args.use_pretrained else "") + \
+                (f"_d{args.embed_dim}" if args.embed_dim is not None else "") + \
+                (f"_fd{args.ffwd_dim}" if args.ffwd_dim is not None else "") + \
+                (f"_L{args.num_layers}" if args.num_layers is not None else "") + \
+                (f"_H{args.num_layers}" if args.num_heads is not None else "")
+
     if args.syn_exp_name == "one_shot":
-        return f"SynOneShot_nr{args.num_rules}_nv{args.num_vars}" + \
-               f"_{args.model_name}_d{args.embed_dim}_L{args.num_layers}_H{args.num_heads}" + \
-               f"_ap{args.ante_prob:.2f}_bp{args.conseq_prob}_cl{args.chain_len}" + \
-               f"_ntr{args.train_len}_ntt{args.eval_len}"
-    
+        return f"SynOS_{model_str}__" + \
+            f"nv{args.num_vars}_nr{args.num_rules}" + \
+            f"_ap{args.ante_prob:.2f}_bp{args.conseq_prob:.2f}_tp{args.theorem_prob:.2f}" + \
+            f"_cl{args.chain_len}_ntr{args.train_len}_ntt{args.eval_len}"
+
     elif args.syn_exp_name == "one_shot_str":
-        model_str = f"_{args.model_name}-pretrained" if args.use_pretrained else f"_{args.model_name}_d{args.embed_dim}_L{args.num_layers}_H{args.num_heads}"
-        return f"SynOneShotStr_nr{args.num_rules}_nv{args.num_vars}" + \
-               f"{model_str}" + \
-               f"_ap{args.ante_prob:.2f}_bp{args.conseq_prob}_tp{args.theorem_prob}" + \
-               f"_ntr{args.train_len}_ntt{args.eval_len}"
+        return f"SynOSstr__{model_str}__" + \
+            f"nv{args.num_vars}_nr{args.num_rules}" + \
+            f"_ap{args.ante_prob:.2f}_bp{args.conseq_prob:.2f}_tp{args.theorem_prob:.2f}" + \
+            f"_cl{args.chain_len}_ntr{args.train_len}_ntt{args.eval_len}"
 
     elif args.syn_exp_name == "next_state":
-        return f"SynNextState_nr{args.num_rules}_nv{args.num_vars}" + \
-               f"_{args.model_name}_d{args.embed_dim}_L{args.num_layers}_H{args.num_heads}" + \
-               f"_ap{args.ante_prob:.2f}_bp{args.conseq_prob}_sp{args.state_prob}" + \
-               f"_ntr{args.train_len}_ntt{args.eval_len}"
+        return f"SynNS_{model_str}__" + \
+            f"nv{args.num_vars}_nr{args.num_rules}" + \
+            f"_ap{args.ante_prob:.2f}_bp{args.conseq_prob:.2f}_sp{args.state_prob:.2f}" + \
+            f"_ntr{args.train_len}_ntt{args.eval_len}"
 
     elif args.syn_exp_name == "next_state_from_tokens":
-        return f"SynNextStateFromTokens_nr{args.min_num_rules}-{args.max_num_rules}" +\
-               f"_nv{args.num_vars}_ns{args.max_num_states}" + \
-               f"_{args.model_name}_d{args.embed_dim}_L{args.num_layers}_H{args.num_heads}" + \
-               f"_ap{args.ante_prob:.2f}_bp{args.conseq_prob}_sp{args.state_prob}" + \
-               f"_ntr{args.train_len}_ntt{args.eval_len}"
+        return f"SynNSFT_{model_str}__" + \
+            f"nv{args.num_vars}" + \
+            f"_nr{args.min_num_rules}-{args.max_num_rules}" + \
+            f"_ns{args.min_num_states}-{args.max_num_states}" + \
+            f"_ap{args.ante_prob:.2f}_bp{args.conseq_prob:.2f}_sp{args.state_prob:.2f}" + \
+            f"_ntr{args.train_len}_ntt{args.eval_len}"
 
     elif args.syn_exp_name == "autoreg_ksteps":
-        return f"SynARKSteps_nr{args.num_rules}_nv{args.num_vars}_ns{args.num_steps}" + \
-               f"_{args.model_name}_d{args.embed_dim}_L{args.num_layers}_H{args.num_heads}" + \
-               f"_ap{args.ante_prob:.2f}_bp{args.conseq_prob}_sp{args.state_prob}" + \
-               f"_ntr{args.train_len}_ntt{args.eval_len}"
-
+        return f"SynAR_{model_str}__" + \
+            f"nv{args.num_vars}_nr{args.num_rules}" + \
+            f"_ap{args.ante_prob:.2f}_bp{args.conseq_prob:.2f}_sp{args.state_prob:.2f}" + \
+            f"_cl{args.chain_len}_ntr{args.train_len}_ntt{args.eval_len}"
     else:
         raise ValueError(f"Unrecognized syn_exp_name {args.syn_exp_name}")
 
@@ -308,7 +324,7 @@ def make_trainer_for_synthetic(
             train_dataset = train_dataset,
             eval_dataset = eval_dataset,
             compute_metrics = one_shot_metrics)
-    
+
     elif args.syn_exp_name == "one_shot_str":
         # Get the tokenizer to create the dataset
         tokenizer = AutoTokenizer.from_pretrained(args.model_name)
@@ -337,7 +353,7 @@ def make_trainer_for_synthetic(
             # TODO: Support longest padding for config loaded models
             # Need to move the tokenization to batch-level
             padding = "longest" if args.use_pretrained else "max_length")
-        
+
         if args.use_pretrained:
             tfl_model = AutoTFLModel.from_pretrained(
                 task_name = "one_shot_str",
@@ -432,6 +448,7 @@ def make_trainer_for_synthetic(
             ante_prob = args.ante_prob,
             conseq_prob = args.conseq_prob,
             state_prob = args.state_prob,
+            min_num_states = args.min_num_states,
             max_num_states = args.max_num_states,
             dataset_len = args.train_len,
             seed = args.seed)
@@ -443,6 +460,7 @@ def make_trainer_for_synthetic(
             ante_prob = args.ante_prob,
             conseq_prob = args.conseq_prob,
             state_prob = args.state_prob,
+            min_num_states = args.min_num_states,
             max_num_states = args.max_num_states,
             dataset_len = args.eval_len,
             seed = args.seed + 1)
