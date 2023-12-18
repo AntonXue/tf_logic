@@ -168,7 +168,7 @@ def synexp_args_to_wandb_run_name(args: SyntheticExperimentArguments):
                 (f"_d{args.embed_dim}" if args.embed_dim is not None else "") + \
                 (f"_fd{args.ffwd_dim}" if args.ffwd_dim is not None else "") + \
                 (f"_L{args.num_layers}" if args.num_layers is not None else "") + \
-                (f"_H{args.num_layers}" if args.num_heads is not None else "")
+                (f"_H{args.num_heads}" if args.num_heads is not None else "")
 
     if args.syn_exp_name == "one_shot":
         return f"SynOS_{model_str}__" + \

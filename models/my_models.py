@@ -25,7 +25,7 @@ class MyTfConfig:
         max_seq_len: Optional[int] = None
     ):
         self.embed_dim = default(embed_dim, 512)
-        self.ffwd_dim = default(ffwd_dim, 1024)
+        self.ffwd_dim = default(ffwd_dim, 4 * self.embed_dim)
         self.num_heads = default(num_heads, 4)
         self.num_layers = default(num_layers, 8)
         self.activ = default(activ, "relu")
