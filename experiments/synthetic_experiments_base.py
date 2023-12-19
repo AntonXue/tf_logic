@@ -14,7 +14,6 @@ from my_datasets import *
 from experiments_init import *
 from evaluation_utils import *
 
-
 """ Parser for Hugging Face """
 
 @dataclass
@@ -321,23 +320,16 @@ def make_trainer_for_synthetic(
     """ Make a Hugging Face Trainer object """
 
     if args.syn_exp_name == "one_shot":
-        train_dataset = OneShotEmbedsDataset(
+        big_dataset = OneShotEmbedsDataset(
             num_rules = args.num_rules,
             num_vars = args.num_vars,
             ante_prob = args.ante_prob,
             conseq_prob = args.conseq_prob,
             chain_len = args.chain_len,
-            dataset_len = args.train_len,
-            seed = args.seed)
+            dataset_len = args.train_len + args.eval_len)
 
-        eval_dataset = OneShotEmbedsDataset(
-            num_rules = args.num_rules,
-            num_vars = args.num_vars,
-            ante_prob = args.ante_prob,
-            conseq_prob = args.conseq_prob,
-            chain_len = args.chain_len,
-            dataset_len = args.eval_len,
-            seed = args.seed + 1)
+        train_dataset, eval_dataset = \
+            torch.utils.data.random_split(big_dataset, [args.train_len, args.eval_len])
 
         tfl_model = AutoTFLModel.from_kwargs(
             task_name = "one_shot",
@@ -373,28 +365,18 @@ def make_trainer_for_synthetic(
         tokenizer.pad_token = tokenizer.eos_token
         data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
 
-        train_dataset = OneShotStringDataset(
+        big_dataset = OneShotStringDataset(
             num_rules = args.num_rules,
             num_vars = args.num_vars,
             ante_prob = args.ante_prob,
             conseq_prob = args.conseq_prob,
             theorem_prob = args.theorem_prob,
-            dataset_len = args.train_len,
-            seed = args.seed,
-            tokenizer = tokenizer)
-
-        eval_dataset = OneShotStringDataset(
-            num_rules = args.num_rules,
-            num_vars = args.num_vars,
-            ante_prob = args.ante_prob,
-            conseq_prob = args.conseq_prob,
-            theorem_prob = args.theorem_prob,
-            dataset_len = args.eval_len,
-            seed = args.seed + 1,
+            dataset_len = args.train_len + args.eval_len,
             tokenizer = tokenizer,
-            # TODO: Support longest padding for config loaded models
-            # Need to move the tokenization to batch-level
             padding = "longest" if args.use_pretrained else "max_length")
+
+        train_dataset, eval_dataset = \
+            torch.utils.data.random_split(big_dataset, [args.train_len, args.eval_len])
 
         if args.use_pretrained:
             tfl_model = AutoTFLModel.from_pretrained(
@@ -435,23 +417,16 @@ def make_trainer_for_synthetic(
 
 
     elif args.syn_exp_name == "next_state":
-        train_dataset = NextStateEmbedsDataset(
+        big_dataset = NextStateEmbedsDataset(
             num_rules = args.num_rules,
             num_vars = args.num_vars,
             ante_prob = args.ante_prob,
             conseq_prob = args.conseq_prob,
             state_prob = args.state_prob,
-            dataset_len = args.train_len,
-            seed = args.seed)
+            dataset_len = args.train_len + args.eval_len)
 
-        eval_dataset = NextStateEmbedsDataset(
-            num_rules = args.num_rules,
-            num_vars = args.num_vars,
-            ante_prob = args.ante_prob,
-            conseq_prob = args.conseq_prob,
-            state_prob = args.state_prob,
-            dataset_len = args.eval_len,
-            seed = args.seed + 1)
+        train_dataset, eval_dataset = \
+            torch.utils.data.random_split(big_dataset, [args.train_len, args.eval_len])
 
         tfl_model = AutoTFLModel.from_kwargs(
             task_name = "next_state",
@@ -483,25 +458,17 @@ def make_trainer_for_synthetic(
 
 
     elif args.syn_exp_name == "next_state_from_tokens":
-        train_dataset = NextStateFromTokensEmbedsDataset(
+        big_dataset = NextStateFromTokensEmbedsDataset(
             num_vars = args.num_vars,
             num_rules_range = (args.min_num_rules, args.max_num_rules),
             num_states_range = (args.min_num_states, args.max_num_states),
             ante_prob_range = (args.min_ante_prob, args.max_ante_prob),
             conseq_prob_range = (args.min_conseq_prob, args.max_conseq_prob),
             state_prob_range = (args.min_state_prob, args.max_state_prob),
-            dataset_len = args.train_len,
-            seed = args.seed)
+            dataset_len = args.train_len + args.eval_len)
 
-        eval_dataset = NextStateFromTokensEmbedsDataset(
-            num_vars = args.num_vars,
-            num_rules_range = (args.min_num_rules, args.max_num_rules),
-            num_states_range = (args.min_num_states, args.max_num_states),
-            ante_prob_range = (args.min_ante_prob, args.max_ante_prob),
-            conseq_prob_range = (args.min_conseq_prob, args.max_conseq_prob),
-            state_prob_range = (args.min_state_prob, args.max_state_prob),
-            dataset_len = args.eval_len,
-            seed = args.seed + 1)
+        train_dataset, eval_dataset = \
+            torch.utils.data.random_split(big_dataset, [args.train_len, args.eval_len])
 
         tfl_model = AutoTFLModel.from_kwargs(
             task_name = "next_state_from_tokens",
@@ -533,25 +500,17 @@ def make_trainer_for_synthetic(
 
 
     elif args.syn_exp_name == "autoreg_ksteps":
-        train_dataset = AutoRegKStepsEmbedsDataset(
+        big_dataset = AutoRegKStepsEmbedsDataset(
             num_rules = args.num_rules,
             num_vars = args.num_vars,
             num_steps = args.num_steps,
             ante_prob = args.ante_prob,
             conseq_prob = args.conseq_prob,
             state_prob = args.state_prob,
-            dataset_len = args.train_len,
-            seed = args.seed)
+            dataset_len = args.train_len + args.eval_len)
 
-        eval_dataset = AutoRegKStepsEmbedsDataset(
-            num_rules = args.num_rules,
-            num_vars = args.num_vars,
-            num_steps = args.num_steps,
-            ante_prob = args.ante_prob,
-            conseq_prob = args.conseq_prob,
-            state_prob = args.state_prob,
-            dataset_len = args.eval_len,
-            seed = args.seed + 1)
+        train_dataset, eval_dataset = \
+            torch.utils.data.random_split(big_dataset, [args.train_len, args.eval_len])
 
         tfl_model = AutoTFLModel.from_kwargs(
             task_name = "autoreg_ksteps",
@@ -592,6 +551,9 @@ def make_trainer_for_synthetic(
 if __name__ == "__main__":
     parser = HfArgumentParser(SyntheticExperimentArguments)
     args = parser.parse_args_into_dataclasses()[0]
+
+    torch.manual_seed(args.seed)
+
     trainer = make_trainer_for_synthetic(args)
 
     # Log some preliminary training stats

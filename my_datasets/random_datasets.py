@@ -4,8 +4,6 @@ from torch.utils.data import Dataset
 from my_datasets.dataset_utils import *
 from . import logic
 
-_PRIMEA = 17
-_PRIMEB = 19
 
 class OneShotEmbedsDataset(Dataset):
     """ For task of checking one-shot QED, generate a bunch of random rules """
@@ -16,8 +14,7 @@ class OneShotEmbedsDataset(Dataset):
         ante_prob: float,
         conseq_prob: float,
         dataset_len: int,
-        chain_len: int = 3,
-        seed: int = 1234
+        chain_len: int = 3
     ):
         self.num_rules = num_rules
         self.num_vars = num_vars
@@ -25,14 +22,12 @@ class OneShotEmbedsDataset(Dataset):
         self.conseq_prob = conseq_prob
         self.chain_len = chain_len
         self.dataset_len = dataset_len
-        self.seed = seed
 
     def __len__(self):
         """ We can indefinitely generate more, but set an artificial cap """
         return self.dataset_len
 
     def __getitem__(self, idx):
-        torch.manual_seed(self.seed + _PRIMEA*(idx**2) + _PRIMEB*idx)  # How to guarantee determinism
         rules_dict = logic.random_rules_with_chain(
             num_rules = self.num_rules,
             num_vars = self.num_vars,
@@ -69,7 +64,6 @@ class OneShotStringDataset(Dataset):
         conseq_prob: float,
         theorem_prob: float,
         dataset_len: int,
-        seed: int = 1234,
         tokenizer: object = None,
         padding: str = "longest"
     ):
@@ -79,7 +73,6 @@ class OneShotStringDataset(Dataset):
         self.conseq_prob = conseq_prob
         self.theorem_prob = theorem_prob
         self.dataset_len = dataset_len
-        self.seed = seed
         self.tokenizer = tokenizer
         self.padding = padding
 
@@ -88,7 +81,6 @@ class OneShotStringDataset(Dataset):
         return self.dataset_len
 
     def __getitem__(self, idx):
-        torch.manual_seed(self.seed + _PRIMEA*(idx**2) + _PRIMEB*idx)  # How to guarantee determinism
         rules = logic.random_rules(
             batch_size = 1,
             num_rules = self.num_rules,
@@ -128,8 +120,7 @@ class NextStateEmbedsDataset(Dataset):
         conseq_prob: float,
         state_prob: float,
         dataset_len: int,
-        chain_len: int = 3,
-        seed: int = 1234
+        chain_len: int = 3
     ):
         self.num_rules = num_rules
         self.num_vars = num_vars
@@ -138,14 +129,12 @@ class NextStateEmbedsDataset(Dataset):
         self.state_prob = state_prob
         self.chain_len = chain_len
         self.dataset_len = dataset_len
-        self.seed = seed
 
     def __len__(self):
         """ We can indefinitely generate more, but set an artificial cap """
         return self.dataset_len
 
     def __getitem__(self, idx):
-        torch.manual_seed(self.seed + _PRIMEA*(idx**2) + _PRIMEB*idx)
         rules = logic.random_rules_with_chain(
             num_rules = self.num_rules,
             num_vars = self.num_vars,
@@ -177,7 +166,6 @@ class NextStateFromTokensEmbedsDataset(Dataset):
         conseq_prob_range: tuple[float, float],
         state_prob_range: tuple[float, float],
         dataset_len: int,
-        seed: int = 1234,
         do_padding: bool = True
     ):
         assert num_vars > 2
@@ -197,7 +185,6 @@ class NextStateFromTokensEmbedsDataset(Dataset):
         self.bp_range = conseq_prob_range
         self.sp_range = state_prob_range
         self.dataset_len = dataset_len
-        self.seed = seed
         self.do_padding = do_padding
         self.max_seq_len = num_rules_range[1] + num_states_range[1]
 
@@ -205,8 +192,6 @@ class NextStateFromTokensEmbedsDataset(Dataset):
         return self.dataset_len
 
     def __getitem__(self, idx):
-        torch.manual_seed(self.seed + _PRIMEA*(idx**2) + _PRIMEB*idx)
-
         # Random numbers
         num_vars = self.num_vars
         num_states = torch.randint(self.num_states_range[0], self.num_states_range[1]+1, (1,)).item()
@@ -262,8 +247,7 @@ class AutoRegKStepsEmbedsDataset(Dataset):
         conseq_prob: float,
         state_prob: float,
         dataset_len: int,
-        chain_len: int = 3,
-        seed: int = 1234
+        chain_len: int = 3
     ):
         self.num_rules = num_rules
         self.num_vars = num_vars
@@ -273,13 +257,11 @@ class AutoRegKStepsEmbedsDataset(Dataset):
         self.state_prob = state_prob
         self.chain_len = chain_len
         self.dataset_len = dataset_len
-        self.seed = seed
 
     def __len__(self):
         return self.dataset_len
 
     def __getitem__(self, idx):
-        torch.manual_seed(self.seed + _PRIMEA*(idx**2) + _PRIMEB*idx)
         rules = logic.random_rules_with_chain(
             num_rules = self.num_rules,
             num_vars = self.num_vars,
