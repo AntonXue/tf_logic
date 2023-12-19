@@ -4,6 +4,8 @@ from torch.utils.data import Dataset
 from my_datasets.dataset_utils import *
 from . import logic
 
+_PRIMEA = 17
+_PRIMEB = 19
 
 class OneShotEmbedsDataset(Dataset):
     """ For task of checking one-shot QED, generate a bunch of random rules """
@@ -30,7 +32,7 @@ class OneShotEmbedsDataset(Dataset):
         return self.dataset_len
 
     def __getitem__(self, idx):
-        torch.manual_seed(self.seed + idx)  # How to guarantee determinism
+        torch.manual_seed(self.seed + _PRIMEA*(idx**2) + _PRIMEB*idx)  # How to guarantee determinism
         rules_dict = logic.random_rules_with_chain(
             num_rules = self.num_rules,
             num_vars = self.num_vars,
@@ -86,7 +88,7 @@ class OneShotStringDataset(Dataset):
         return self.dataset_len
 
     def __getitem__(self, idx):
-        torch.manual_seed(self.seed + idx)  # How to guarantee determinism
+        torch.manual_seed(self.seed + _PRIMEA*(idx**2) + _PRIMEB*idx)  # How to guarantee determinism
         rules = logic.random_rules(
             batch_size = 1,
             num_rules = self.num_rules,
@@ -143,7 +145,7 @@ class NextStateEmbedsDataset(Dataset):
         return self.dataset_len
 
     def __getitem__(self, idx):
-        torch.manual_seed(self.seed + idx)
+        torch.manual_seed(self.seed + _PRIMEA*(idx**2) + _PRIMEB*idx)
         rules = logic.random_rules_with_chain(
             num_rules = self.num_rules,
             num_vars = self.num_vars,
@@ -203,7 +205,7 @@ class NextStateFromTokensEmbedsDataset(Dataset):
         return self.dataset_len
 
     def __getitem__(self, idx):
-        torch.manual_seed(self.seed + idx)
+        torch.manual_seed(self.seed + _PRIMEA*(idx**2) + _PRIMEB*idx)
 
         # Random numbers
         num_vars = self.num_vars
@@ -277,7 +279,7 @@ class AutoRegKStepsEmbedsDataset(Dataset):
         return self.dataset_len
 
     def __getitem__(self, idx):
-        torch.manual_seed(self.seed + idx)
+        torch.manual_seed(self.seed + _PRIMEA*(idx**2) + _PRIMEB*idx)
         rules = logic.random_rules_with_chain(
             num_rules = self.num_rules,
             num_vars = self.num_vars,
