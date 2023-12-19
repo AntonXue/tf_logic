@@ -69,6 +69,16 @@ class SyntheticExperimentArguments:
         metadata = {"help": "The number of rules to use."}
     )
 
+    min_num_rules: Optional[int] = field(
+        default = None,
+        metadata = {"help": "The minimum number of rules to use."}
+    )
+
+    max_num_rules: Optional[int] = field(
+        default = None,
+        metadata = {"help": "The maximum number of rules to use."}
+    )
+
     num_vars: Optional[int] = field(
         default = None,
         metadata = {"help": "The number of propositional variables to use."}
@@ -84,14 +94,44 @@ class SyntheticExperimentArguments:
         metadata = {"help": "The probability of a variable in the antecedent being true."}
     )
 
+    min_ante_prob: Optional[float] = field(
+        default = None,
+        metadata = {"help": "The minimum probability of a variable in the antecedent being true."}
+    )
+
+    max_ante_prob: Optional[float] = field(
+        default = None,
+        metadata = {"help": "The maximum probability of a variable in the antecedent being true."}
+    )
+
     conseq_prob: Optional[float] = field(
         default = None,
         metadata = {"help": "The probability of a variable in the consequent being true."}
     )
 
+    min_conseq_prob: Optional[float] = field(
+        default = None,
+        metadata = {"help": "The minimum probability of a variable in the consequent being true."}
+    )
+
+    max_conseq_prob: Optional[float] = field(
+        default = None,
+        metadata = {"help": "The maximum probability of a variable in the consequent being true."}
+    )
+
     state_prob: Optional[float] = field(
         default = None,
         metadata = {"help": "The probability of a variable in an initial state being true."}
+    )
+
+    min_state_prob: Optional[float] = field(
+        default = None,
+        metadata = {"help": "The minimum_probability of a variable in an initial state being true."}
+    )
+
+    max_state_prob: Optional[float] = field(
+        default = None,
+        metadata = {"help": "The maximum_probability of a variable in an initial state being true."}
     )
 
     chain_len: Optional[int] = field(
@@ -193,7 +233,9 @@ def synexp_args_to_wandb_run_name(args: SyntheticExperimentArguments):
             f"nv{args.num_vars}" + \
             f"_nr{args.min_num_rules}-{args.max_num_rules}" + \
             f"_ns{args.min_num_states}-{args.max_num_states}" + \
-            f"_ap{args.ante_prob:.2f}_bp{args.conseq_prob:.2f}_sp{args.state_prob:.2f}" + \
+            f"_ap{args.min_ante_prob:.2f}-{args.max_ante_prob:.2f}" + \
+            f"_bp{args.min_conseq_prob:.2f}-{args.max_conseq_prob:.2f}" + \
+            f"_sp{args.max_state_prob:.2f}-{args.max_state_prob:.2f}" + \
             f"_ntr{args.train_len}_ntt{args.eval_len}"
 
     elif args.syn_exp_name == "autoreg_ksteps":
@@ -316,7 +358,7 @@ def make_trainer_for_synthetic(
             run_name = synexp_args_to_wandb_run_name(args),
             logging_steps = args.logging_steps,
             warmup_ratio = 0.20,
-            save_steps = 1000)
+            save_strategy = "no")
 
         return Trainer(
             tfl_model,
@@ -380,7 +422,7 @@ def make_trainer_for_synthetic(
             run_name = synexp_args_to_wandb_run_name(args),
             logging_steps = args.logging_steps,
             warmup_ratio = 0.20,
-            save_steps = 1000)
+            save_strategy = "no")
 
         return Trainer(
             tfl_model,
@@ -430,7 +472,7 @@ def make_trainer_for_synthetic(
             run_name = synexp_args_to_wandb_run_name(args),
             logging_steps = args.logging_steps,
             warmup_ratio = 0.20,
-            save_steps = 1000)
+            save_strategy = "no")
 
         return Trainer(
             tfl_model,
@@ -443,25 +485,21 @@ def make_trainer_for_synthetic(
     elif args.syn_exp_name == "next_state_from_tokens":
         train_dataset = NextStateFromTokensEmbedsDataset(
             num_vars = args.num_vars,
-            min_num_rules = args.min_num_rules,
-            max_num_rules = args.max_num_rules,
-            ante_prob = args.ante_prob,
-            conseq_prob = args.conseq_prob,
-            state_prob = args.state_prob,
-            min_num_states = args.min_num_states,
-            max_num_states = args.max_num_states,
+            num_rules_range = (args.min_num_rules, args.max_num_rules),
+            num_states_range = (args.min_num_states, args.max_num_states),
+            ante_prob_range = (args.min_ante_prob, args.max_ante_prob),
+            conseq_prob_range = (args.min_conseq_prob, args.max_conseq_prob),
+            state_prob_range = (args.min_state_prob, args.max_state_prob),
             dataset_len = args.train_len,
             seed = args.seed)
 
         eval_dataset = NextStateFromTokensEmbedsDataset(
             num_vars = args.num_vars,
-            min_num_rules = args.min_num_rules,
-            max_num_rules = args.max_num_rules,
-            ante_prob = args.ante_prob,
-            conseq_prob = args.conseq_prob,
-            state_prob = args.state_prob,
-            min_num_states = args.min_num_states,
-            max_num_states = args.max_num_states,
+            num_rules_range = (args.min_num_rules, args.max_num_rules),
+            num_states_range = (args.min_num_states, args.max_num_states),
+            ante_prob_range = (args.min_ante_prob, args.max_ante_prob),
+            conseq_prob_range = (args.min_conseq_prob, args.max_conseq_prob),
+            state_prob_range = (args.min_state_prob, args.max_state_prob),
             dataset_len = args.eval_len,
             seed = args.seed + 1)
 
@@ -484,7 +522,7 @@ def make_trainer_for_synthetic(
             run_name = synexp_args_to_wandb_run_name(args),
             logging_steps = args.logging_steps,
             warmup_ratio = 0.20,
-            save_steps = 1000)
+            save_strategy = "no")
 
         return Trainer(
             tfl_model,
@@ -535,7 +573,7 @@ def make_trainer_for_synthetic(
             run_name = synexp_args_to_wandb_run_name(args),
             logging_steps = args.logging_steps,
             warmup_ratio = 0.20,
-            save_steps = 1000)
+            save_strategy = "no")
 
         return Trainer(
             tfl_model,

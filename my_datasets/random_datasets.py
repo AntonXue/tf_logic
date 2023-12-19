@@ -1,4 +1,3 @@
-import random
 import torch
 from torch.utils.data import Dataset
 
@@ -170,34 +169,35 @@ class NextStateFromTokensEmbedsDataset(Dataset):
     def __init__(
         self,
         num_vars: int,
-        min_num_rules: int,
-        max_num_rules: int,
-        ante_prob: float,
-        conseq_prob: float,
-        state_prob: float,
-        min_num_states: int,
-        max_num_states: int,
+        num_rules_range: tuple[int, int],
+        num_states_range: tuple[int, int],
+        ante_prob_range: tuple[float, float],
+        conseq_prob_range: tuple[float, float],
+        state_prob_range: tuple[float, float],
         dataset_len: int,
         seed: int = 1234,
         do_padding: bool = True
     ):
         assert num_vars > 2
-        assert min_num_rules > 2
-        assert min_num_rules < max_num_rules
-        assert max_num_states > 2
-        assert min_num_states < max_num_states
+        assert num_rules_range[0] > 2 and num_rules_range[0] <= num_rules_range[1]
+        assert num_states_range[0] > 2 and num_states_range[0] <= num_states_range[1]
+        assert ante_prob_range[0] > 0.0 and ante_prob_range[1] < 1.0
+        assert ante_prob_range[0] <= ante_prob_range[1]
+        assert conseq_prob_range[0] > 0.0 and conseq_prob_range[1] < 1.0
+        assert conseq_prob_range[0] <= conseq_prob_range[1]
+        assert state_prob_range[0] > 0.0 and state_prob_range[1] < 1.0
+        assert state_prob_range[0] <= state_prob_range[1]
 
         self.num_vars = num_vars
-        self.min_num_rules = min_num_rules
-        self.max_num_rules = max_num_rules
-        self.ante_prob = ante_prob
-        self.conseq_prob = conseq_prob
-        self.state_prob = state_prob
-        self.min_num_states = min_num_states
-        self.max_num_states = max_num_states
+        self.num_rules_range = num_rules_range
+        self.num_states_range = num_states_range
+        self.ap_range = ante_prob_range
+        self.bp_range = conseq_prob_range
+        self.sp_range = state_prob_range
         self.dataset_len = dataset_len
         self.seed = seed
         self.do_padding = do_padding
+        self.max_seq_len = num_rules_range[1] + num_states_range[1]
 
     def __len__(self):
         return self.dataset_len
@@ -205,40 +205,42 @@ class NextStateFromTokensEmbedsDataset(Dataset):
     def __getitem__(self, idx):
         torch.manual_seed(self.seed + idx)
 
+        # Random numbers
+        num_vars = self.num_vars
+        num_states = torch.randint(self.num_states_range[0], self.num_states_range[1]+1, (1,)).item()
+        num_rules = torch.randint(self.num_rules_range[0], self.num_rules_range[1]+1, (1,)).item()
+        _ap, _bp, _sp = torch.rand(3)
+        ap = (self.ap_range[1] - self.ap_range[0]) * _ap + self.ap_range[0]
+        bp = (self.bp_range[1] - self.bp_range[0]) * _bp + self.bp_range[0]
+        sp = (self.sp_range[1] - self.sp_range[0]) * _sp + self.sp_range[0]
+
         # Generate some states, starting from a big_state from which we derive other stuff
-        big_state = (torch.rand(1,self.num_vars) < self.state_prob).long()
-        num_states = random.randint(self.min_num_states, self.max_num_states)
-        other_states = (torch.rand(num_states-1, self.num_vars) < 0.5) * big_state
+        big_state = (torch.rand(1, num_vars) < sp).long()
+        other_states = (torch.rand(num_states-1, num_vars) < 0.8) * big_state
         all_states = torch.cat([big_state, other_states], dim=0)
 
         # Generate some rules, in particular a special rule that is guaranteed to fire
-        num_rules = random.randint(self.min_num_rules, self.max_num_rules)
-        special_ante = (torch.rand(1, self.num_vars) < 0.8) * big_state
-        special_conseq = (torch.rand(1, self.num_vars) < 2*self.conseq_prob) * (1 - big_state)
+        special_ante = (torch.rand(1, num_vars) < 0.8) * big_state
+        special_conseq = (torch.rand(1, num_vars) < min(2*bp, 0.8)) * (1 - big_state)
         special_rule = torch.cat([special_ante, special_conseq], dim=1).long()
 
-        other_antes = torch.rand(num_rules-1, self.num_vars) < self.ante_prob
-        other_conseqs = torch.rand(num_rules-1, self.num_vars) < self.conseq_prob
+        other_antes = torch.rand(num_rules-1, num_vars) < ap
+        other_conseqs = torch.rand(num_rules-1, num_vars) < bp
         other_rules = torch.cat([other_antes, other_conseqs], dim=1).long()
         all_rules = torch.cat([special_rule, other_rules], dim=0)
 
         if self.do_padding:
-            pad_states = torch.zeros(self.max_num_states - all_states.size(0), self.num_vars)
-            all_states = torch.cat([all_states, pad_states], dim=0).long()
-
-            pad_rules = torch.zeros(self.max_num_rules - all_rules.size(0), 2 * self.num_vars)
+            pad_len = self.max_seq_len - num_rules - num_states
+            pad_rules = torch.zeros(pad_len, 2*num_vars)
             all_rules = torch.cat([all_rules, pad_rules], dim=0).long()
-
+            num_rules = all_rules.size(0)
 
         # big_state already has batch_size == 1
         next_state, _ = logic.step_rules(all_rules[None,...], big_state)
 
         # tokens
-        state_tokens = torch.cat([
-            torch.ones(all_states.size(0),1), torch.zeros_like(all_states), all_states],
-            dim=1)
-
-        rule_tokens = torch.cat([torch.zeros(all_rules.size(0),1), all_rules], dim=1)
+        state_tokens = torch.cat([torch.ones(num_states,1), 0*all_states, all_states], dim=1)
+        rule_tokens = torch.cat([torch.zeros(num_rules,1), all_rules], dim=1)
         all_tokens = torch.cat([rule_tokens, state_tokens], dim=0)
         all_tokens = all_tokens[torch.randperm(all_tokens.size(0))]
 
