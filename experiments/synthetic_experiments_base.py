@@ -9,7 +9,7 @@ import wandb
 """ Our imports """
 sys.path.insert(0, str(Path(__file__).parent.parent.resolve()))
 
-from models import AutoTFLModel
+from models import AutoTaskModel, get_hf_model_name
 from my_datasets import *
 from experiments_init import *
 from evaluation_utils import *
@@ -58,7 +58,9 @@ class SyntheticExperimentArguments:
 
     use_pretrained : Optional[bool] = field(
         default = False,
-        metadata = {"help": "Weights from the pretrained model are loaded if True. Note that this restricts changes to the model (default num_heads, num_layers, etc. will be used)"}
+        metadata = {"help": "Weights from the pretrained model are loaded if True. " + \
+                    "Note that this restricts changes to the model " + \
+                    "(default num_heads, num_layers, etc. will be used)"}
     )
 
     """ Dataset details """
@@ -135,7 +137,17 @@ class SyntheticExperimentArguments:
 
     chain_len: Optional[int] = field(
         default = 3,
-        metadata = {"help": "The attmeped length of the deduction chain for a random dataset."}
+        metadata = {"help": "The attmepted length of the deduction chain for a random dataset."}
+    )
+
+    min_chain_len: Optional[int] = field(
+        default = 2,
+        metadata = {"help": "The minimum attmepted length of the deduction chain for a random dataset."}
+    )
+
+    max_chain_len: Optional[int] = field(
+        default = 5,
+        metadata = {"help": "The maximum attmepted length of the deduction chain for a random dataset."}
     )
 
     min_num_rules: Optional[int] = field(
@@ -211,24 +223,24 @@ def synexp_args_to_wandb_run_name(args: SyntheticExperimentArguments):
 
     if args.syn_exp_name == "one_shot":
         return f"SynOS_{model_str}__" + \
-            f"nv{args.num_vars}_nr{args.num_rules}" + \
-            f"_ap{args.ante_prob:.2f}_bp{args.conseq_prob:.2f}_tp{args.theorem_prob:.2f}" + \
-            f"_cl{args.chain_len}_ntr{args.train_len}_ntt{args.eval_len}"
+            f"nv{args.num_vars}" + \
+            f"_nr{args.min_num_rules}-{args.max_num_rules}" + \
+            f"_ap{args.min_ante_prob:.2f}-{args.max_ante_prob:.2f}" + \
+            f"_bp{args.min_conseq_prob:.2f}-{args.max_conseq_prob:.2f}" + \
+            f"_cl{args.min_chain_len}-{args.max_chain_len}" + \
+            f"_ntr{args.train_len}_ntt{args.eval_len}"
 
     elif args.syn_exp_name == "one_shot_str":
         return f"SynOSstr__{model_str}__" + \
-            f"nv{args.num_vars}_nr{args.num_rules}" + \
-            f"_ap{args.ante_prob:.2f}_bp{args.conseq_prob:.2f}_tp{args.theorem_prob:.2f}" + \
-            f"_cl{args.chain_len}_ntr{args.train_len}_ntt{args.eval_len}"
+            f"nv{args.num_vars}" + \
+            f"_nr{args.min_num_rules}-{args.max_num_rules}" + \
+            f"_ap{args.min_ante_prob:.2f}-{args.max_ante_prob:.2f}" + \
+            f"_bp{args.min_conseq_prob:.2f}-{args.max_conseq_prob:.2f}" + \
+            f"_cl{args.min_chain_len}-{args.max_chain_len}" + \
+            f"_ntr{args.train_len}_ntt{args.eval_len}"
 
     elif args.syn_exp_name == "next_state":
         return f"SynNS_{model_str}__" + \
-            f"nv{args.num_vars}_nr{args.num_rules}" + \
-            f"_ap{args.ante_prob:.2f}_bp{args.conseq_prob:.2f}_sp{args.state_prob:.2f}" + \
-            f"_ntr{args.train_len}_ntt{args.eval_len}"
-
-    elif args.syn_exp_name == "next_state_from_tokens":
-        return f"SynNSFT_{model_str}__" + \
             f"nv{args.num_vars}" + \
             f"_nr{args.min_num_rules}-{args.max_num_rules}" + \
             f"_ns{args.min_num_states}-{args.max_num_states}" + \
@@ -239,9 +251,14 @@ def synexp_args_to_wandb_run_name(args: SyntheticExperimentArguments):
 
     elif args.syn_exp_name == "autoreg_ksteps":
         return f"SynAR_{model_str}__" + \
-            f"nv{args.num_vars}_nr{args.num_rules}" + \
-            f"_ap{args.ante_prob:.2f}_bp{args.conseq_prob:.2f}_sp{args.state_prob:.2f}" + \
-            f"_cl{args.chain_len}_ntr{args.train_len}_ntt{args.eval_len}"
+            f"nv{args.num_vars}" + \
+            f"_ns{args.num_steps}" + \
+            f"_nr{args.min_num_rules}-{args.max_num_rules}" + \
+            f"_ap{args.min_ante_prob:.2f}-{args.max_ante_prob:.2f}" + \
+            f"_bp{args.min_conseq_prob:.2f}-{args.max_conseq_prob:.2f}" + \
+            f"_cl{args.min_chain_len}-{args.max_chain_len}" + \
+            f"_ntr{args.train_len}_ntt{args.eval_len}"
+
     else:
         raise ValueError(f"Unrecognized syn_exp_name {args.syn_exp_name}")
 
@@ -251,7 +268,7 @@ def trainer_stats_for_wandb(
     trainer: Trainer
 ):
     """ Make some statistics to report to wandb """
-    if args.syn_exp_name == "one_shot":
+    if args.syn_exp_name in ["one_shot", "one_shot_str"]:
         num_train_qeds = torch.tensor(0)
         for i in range(len(trainer.train_dataset)):
             num_train_qeds += trainer.train_dataset[i]["labels"]
@@ -268,45 +285,15 @@ def trainer_stats_for_wandb(
         }
 
     elif args.syn_exp_name == "next_state":
-        num_train_succ_diffs = torch.tensor(0)
-        for i in range(len(trainer.train_dataset)):
-            item = trainer.train_dataset[i]
-            num_train_succ_diffs += (item["state"] - item["labels"]).sum().abs() > 0
-
-        num_eval_succ_diffs = torch.tensor(0)
-        for item in range(len(trainer.eval_dataset)):
-            item = trainer.eval_dataset[i]
-            num_eval_succ_diffs += (item["state"] - item["labels"]).sum().abs() > 0
-
-        return {
-            "train_len": len(trainer.train_dataset),
-            "train_succ_diffs": num_train_succ_diffs.item(),
-            "eval_len": len(trainer.eval_dataset),
-            "eval_succ_diffs": num_eval_succ_diffs.item()
-        }
-
-    elif args.syn_exp_name == "next_state_from_tokens":
         return {
             "train_len": len(trainer.train_dataset),
             "eval_len": len(trainer.eval_dataset),
         }
 
     elif args.syn_exp_name == "autoreg_ksteps":
-        num_train_kstep_diffs = torch.tensor(0)
-        for i in range(len(trainer.train_dataset)):
-            item = trainer.train_dataset[i]
-            num_train_kstep_diffs += (item["state"] - item["labels"][-1]).sum().abs() > 0
-
-        num_eval_kstep_diffs = torch.tensor(0)
-        for item in range(len(trainer.eval_dataset)):
-            item = trainer.eval_dataset[i]
-            num_eval_kstep_diffs += (item["state"] - item["labels"][-1]).sum().abs() > 0
-
         return {
             "train_len": len(trainer.train_dataset),
-            "train_kstep_diffs": num_train_kstep_diffs.item(),
             "eval_len": len(trainer.eval_dataset),
-            "eval_kstep_diffs": num_eval_kstep_diffs.item()
         }
 
     else:
@@ -320,21 +307,22 @@ def make_trainer_for_synthetic(
     """ Make a Hugging Face Trainer object """
 
     if args.syn_exp_name == "one_shot":
-        big_dataset = OneShotEmbedsDataset(
-            num_rules = args.num_rules,
+        big_dataset = OneShotTokensDataset(
             num_vars = args.num_vars,
-            ante_prob = args.ante_prob,
-            conseq_prob = args.conseq_prob,
-            chain_len = args.chain_len,
+            num_rules_range = (args.min_num_rules, args.max_num_rules),
+            ante_prob_range = (args.min_ante_prob, args.max_ante_prob),
+            conseq_prob_range = (args.min_conseq_prob, args.max_conseq_prob),
+            chain_len_range = (args.min_chain_len, args.max_chain_len),
             dataset_len = args.train_len + args.eval_len)
 
         train_dataset, eval_dataset = \
             torch.utils.data.random_split(big_dataset, [args.train_len, args.eval_len])
 
-        tfl_model = AutoTFLModel.from_kwargs(
-            task_name = "one_shot",
+        tfl_model = AutoTaskModel.from_kwargs(
+            task_name = args.syn_exp_name,
             num_vars = args.num_vars,
             model_name = args.model_name,
+            input_dim = big_dataset[0]["tokens"].size(-1),
             embed_dim = args.embed_dim,
             num_layers = args.num_layers,
             num_heads = args.num_heads)
@@ -349,7 +337,7 @@ def make_trainer_for_synthetic(
             report_to = report_to,
             run_name = synexp_args_to_wandb_run_name(args),
             logging_steps = args.logging_steps,
-            warmup_ratio = 0.20,
+            warmup_ratio = 0.10,
             save_strategy = "no")
 
         return Trainer(
@@ -359,18 +347,22 @@ def make_trainer_for_synthetic(
             eval_dataset = eval_dataset,
             compute_metrics = one_shot_metrics)
 
+
     elif args.syn_exp_name == "one_shot_str":
+        if args.model_name == "mytf":
+            raise ValueError(f"Model mytf is not supported for one_shot_str")
+
         # Get the tokenizer to create the dataset
-        tokenizer = AutoTokenizer.from_pretrained(args.model_name)
+        tokenizer = AutoTokenizer.from_pretrained(get_hf_model_name(args.model_name))
         tokenizer.pad_token = tokenizer.eos_token
         data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
 
         big_dataset = OneShotStringDataset(
-            num_rules = args.num_rules,
             num_vars = args.num_vars,
-            ante_prob = args.ante_prob,
-            conseq_prob = args.conseq_prob,
-            theorem_prob = args.theorem_prob,
+            num_rules_range = (args.min_num_rules, args.max_num_rules),
+            ante_prob_range = (args.min_ante_prob, args.max_ante_prob),
+            conseq_prob_range = (args.min_conseq_prob, args.max_conseq_prob),
+            chain_len_range = (args.min_chain_len, args.max_chain_len),
             dataset_len = args.train_len + args.eval_len,
             tokenizer = tokenizer,
             padding = "longest" if args.use_pretrained else "max_length")
@@ -379,13 +371,14 @@ def make_trainer_for_synthetic(
             torch.utils.data.random_split(big_dataset, [args.train_len, args.eval_len])
 
         if args.use_pretrained:
-            tfl_model = AutoTFLModel.from_pretrained(
-                task_name = "one_shot_str",
+            tfl_model = AutoTaskModel.from_pretrained(
+                task_name = args.syn_exp_name,
                 model_name = args.model_name)
             tfl_model.config.pad_token_id = tokenizer.pad_token_id
+
         else:
-            tfl_model = AutoTFLModel.from_kwargs(
-                task_name = "one_shot_str",
+            tfl_model = AutoTaskModel.from_kwargs(
+                task_name = args.syn_exp_name,
                 num_vars = args.num_vars,
                 model_name = args.model_name,
                 embed_dim = args.embed_dim,
@@ -403,7 +396,7 @@ def make_trainer_for_synthetic(
             report_to = report_to,
             run_name = synexp_args_to_wandb_run_name(args),
             logging_steps = args.logging_steps,
-            warmup_ratio = 0.20,
+            warmup_ratio = 0.10,
             save_strategy = "no")
 
         return Trainer(
@@ -417,48 +410,7 @@ def make_trainer_for_synthetic(
 
 
     elif args.syn_exp_name == "next_state":
-        big_dataset = NextStateEmbedsDataset(
-            num_rules = args.num_rules,
-            num_vars = args.num_vars,
-            ante_prob = args.ante_prob,
-            conseq_prob = args.conseq_prob,
-            state_prob = args.state_prob,
-            dataset_len = args.train_len + args.eval_len)
-
-        train_dataset, eval_dataset = \
-            torch.utils.data.random_split(big_dataset, [args.train_len, args.eval_len])
-
-        tfl_model = AutoTFLModel.from_kwargs(
-            task_name = "next_state",
-            num_vars = args.num_vars,
-            model_name = args.model_name,
-            embed_dim = args.embed_dim,
-            num_layers = args.num_layers,
-            num_heads = args.num_heads)
-
-        training_args = TrainingArguments(
-            args.output_dir,
-            num_train_epochs = args.num_epochs,
-            per_device_train_batch_size = args.train_batch_size,
-            per_device_eval_batch_size = args.eval_batch_size,
-            auto_find_batch_size = args.auto_find_batch_size,
-            evaluation_strategy = "epoch",
-            report_to = report_to,
-            run_name = synexp_args_to_wandb_run_name(args),
-            logging_steps = args.logging_steps,
-            warmup_ratio = 0.20,
-            save_strategy = "no")
-
-        return Trainer(
-            tfl_model,
-            training_args,
-            train_dataset = train_dataset,
-            eval_dataset = eval_dataset,
-            compute_metrics = next_state_metrics)
-
-
-    elif args.syn_exp_name == "next_state_from_tokens":
-        big_dataset = NextStateFromTokensEmbedsDataset(
+        big_dataset = NextStateTokensDataset(
             num_vars = args.num_vars,
             num_rules_range = (args.min_num_rules, args.max_num_rules),
             num_states_range = (args.min_num_states, args.max_num_states),
@@ -470,10 +422,11 @@ def make_trainer_for_synthetic(
         train_dataset, eval_dataset = \
             torch.utils.data.random_split(big_dataset, [args.train_len, args.eval_len])
 
-        tfl_model = AutoTFLModel.from_kwargs(
-            task_name = "next_state_from_tokens",
+        tfl_model = AutoTaskModel.from_kwargs(
+            task_name = args.syn_exp_name,
             num_vars = args.num_vars,
             model_name = args.model_name,
+            input_dim = big_dataset[0]["tokens"].size(-1),
             embed_dim = args.embed_dim,
             num_layers = args.num_layers,
             num_heads = args.num_heads)
@@ -488,7 +441,7 @@ def make_trainer_for_synthetic(
             report_to = report_to,
             run_name = synexp_args_to_wandb_run_name(args),
             logging_steps = args.logging_steps,
-            warmup_ratio = 0.20,
+            warmup_ratio = 0.10,
             save_strategy = "no")
 
         return Trainer(
@@ -500,23 +453,24 @@ def make_trainer_for_synthetic(
 
 
     elif args.syn_exp_name == "autoreg_ksteps":
-        big_dataset = AutoRegKStepsEmbedsDataset(
-            num_rules = args.num_rules,
+        big_dataset = AutoregKStepsTokensDataset(
             num_vars = args.num_vars,
+            num_rules_range = (args.min_num_rules, args.max_num_rules),
+            ante_prob_range = (args.min_ante_prob, args.max_ante_prob),
+            conseq_prob_range = (args.min_conseq_prob, args.max_conseq_prob),
+            chain_len_range = (args.min_chain_len, args.max_chain_len),
             num_steps = args.num_steps,
-            ante_prob = args.ante_prob,
-            conseq_prob = args.conseq_prob,
-            state_prob = args.state_prob,
             dataset_len = args.train_len + args.eval_len)
 
         train_dataset, eval_dataset = \
             torch.utils.data.random_split(big_dataset, [args.train_len, args.eval_len])
 
-        tfl_model = AutoTFLModel.from_kwargs(
-            task_name = "autoreg_ksteps",
+        tfl_model = AutoTaskModel.from_kwargs(
+            task_name = args.syn_exp_name,
             num_vars = args.num_vars,
             num_steps = args.num_steps,
             model_name = args.model_name,
+            input_dim = train_dataset[0]["tokens"].size(-1),
             embed_dim = args.embed_dim,
             num_layers = args.num_layers,
             num_heads = args.num_heads)
@@ -531,7 +485,7 @@ def make_trainer_for_synthetic(
             report_to = report_to,
             run_name = synexp_args_to_wandb_run_name(args),
             logging_steps = args.logging_steps,
-            warmup_ratio = 0.20,
+            warmup_ratio = 0.10,
             save_strategy = "no")
 
         return Trainer(

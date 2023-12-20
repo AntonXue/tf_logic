@@ -5,51 +5,83 @@ from my_datasets.dataset_utils import *
 from . import logic
 
 
-class OneShotEmbedsDataset(Dataset):
-    """ For task of checking one-shot QED, generate a bunch of random rules """
+class OneShotTokensDataset(Dataset):
     def __init__(
         self,
-        num_rules: int,
         num_vars: int,
-        ante_prob: float,
-        conseq_prob: float,
+        num_rules_range: tuple[int, int],
+        ante_prob_range: tuple[float, float],
+        conseq_prob_range: tuple[float, float],
+        chain_len_range: tuple[int, int],
         dataset_len: int,
-        chain_len: int = 3
+        do_padding: bool = True
     ):
-        self.num_rules = num_rules
+        assert num_vars > 2
+        assert num_rules_range[0] > 2 and num_rules_range[0] <= num_rules_range[1]
+        assert ante_prob_range[0] > 0.0 and ante_prob_range[1] < 1.0
+        assert ante_prob_range[0] <= ante_prob_range[1]
+        assert conseq_prob_range[0] > 0.0 and conseq_prob_range[1] < 1.0
+        assert conseq_prob_range[0] <= conseq_prob_range[1]
+
         self.num_vars = num_vars
-        self.ante_prob = ante_prob
-        self.conseq_prob = conseq_prob
-        self.chain_len = chain_len
+        self.num_rules_range = num_rules_range
+        self.ap_range = ante_prob_range
+        self.bp_range = conseq_prob_range
+        self.chain_len_range = chain_len_range
         self.dataset_len = dataset_len
+        self.do_padding = do_padding
+        self.max_seq_len = num_rules_range[1] + 1
 
     def __len__(self):
-        """ We can indefinitely generate more, but set an artificial cap """
         return self.dataset_len
 
-    def __getitem__(self, idx):
-        rules_dict = logic.random_rules_with_chain(
-            num_rules = self.num_rules,
+    def get_random_rules(self):
+        num_rules = torch.randint(self.num_rules_range[0], self.num_rules_range[1]+1, ())
+        chain_len = torch.randint(self.chain_len_range[0], self.chain_len_range[1]+1, ())
+        _ap, _bp = torch.rand(2)
+        ap = (self.ap_range[1] - self.ap_range[0]) * _ap + self.ap_range[0]
+        bp = (self.bp_range[1] - self.bp_range[0]) * _bp + self.bp_range[0]
+
+        return logic.random_rules_with_chain(
+            num_rules = num_rules,
             num_vars = self.num_vars,
-            ante_prob = self.ante_prob,
-            conseq_prob = self.conseq_prob,
-            chain_len = self.chain_len,
-            return_dict = True)
+            ante_prob = ap,
+            conseq_prob = bp,
+            chain_len = chain_len,
+            return_dict = True
+        )
+
+    def __getitem__(self, idx):
+        # Random numbers
+        num_vars = self.num_vars
+        rules_dict = self.get_random_rules()
         rules, bad_bits = rules_dict["rules"], rules_dict["bad_bits"]
+        num_rules = rules.size(0)
 
-        proof = logic.prove_theorem(rules.unsqueeze(0), torch.ones(1,self.num_vars))
+        if self.do_padding:
+            pad_len = self.max_seq_len - num_rules - 1
+            pad_rules = torch.zeros(pad_len, 2*num_vars)
+            rules = torch.cat([rules, pad_rules], dim=0).long()
+            num_rules = rules.size(0)
+
+        proof = logic.prove_theorem(rules[None,...], torch.ones(1, num_vars))
         thm = proof["states"][0,-1] # The theorem is the iteration fixpoint
-        label = torch.tensor(1).long()
+        labels = torch.tensor(1).long()
 
-        # Flip a coin to attempt to make it unprovable, if possible
-        if torch.randn(()) > 0 and thm[bad_bits[0]] == 0:
-                thm[bad_bits[0]] = 1
-                label = torch.tensor(0).long()
+        if torch.rand(()) > 0.5 and thm[bad_bits[0]] == 0:
+            thm[bad_bits[0]] = 1
+            labels = torch.tensor(0).long()
+
+        all_tokens = torch.cat([
+                torch.cat([torch.zeros(num_rules,1), rules], dim=1),
+                torch.cat([torch.ones(1), torch.zeros(num_vars), thm])[None,...]
+            ], dim=0)
+
+        all_tokens = all_tokens[torch.randperm(all_tokens.size(0))]
 
         return {
-            "rules": rules,
-            "theorem": thm,
-            "labels": label
+            "tokens": all_tokens,
+            "labels": labels
         }
 
 
@@ -58,105 +90,64 @@ class OneShotStringDataset(Dataset):
     The rules and theorem are represented as strings"""
     def __init__(
         self,
-        num_rules: int,
         num_vars: int,
-        ante_prob: float,
-        conseq_prob: float,
-        theorem_prob: float,
+        num_rules_range: tuple[int, int],
+        ante_prob_range: tuple[float, float],
+        conseq_prob_range: tuple[float, float],
+        chain_len_range: tuple[int, int],
         dataset_len: int,
         tokenizer: object = None,
         padding: str = "longest"
     ):
-        self.num_rules = num_rules
-        self.num_vars = num_vars
-        self.ante_prob = ante_prob
-        self.conseq_prob = conseq_prob
-        self.theorem_prob = theorem_prob
-        self.dataset_len = dataset_len
         self.tokenizer = tokenizer
         self.padding = padding
 
+        self.inner_dataset = OneShotTokensDataset(
+            num_vars = num_vars,
+            num_rules_range = num_rules_range,
+            ante_prob_range = ante_prob_range,
+            conseq_prob_range = conseq_prob_range,
+            chain_len_range = chain_len_range,
+            dataset_len = dataset_len,
+        )
+
     def __len__(self):
         """ We can indefinitely generate more, but set an artificial cap """
-        return self.dataset_len
+        return len(self.inner_dataset)
 
     def __getitem__(self, idx):
-        rules = logic.random_rules(
-            batch_size = 1,
-            num_rules = self.num_rules,
-            num_vars = self.num_vars,
-            ante_prob = self.ante_prob,
-            conseq_prob = self.conseq_prob)
+        num_vars = self.inner_dataset.num_vars
+        rules_dict = self.inner_dataset.get_random_rules()
+        rules, bad_bits = rules_dict["rules"], rules_dict["bad_bits"]
 
-        thm = (torch.rand(1, self.num_vars) < self.theorem_prob).long()
-        qed = logic.prove_theorem(rules, thm)["qed"]
+        proof = logic.prove_theorem(rules[None,...], torch.ones(1,num_vars))
+        thm = proof["states"][0,-1]
+        labels = torch.tensor(1).long()
+
+        if torch.rand(()) > 0.5 and thm[bad_bits[0]] == 0:
+            thm[bad_bits[0]] = 1
+            labels = torch.tensor(0).long()
 
         entry = {
-                "rules": rules[0],
-                "theorem": thm[0],
-                "labels": qed[0]
-            }
-        
+            "rules": rules,
+            "theorem": thm,
+            "labels": labels
+        }
+
         entry_str = get_string_rep(entry)
         if not self.tokenizer:
             return Exception("Tokenizer not provided.")
-        
+
         encoding = self.tokenizer(entry_str, truncation=True, padding=self.padding)
         return {
             "data": entry_str,
-            "label": qed[0],
+            "labels": labels,
             "input_ids": encoding.input_ids,
             "attention_mask": encoding.attention_mask
         }
 
 
-class NextStateEmbedsDataset(Dataset):
-    """ For task of generating the next state, generate a bunch of random rules """
-    def __init__(
-        self,
-        num_rules: int,
-        num_vars: int,
-        ante_prob: float,
-        conseq_prob: float,
-        state_prob: float,
-        dataset_len: int,
-        chain_len: int = 3
-    ):
-        self.num_rules = num_rules
-        self.num_vars = num_vars
-        self.ante_prob = ante_prob
-        self.conseq_prob = conseq_prob
-        self.state_prob = state_prob
-        self.chain_len = chain_len
-        self.dataset_len = dataset_len
-
-    def __len__(self):
-        """ We can indefinitely generate more, but set an artificial cap """
-        return self.dataset_len
-
-    def __getitem__(self, idx):
-        rules = logic.random_rules_with_chain(
-            num_rules = self.num_rules,
-            num_vars = self.num_vars,
-            ante_prob = self.ante_prob,
-            conseq_prob = self.conseq_prob,
-            chain_len = self.chain_len)
-
-        state = (torch.rand(1, self.num_vars) < self.state_prob).long()
-        succ, _ = logic.step_rules(rules.unsqueeze(0), state)
-
-        return {
-            "rules": rules,
-            "state": state[0],
-            "labels": succ[0]
-        }
-
-
-class NextStateStringDataset(Dataset):
-    pass
-
-
-class NextStateFromTokensEmbedsDataset(Dataset):
+class NextStateTokensDataset(Dataset):
     def __init__(
         self,
         num_vars: int,
@@ -194,8 +185,8 @@ class NextStateFromTokensEmbedsDataset(Dataset):
     def __getitem__(self, idx):
         # Random numbers
         num_vars = self.num_vars
-        num_states = torch.randint(self.num_states_range[0], self.num_states_range[1]+1, (1,)).item()
-        num_rules = torch.randint(self.num_rules_range[0], self.num_rules_range[1]+1, (1,)).item()
+        num_states = torch.randint(self.num_states_range[0], self.num_states_range[1]+1, ())
+        num_rules = torch.randint(self.num_rules_range[0], self.num_rules_range[1]+1, ())
         _ap, _bp, _sp = torch.rand(3)
         ap = (self.ap_range[1] - self.ap_range[0]) * _ap + self.ap_range[0]
         bp = (self.bp_range[1] - self.bp_range[0]) * _bp + self.bp_range[0]
@@ -237,56 +228,61 @@ class NextStateFromTokensEmbedsDataset(Dataset):
         }
 
 
-class AutoRegKStepsEmbedsDataset(Dataset):
+class AutoregKStepsTokensDataset(Dataset):
     def __init__(
         self,
-        num_rules: int,
         num_vars: int,
+        num_rules_range: tuple[int, int],
+        ante_prob_range: tuple[float, float],
+        conseq_prob_range: tuple[float, float],
+        chain_len_range: tuple[int, int],
         num_steps: int,
-        ante_prob: float,
-        conseq_prob: float,
-        state_prob: float,
         dataset_len: int,
-        chain_len: int = 3
+        do_padding: bool = True
     ):
-        self.num_rules = num_rules
-        self.num_vars = num_vars
+ 
+        self.inner_dataset = OneShotTokensDataset(
+            num_vars = num_vars,
+            num_rules_range = num_rules_range,
+            ante_prob_range = ante_prob_range,
+            conseq_prob_range = conseq_prob_range,
+            chain_len_range = chain_len_range,
+            dataset_len = dataset_len,
+        )
+
         self.num_steps = num_steps
-        self.ante_prob = ante_prob
-        self.conseq_prob = conseq_prob
-        self.state_prob = state_prob
-        self.chain_len = chain_len
-        self.dataset_len = dataset_len
+        self.do_padding = do_padding
+        self.max_seq_len = num_rules_range[1]
 
     def __len__(self):
-        return self.dataset_len
+        """ We can indefinitely generate more, but set an artificial cap """
+        return len(self.inner_dataset)       
 
     def __getitem__(self, idx):
-        rules = logic.random_rules_with_chain(
-            num_rules = self.num_rules,
-            num_vars = self.num_vars,
-            ante_prob = self.ante_prob,
-            conseq_prob = self.conseq_prob,
-            chain_len = self.chain_len,
-            return_dict = False)
+        num_vars = self.inner_dataset.num_vars
+        rules_dict = self.inner_dataset.get_random_rules()
+        rules = rules_dict["rules"]
+        num_rules = rules.size(0)
 
-        init_state = (torch.rand(1, self.num_vars) < self.state_prob).long()
-        tmp = init_state
+        if self.do_padding:
+            pad_len = self.max_seq_len - num_rules
+            pad_rules = torch.zeros(pad_len, 2*num_vars)
+            rules = torch.cat([rules, pad_rules], dim=0).long()
+            num_rules = rules.size(0)
+
+        state = torch.zeros(1, num_vars).long()
         succs = ()
         for t in range(self.num_steps):
-            tmp, _ = logic.step_rules(rules.unsqueeze(0), tmp)
-            succs = succs + (tmp,)
+            state, _ = logic.step_rules(rules[None,...], state)
+            succs = succs + (state,)
 
         succs = torch.cat(succs, dim=0).long()
-
+        all_tokens = torch.cat([torch.zeros(num_rules,1), rules], dim=1)
+        all_tokens = all_tokens[torch.randperm(all_tokens.size(0))]
+        
         return {
-            "rules": rules,
-            "state": init_state[0],
+            "tokens": all_tokens,
             "labels": succs
         }
-
-
-class AutoRegKStepsStringDataset(Dataset):
-    pass
 
 

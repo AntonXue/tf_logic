@@ -54,3 +54,27 @@ class TFLModel(nn.Module):
         return self.seqcls_model.num_labels
 
 
+""" Sequence classification models abstract class """
+
+class SeqClsModel(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+
+    @property
+    def model_name(self):
+        raise NotImplementedError()
+
+    @property
+    def input_dim(self):
+        raise NotImplementedError()
+
+    @property
+    def embed_dim(self):
+        raise NotImplementedError()
+
+    @property
+    def num_labels(self):
+        raise NotImplementedError()
+
+

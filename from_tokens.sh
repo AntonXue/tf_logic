@@ -2,6 +2,7 @@ MODEL_NAME=$1
 EMBED_DIM=$2
 NUM_LAYERS=$3
 NUM_HEADS=$4
+NUM_VARS=$5
 
 TRAIN_LEN=32768
 EVAL_LEN=4096
@@ -32,7 +33,7 @@ python3 experiments/synthetic_experiments_base.py \
     --max_num_rules $MAX_NUM_RULES \
     --min_num_states $MIN_NUM_STATES \
     --max_num_states $MAX_NUM_STATES \
-    --num_vars 128 \
+    --num_vars $NUM_VARS \
     --min_ante_prob $MIN_ANTE_PROB \
     --max_ante_prob $MAX_ANTE_PROB \
     --min_conseq_prob $MIN_CONSEQ_PROB \

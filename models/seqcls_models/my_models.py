@@ -1,18 +1,21 @@
-from typing import Optional, Tuple, Union
+from typing import Optional, Union
 from dataclasses import dataclass
 import torch
 import torch.nn as nn
 from transformers.utils import ModelOutput
-from .common import *
+
+from ..common import *
 
 """ Our custom transformer model """
 
 class MyTfConfig:
     """ Use this to initialize MyTfModel and its related classes.
-        The following setup lets us conveniently initialize with Nones.
+        The following setup lets us conveniently initialize with Nones,
+        which may come in by default from command line argmuents
     """
     def __init__(
         self,
+        input_dim: Optional[int] = None,
         embed_dim: Optional[int] = None,
         ffwd_dim: Optional[int] = None,
         num_heads: Optional[int] = None,
@@ -24,6 +27,7 @@ class MyTfConfig:
         problem_type: Optional[str] = None,
         max_seq_len: Optional[int] = None
     ):
+        self.input_dim = default(input_dim, 256)
         self.embed_dim = default(embed_dim, 512)
         self.ffwd_dim = default(ffwd_dim, 4 * self.embed_dim)
         self.num_heads = default(num_heads, 4)
@@ -35,13 +39,19 @@ class MyTfConfig:
         self.problem_type = default(problem_type, None)
         self.max_seq_len = default(max_seq_len, 1024)
 
+    def to_dict(self):
+        """ This is requied by the HF Trainer """
+        return {
+            "model_name": "mytf"
+        }
+
 
 @dataclass
 class MyTfOutput(ModelOutput):
     """ At the moment this is the same as BaseModelOutput, but may change """
     last_hidden_state: Optional[torch.FloatTensor] = None
-    hidden_states: Optional[Tuple[torch.FloatTensor]] = None
-    attentions: Optional[Tuple[torch.FloatTensor]] = None
+    hidden_states: Optional[tuple[torch.FloatTensor]] = None
+    attentions: Optional[tuple[torch.FloatTensor]] = None
 
 
 class AFBlock(nn.Module):
@@ -73,7 +83,8 @@ class AFBlock(nn.Module):
 
 
 class MyTfModel(nn.Module):
-    """ A transformer is consisted of num_layer number of AFBlocks """
+    """ A transformer is made of num_layer number of AFBlocks, maps embed_dim to embed_dim
+    """
     def __init__(self, config: MyTfConfig):
         super().__init__()
         self.config = config
@@ -122,13 +133,14 @@ class MyTfSeqClsOutput(ModelOutput):
     loss: Optional[torch.Tensor] = None
     logits: Optional[torch.FloatTensor] = None
     last_hidden_state: Optional[torch.FloatTensor] = None
-    hidden_states: Optional[Tuple[torch.FloatTensor]] = None
-    attentions: Optional[Tuple[torch.FloatTensor]] = None
+    hidden_states: Optional[tuple[torch.FloatTensor]] = None
+    attentions: Optional[tuple[torch.FloatTensor]] = None
 
 
-class MyTfSeqClsModel(nn.Module):
+class MyTfSeqClsModel(SeqClsModel):
+    """ Maps input_dim to num_labels """
     def __init__(self, config: MyTfConfig):
-        super().__init__()
+        super().__init__(config)
 
         if config.problem_type == "regression":
             assert config.num_labels >= 1
@@ -139,14 +151,17 @@ class MyTfSeqClsModel(nn.Module):
         else:
             raise ValueError(f"Bad problem type {config.problem_type}")
 
-        self.config = config
         self.mytf = MyTfModel(config)
-        self.encoder = nn.Linear(config.embed_dim, config.embed_dim)
+        self.embed_fn = nn.Linear(config.input_dim, config.embed_dim)
         self.cls_head = nn.Linear(config.embed_dim, config.num_labels)
 
     @property
     def model_name(self):
         return "mytf"
+
+    @property
+    def input_dim(self):
+        return self.config.input_dim
 
     @property
     def embed_dim(self):
@@ -167,7 +182,7 @@ class MyTfSeqClsModel(nn.Module):
         output_attentions : Optional[bool] = None,
         labels: Optional[torch.LongTensor] = None
     ):
-        x = self.encoder(x)
+        x = self.embed_fn(x)
         tf_out = self.mytf(x, output_hidden_states=output_hidden_states, output_attentions=output_attentions)
         logits = self.cls_head(tf_out.last_hidden_state)[:,0]   # (batch_size, num_labels)
 
