@@ -32,7 +32,7 @@ python3 experiments/synthetic_experiments_base.py \
     --max_num_rules $MAX_NUM_RULES \
     --min_num_states $MIN_NUM_STATES \
     --max_num_states $MAX_NUM_STATES \
-    --num_vars 16 \
+    --num_vars 128 \
     --min_ante_prob $MIN_ANTE_PROB \
     --max_ante_prob $MAX_ANTE_PROB \
     --min_conseq_prob $MIN_CONSEQ_PROB \
