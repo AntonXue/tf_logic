@@ -19,7 +19,7 @@ HF_MODEL_NAMES = {
     "llama": "code_llama"
 }
 
-def get_hf_model_name(model_name: str):
+def get_hf_pretrained_name(model_name: str):
     if model_name in HF_MODEL_NAMES:
         return HF_MODEL_NAMES.get(model_name)
     else:
@@ -130,7 +130,7 @@ class HFSeqClsModel(SeqClsModel):
 
         if config.use_pretrained:
             self.model = AutoModelForSequenceClassification.from_pretrained(
-                get_hf_model_name(config.model_name),
+                get_hf_pretrained_name(config.model_name),
                 ignore_mismatched_sizes = True, # TODO: ignore_mismatched_sizes seems to fail for bert
                 **config.pretrained_kwargs)
             self.model_config = self.model.config

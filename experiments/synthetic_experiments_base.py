@@ -9,7 +9,7 @@ import wandb
 """ Our imports """
 sys.path.insert(0, str(Path(__file__).parent.parent.resolve()))
 
-from models import AutoTaskModel, get_hf_model_name
+from models import AutoTaskModel
 from my_datasets import *
 from experiments_init import *
 from evaluation_utils import *
@@ -353,7 +353,7 @@ def make_trainer_for_synthetic(
             raise ValueError(f"Model mytf is not supported for one_shot_str")
 
         # Get the tokenizer to create the dataset
-        tokenizer = AutoTokenizer.from_pretrained(get_hf_model_name(args.model_name))
+        tokenizer = AutoTokenizer.from_pretrained(args.model_name)
         tokenizer.pad_token = tokenizer.eos_token
         data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
 
