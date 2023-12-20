@@ -131,10 +131,10 @@ class AutoregKStepsTaskModel(nn.Module):
 
         for t in range(self.num_steps):
             seqcls_out = self.seqcls_model(all_tokens.float(), labels=None, **seqcls_model_kwargs)
-            all_seqcls_outs = all_seqcls_outs + (seqcls_out,)
+            all_seqcls_outs += (seqcls_out,)
 
             succ_logits = seqcls_out.logits.view(-1,1,self.seqcls_model.num_labels)  # (N,1,n)
-            all_succ_logits = all_succ_logits + (succ_logits,)
+            all_succ_logits += (succ_logits,)
 
             succ_state = (succ_logits > 0)
             succ_state_token = self.state_to_token(succ_state.float())

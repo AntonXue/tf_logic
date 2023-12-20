@@ -274,7 +274,7 @@ class AutoregKStepsTokensDataset(Dataset):
         succs = ()
         for t in range(self.num_steps):
             state, _ = logic.step_rules(rules[None,...], state)
-            succs = succs + (state,)
+            succs += (state,)
 
         succs = torch.cat(succs, dim=0).long()
         all_tokens = torch.cat([torch.zeros(num_rules,1), rules], dim=1)
