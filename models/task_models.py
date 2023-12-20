@@ -67,7 +67,7 @@ class OneShotStringTaskModel(nn.Module):
             attention_mask = attention_mask,
             **seqcls_model_kwargs)
 
-        return NextStateTaskOutput(
+        return OneShotStringTaskOutput(
             loss = seqcls_out.loss,
             logits = seqcls_out.logits,
             seqcls_output = seqcls_out
