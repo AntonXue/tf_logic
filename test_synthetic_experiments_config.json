@@ -1,0 +1,23 @@
+{
+    "model_name": ["gpt2"],
+    "syn_exp_name": ["next_state_from_tokens"],
+    "embed_dim": [256, 512],
+    "num_layers": [4],
+    "num_heads": [4],
+    "min_num_rules": [16],
+    "max_num_rules": [64],
+    "min_num_states": [8],
+    "max_num_states": [32],
+    "num_vars": [16],
+    "min_ante_prob": [0.2],
+    "max_ante_prob": [0.5],
+    "min_conseq_prob": [0.2],
+    "max_conseq_prob": [0.5],
+    "min_state_prob": [0.2],
+    "max_state_prob": [0.5],
+    "train_len": [200],
+    "eval_len": [40],
+    "num_epochs": [2],
+    "train_batch_size": [64],
+    "eval_batch_size": [64]
+}
