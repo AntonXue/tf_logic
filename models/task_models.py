@@ -20,10 +20,26 @@ class OneShotTaskOutput(ModelOutput):
     logits: Optional[torch.FloatTensor] = None
     seqcls_output: Optional[ModelOutput] = None
 
-class OneShotTaskModel(nn.Module):
+class OneShotTaskModel(SeqClsModel):
     def __init__(self, seqcls_model: SeqClsModel):
         super().__init__()
         self.seqcls_model = seqcls_model
+
+    @property
+    def model_name(self):
+        return self.seqcls_model.model_name
+
+    @property
+    def input_dim(self):
+        return self.seqcls_model.input_dim
+
+    @property
+    def embed_dim(self):
+        return self.seqcls_model.embed_dim
+
+    @property
+    def num_labels(self):
+        return self.seqcls_model.num_labels
 
     def forward(
         self,
@@ -48,10 +64,26 @@ class OneShotStringTaskOutput(ModelOutput):
     seqcls_output: Optional[ModelOutput] = None
 
 
-class OneShotStringTaskModel(nn.Module):
+class OneShotStringTaskModel(SeqClsModel):
     def __init__(self, seqcls_model: SeqClsModel):
         super().__init__()
         self.seqcls_model = seqcls_model
+
+    @property
+    def model_name(self):
+        return self.seqcls_model.model_name
+
+    @property
+    def input_dim(self):
+        return self.seqcls_model.input_dim
+
+    @property
+    def embed_dim(self):
+        return self.seqcls_model.embed_dim
+
+    @property
+    def num_labels(self):
+        return self.seqcls_model.num_labels
 
     def forward(
         self,
@@ -82,10 +114,26 @@ class NextStateTaskOutput(ModelOutput):
     seqcls_output: Optional[ModelOutput] = None
 
 
-class NextStateTaskModel(nn.Module):
+class NextStateTaskModel(SeqClsModel):
     def __init__(self, seqcls_model: SeqClsModel):
         super().__init__()
         self.seqcls_model = seqcls_model
+
+    @property
+    def model_name(self):
+        return self.seqcls_model.model_name
+
+    @property
+    def input_dim(self):
+        return self.seqcls_model.input_dim
+
+    @property
+    def embed_dim(self):
+        return self.seqcls_model.embed_dim
+
+    @property
+    def num_labels(self):
+        return self.seqcls_model.num_labels
 
     def forward(
         self,
@@ -110,12 +158,28 @@ class AutoregKStepsTaskOutput(ModelOutput):
     all_seqcls_outputs: Optional[tuple[ModelOutput]] = None
 
 
-class AutoregKStepsTaskModel(nn.Module):
+class AutoregKStepsTaskModel(SeqClsModel):
     def __init__(self, seqcls_model: SeqClsModel, num_steps: int):
         super().__init__()
         self.seqcls_model = seqcls_model
         self.num_steps = num_steps
         self.state_to_token = nn.Linear(seqcls_model.num_labels, seqcls_model.input_dim)
+
+    @property
+    def model_name(self):
+        return self.seqcls_model.model_name
+
+    @property
+    def input_dim(self):
+        return self.seqcls_model.input_dim
+
+    @property
+    def embed_dim(self):
+        return self.seqcls_model.embed_dim
+
+    @property
+    def num_labels(self):
+        return self.seqcls_model.num_labels
 
     def forward(
         self,

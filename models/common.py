@@ -26,9 +26,8 @@ def e(i, d):
 """ Sequence classification models abstract class """
 
 class SeqClsModel(nn.Module):
-    def __init__(self, config):
+    def __init__(self):
         super().__init__()
-        self.config = config
 
     @property
     def model_name(self):

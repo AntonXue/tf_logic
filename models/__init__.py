@@ -4,6 +4,7 @@ from transformers import AutoModelForSequenceClassification
 from .common import *
 from .seqcls_models import *
 from .task_models import *
+from .attacker_models import *
 
 
 class AutoSeqClsModel:

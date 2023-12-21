@@ -1,14 +1,14 @@
 from typing import Optional, Union
 import torch
 import transformers
+transformers.logging.set_verbosity_error()  # Be quiet!!
+
 from transformers import AutoConfig, GPT2Config, AutoModelForSequenceClassification, \
         GPT2ForSequenceClassification, BertForSequenceClassification, \
         RobertaForSequenceClassification, LlamaForSequenceClassification
 from transformers.modeling_outputs import SequenceClassifierOutput
 
 from ..common import *
-
-transformers.logging.set_verbosity_error()  # Be quiet!!
 
 """ Hugging Face models for sequence classification """
 
@@ -126,7 +126,8 @@ class HFSeqClsConfig:
 class HFSeqClsModel(SeqClsModel):
     """ Simple wrapper around HF models for sequence classification """
     def __init__(self, config: HFSeqClsConfig):
-        super().__init__(config)
+        super().__init__()
+        self.config = config
 
         if config.use_pretrained:
             self.model = AutoModelForSequenceClassification.from_pretrained(

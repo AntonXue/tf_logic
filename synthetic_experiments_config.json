@@ -16,7 +16,7 @@
     "min_state_prob": [0.2],
     "max_state_prob": [0.5],
     "train_len": [16384],
-    "eval_len": [4096],
+    "eval_len": [8192],
     "num_epochs": [100],
     "train_batch_size": [64],
     "eval_batch_size": [64]

@@ -40,7 +40,7 @@ class MyTfConfig:
         self.max_seq_len = default(max_seq_len, 1024)
 
     def to_dict(self):
-        """ This is requied by the HF Trainer """
+        """ This is required by the HF Trainer """
         return {
             "model_name": "mytf"
         }
@@ -140,7 +140,7 @@ class MyTfSeqClsOutput(ModelOutput):
 class MyTfSeqClsModel(SeqClsModel):
     """ Maps input_dim to num_labels """
     def __init__(self, config: MyTfConfig):
-        super().__init__(config)
+        super().__init__()
 
         if config.problem_type == "regression":
             assert config.num_labels >= 1
@@ -151,6 +151,7 @@ class MyTfSeqClsModel(SeqClsModel):
         else:
             raise ValueError(f"Bad problem type {config.problem_type}")
 
+        self.config = config
         self.mytf = MyTfModel(config)
         self.embed_fn = nn.Linear(config.input_dim, config.embed_dim)
         self.cls_head = nn.Linear(config.embed_dim, config.num_labels)
