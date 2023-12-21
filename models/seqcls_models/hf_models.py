@@ -209,21 +209,23 @@ class HFSeqClsModel(SeqClsModel):
 
     def forward(
         self,
-        x: Union[torch.FloatTensor, torch.LongTensor],
+        x: Optional[torch.FloatTensor] = None,
+        input_ids: Optional[torch.LongTensor] = None,
         labels: Optional[torch.LongTensor] = None,
-        use_input_ids: Optional[bool] = None,
         attention_mask: Optional[torch.LongTensor] = None,
         **kwargs
     ):
-        """ use_inputs_ids == True:  x: (batch_size, seq_len)
-            use_inputs_ids == False: x: (batch_size, seq_len, input_dim)
+        """ x:         (batch_size, seq_len, input_dim)
+            input_ids: (batch_size, seq_len)
         """
+        assert not (x is None and input_ids is None)
+        assert not (x is not None and input_ids is not None)
+
         # When using input ids, the result is simpler
-        if use_input_ids:
-            return self.model(input_ids=x, labels=labels, attention_mask=attention_mask, **kwargs)
+        if input_ids is not None:
+            return self.model(input_ids=input_ids, labels=labels, attention_mask=attention_mask, **kwargs)
 
         # Otherwise we transform the input_dim sequence into one of embed_dim
-        assert x.size(-1) == self.input_dim
         x = self.embed_fn(x)
 
         # Otherwise we assme inputs_embeds

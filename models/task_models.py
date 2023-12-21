@@ -61,9 +61,8 @@ class OneShotStringTaskModel(nn.Module):
         seqcls_model_kwargs: dict = {}
     ):
         seqcls_out = self.seqcls_model(
-            input_ids,
+            input_ids = input_ids,
             labels = labels,
-            use_input_ids = True,
             attention_mask = attention_mask,
             **seqcls_model_kwargs)
 
