@@ -26,7 +26,7 @@ class AutoSeqClsModel:
     @classmethod
     def from_pretrained(cls, model_name, **kwargs):
         if model_name == "mytf":
-            raise ValuError(f"No pretraining for mytf yet")
+            raise ValueError(f"No pretraining for mytf yet")
         else:
             return HFSeqClsModel(HFSeqClsConfig(model_name, use_pretrained=True, **kwargs))
 
