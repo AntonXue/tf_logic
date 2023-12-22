@@ -1,6 +1,7 @@
-import os
 import sys
 sys.path.insert(0, "..")
+
+from pathlib import Path
 import torch
 import wandb
 from safetensors import safe_open
@@ -8,6 +9,9 @@ from safetensors import safe_open
 from models import *
 from my_datasets import *
 from experiments import *
+
+NOTEBOOKS_DIR = str(Path(__file__).resolve().parent)
+
 
 def load_model_from_wandb(
     model_name: str,
@@ -25,6 +29,7 @@ def load_model_from_wandb(
     tag: str = "v0",
     wandb_project: str = "transformer_friends/transformer_friends",
     quiet: bool = False,
+    overwrite: bool = False
 ):
 
     model = AutoTaskModel.from_kwargs(
@@ -44,18 +49,23 @@ def load_model_from_wandb(
             f"_sp{state_prob_range[0]:.2f}-{state_prob_range[1]:.2f}" + \
             f"_ntr{num_trains}_ntt{num_evals}" + f":{tag}"
 
-    if not quiet:
-        print(f"Querying id: {artifact_id}")
+    artifact_dir = Path(NOTEBOOKS_DIR, "artifacts", artifact_id)
+    print(f"checking {artifact_dir}, {artifact_dir.is_dir()}")
+    if not artifact_dir.is_dir() or overwrite:
+        if not quiet:
+            print(f"Querying id: {artifact_id}")
 
-    api = wandb.Api()
-    artifact = api.artifact(os.path.join(wandb_project, artifact_id), type="model")
+        api = wandb.Api()
+        artifact = api.artifact(str(Path(wandb_project, artifact_id)), type="model")
 
-    if not quiet:
-        print(f"Downloading: {artifact}")
+        if not quiet:
+            print(f"Downloading: {artifact}")
 
-    artifact_dir = artifact.download()
-    artifact_path = os.path.join(artifact_dir, "model.safetensors")
-    with safe_open(artifact_path, framework="pt", device="cpu") as f:
+        artifact_dir = artifact.download()
+
+    artifact_file = Path(artifact_dir, "model.safetensors")
+
+    with safe_open(str(artifact_file), framework="pt", device="cpu") as f:
         tensors = {k: f.get_tensor(k) for k in f.keys()}
 
     model.load_state_dict(tensors)
