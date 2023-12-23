@@ -208,7 +208,7 @@ class AutoregKStepsTaskModel(SeqClsModel):
         loss = None
         if labels is not None:
             loss_fn = nn.BCEWithLogitsLoss()
-            loss = loss_fn(all_succ_logits.sigmoid(), labels.float()).to(tokens.device)
+            loss = loss_fn(all_succ_logits, labels.float()).to(tokens.device)
 
         return AutoregKStepsTaskOutput(
             loss = loss,

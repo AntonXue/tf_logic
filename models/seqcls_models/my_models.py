@@ -73,7 +73,8 @@ class AFBlock(nn.Module):
         self.ffwd = nn.Sequential(
             nn.Linear(config.embed_dim, config.ffwd_dim),
             nn.ReLU(),
-            nn.Linear(config.ffwd_dim, config.embed_dim))
+            nn.Linear(config.ffwd_dim, config.embed_dim)
+        )
 
     def forward(self, x: torch.FloatTensor):
         z, a = self.attn(x, x, x)
@@ -203,6 +204,7 @@ class MyTfSeqClsModel(SeqClsModel):
             logits = logits,
             last_hidden_state = tf_out.last_hidden_state,
             hidden_states = tf_out.hidden_states,
-            attentions = tf_out.attentions)
+            attentions = tf_out.attentions
+        )
 
 

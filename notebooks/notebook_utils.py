@@ -50,7 +50,6 @@ def load_model_from_wandb(
             f"_ntr{num_trains}_ntt{num_evals}" + f":{tag}"
 
     artifact_dir = Path(NOTEBOOKS_DIR, "artifacts", artifact_id)
-    print(f"checking {artifact_dir}, {artifact_dir.is_dir()}")
     if not artifact_dir.is_dir() or overwrite:
         if not quiet:
             print(f"Querying id: {artifact_id}")

@@ -215,7 +215,7 @@ class NextStateTokensDataset(Dataset):
         # big_state already has batch_size == 1
         next_state, _ = step_rules(all_rules[None,...], big_state)
 
-        # tokens
+        # Tokens
         state_tokens = torch.cat([torch.ones(num_states,1), 0*all_states, all_states], dim=1)
         rule_tokens = torch.cat([torch.zeros(num_rules,1), all_rules], dim=1)
         all_tokens = torch.cat([rule_tokens, state_tokens], dim=0)
