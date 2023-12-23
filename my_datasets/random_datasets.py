@@ -55,7 +55,7 @@ class OneShotTokensDataset(Dataset):
         # Random numbers
         num_vars = self.num_vars
         rules_dict = self.get_random_rules()
-        rules, bad_bits = rules_dict["rules"], rules_dict["bad_bits"]
+        rules, bad_bit = rules_dict["rules"], rules_dict["bad_bit"]
         num_rules = rules.size(0)
 
         if self.do_padding:
@@ -68,8 +68,8 @@ class OneShotTokensDataset(Dataset):
         thm = proof["states"][0,-1] # The theorem is the iteration fixpoint
         labels = torch.tensor(1).long()
 
-        if torch.rand(()) > 0.5 and thm[bad_bits[0]] == 0:
-            thm[bad_bits[0]] = 1
+        if torch.rand(()) > 0.5:
+            thm[bad_bit] = 1
             labels = torch.tensor(0).long()
 
         all_tokens = torch.cat([
@@ -118,14 +118,14 @@ class OneShotStringDataset(Dataset):
     def __getitem__(self, idx):
         num_vars = self.inner_dataset.num_vars
         rules_dict = self.inner_dataset.get_random_rules()
-        rules, bad_bits = rules_dict["rules"], rules_dict["bad_bits"]
+        rules, bad_bit = rules_dict["rules"], rules_dict["bad_bit"]
 
         proof = logic.prove_theorem(rules[None,...], torch.ones(1,num_vars))
         thm = proof["states"][0,-1]
         labels = torch.tensor(1).long()
 
-        if torch.rand(()) > 0.5 and thm[bad_bits[0]] == 0:
-            thm[bad_bits[0]] = 1
+        if torch.rand(()) > 0.5:
+            thm[bad_bit] = 1
             labels = torch.tensor(0).long()
 
         entry = {
@@ -240,7 +240,6 @@ class AutoregKStepsTokensDataset(Dataset):
         dataset_len: int,
         do_padding: bool = True
     ):
- 
         self.inner_dataset = OneShotTokensDataset(
             num_vars = num_vars,
             num_rules_range = num_rules_range,

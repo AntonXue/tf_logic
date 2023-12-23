@@ -11,57 +11,67 @@ def random_rules_with_chain(
     ante_prob: float,
     conseq_prob: float,
     chain_len: int,
+    state_prob: Optional[float] = None,
     num_fillers: int = 2,
-    num_bad_bits: int = 2,
     return_dict: bool = False
 ):
     """ Make one rule at a time (batch_size == 1) """
-    assert num_rules > num_fillers + chain_len + num_bad_bits
-    r, n, pa, pb = num_rules, num_vars, ante_prob, conseq_prob
+    assert num_rules > num_fillers + chain_len
+    assert num_vars > chain_len
+    r, n, ap, bp, sp = num_rules, num_vars, ante_prob, conseq_prob, state_prob
 
-    # Figure out the chain stuff, and what bits to avoid in the conseq
-    order = torch.arange(0, n)[torch.randperm(n)]
-    good_bits, bad_bits = order[:chain_len], order[-num_bad_bits:]
+    order = torch.randperm(n)
+    chain_bits = order[:chain_len]    # We need chain_len - 1 dedicated bits
+    other_bits = order[chain_len:n-1] # The other stuffs
+    bad_bit = order[-1] # The bad bit we wanna be excluding
 
-    # The filler bits, which all have the first good bit in the conseq
+    other_vec = torch.zeros(n)
+    other_vec[other_bits] = 1
+
+    init_state = torch.zeros(n)
+    if sp is not None:
+        init_state = (torch.rand(n) < sp)
+        init_state[chain_bits] = 0
+        init_state[bad_bit] = 0
+    init_state = init_state.long()
+
     all_as, all_bs = [], []
+
+    # Construct the chain first
+    all_as.append((torch.rand(n) < ap) * init_state)
+    all_bs.append(F.one_hot(chain_bits[0], n) + (torch.rand(n) < bp) * other_vec)
+    for k in range(len(chain_bits) - 1):
+        all_as.append(F.one_hot(chain_bits[k], n) + (torch.rand(n) < ap) * init_state)
+        all_bs.append(F.one_hot(chain_bits[k+1], n) + (torch.rand(n) < bp) * other_vec)
+
+    # Now make the filler rules
     for _ in range(num_fillers):
-        b = (torch.rand(n) < pb).long()
-        b[bad_bits] = 0
-        if len(good_bits) > 0:
-            b[good_bits[0]] = 1
-        all_as.append(torch.zeros(n).long())
-        all_bs.append(b)
+        all_as.append((torch.rand(n) < ap) * init_state)
+        all_bs.append((torch.rand(n) < bp) * other_vec)
 
-    all_facts = sum(all_bs).clamp(0,1)  # All the facts so far
-
-    for k in range(len(good_bits) - 1):
-        gk, gk1 = F.one_hot(good_bits[k], n), F.one_hot(good_bits[k+1], n)
-        a = (gk + (all_facts * (torch.rand(n) < pa))).clamp(0,1)
-        b = (gk1 + (all_facts * (torch.rand(n) < pa))).clamp(0,1)
-        all_as.append(a)
-        all_bs.append(b)
-        all_facts = (all_facts + b).clamp(0,1)
-
-    for _ in range(r - len(all_as)):
-        bad_bit = bad_bits[torch.randperm(num_bad_bits)][0]
-        a = (torch.rand(n) < pa).long()
-        a[bad_bit] = 1
-        b = (torch.rand(n) < pb).long()
-        all_as.append(a)
-        all_bs.append(b)
+    # Now add the adversarial rules
+    num_bad_rules = r - len(all_as)
+    for _ in range(num_bad_rules):
+        bad_a = (torch.rand(n) < ap).long()
+        bad_a[bad_bit] = 1
+        all_as.append(bad_a)
+        all_bs.append(torch.rand(n) < bp)
 
     all_as = torch.stack(all_as)    # (r,n)
     all_bs = torch.stack(all_bs)    # (r,n)
-    all_rules = torch.cat([all_as, all_bs], dim=1) # (r,2n)
+    all_rules = torch.cat([all_as, all_bs], dim=1).long()
+    all_rules = all_rules[torch.randperm(r)]
 
     if return_dict:
         return {
-            "rules" : all_rules[torch.randperm(r),:],
-            "bad_bits" : bad_bits
+            "rules": all_rules,
+            "init_state": init_state,
+            "chain_bits": chain_bits,
+            "other_bits": other_bits,
+            "bad_bit" : bad_bit
         }
     else:
-        return all_rules[torch.randperm(r),:]
+        return all_rules, init_state
 
 
 """ Functionalities """
@@ -100,34 +110,18 @@ def kstep_rules(rules: torch.LongTensor, state: torch.LongTensor, num_steps: int
     return state
 
 
-def compose_rules(rules1: torch.LongTensor, rules2: torch.LongTensor):
-    """ Compose rules1 @> rules2
-        Given: rules1 = {a1 -> b1}, rules2 = {a2 -> b2}
-        Then:  rules3 = {a1 -> s1}, where s1 = rules2(rules1(a1)) for each a1
-    """
-    assert rules1.shape == rules2.shape
-    _, r, _ = rules1.shape
-    a, _ = split_abs(rules1)
-    succs = []
-    for k in range(r):
-        ak = a[:,k,:] # (N,n)
-        sk, _ = step_rules(rules1, ak)
-        sk, _ = step_rules(rules2, sk)
-        succs.append(sk)
-
-    succs = torch.stack(succs, dim=1) # (N,r,n)
-    comp_rules = torch.cat([a, succs], dim=2) # (N,r,2n)
-    return comp_rules.long()  # (N,r,2n)
-
-
-def prove_theorem(rules: torch.LongTensor, theorem: torch.LongTensor):
+def prove_theorem(
+        rules: torch.LongTensor,
+        theorem: torch.LongTensor,
+        init_state: Optional[torch.LongTensor] = None
+    ):
     """ Run a proof and return a bunch of metadata """
     N, r, n2 = rules.shape
     _, n = theorem.shape
     assert n2 == n*2
 
     all_states, all_hits, chain_len = [], [], torch.zeros(N).long()
-    z = torch.zeros_like(theorem)
+    z = torch.zeros_like(theorem) if init_state is None else init_state
     for t in range(n):
         z_new, h = step_rules(rules, z)
         all_states.append(z_new)
