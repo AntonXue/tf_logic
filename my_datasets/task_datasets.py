@@ -1,9 +1,8 @@
 import torch
 from torch.utils.data import Dataset
 
-from my_datasets.dataset_utils import *
-from . import logic
-
+from .utils.logic_utils import *
+from .utils.string_utils import *
 
 class OneShotTokensDataset(Dataset):
     def __init__(
@@ -42,7 +41,7 @@ class OneShotTokensDataset(Dataset):
         ap = (self.ap_range[1] - self.ap_range[0]) * _ap + self.ap_range[0]
         bp = (self.bp_range[1] - self.bp_range[0]) * _bp + self.bp_range[0]
 
-        return logic.random_rules_with_chain(
+        return random_rules_with_chain(
             num_rules = num_rules,
             num_vars = self.num_vars,
             ante_prob = ap,
@@ -64,7 +63,7 @@ class OneShotTokensDataset(Dataset):
             rules = torch.cat([rules, pad_rules], dim=0).long()
             num_rules = rules.size(0)
 
-        proof = logic.prove_theorem(rules[None,...], torch.ones(1, num_vars))
+        proof = prove_theorem(rules[None,...], torch.ones(1, num_vars))
         thm = proof["states"][0,-1] # The theorem is the iteration fixpoint
         labels = torch.tensor(1).long()
 
@@ -120,7 +119,7 @@ class OneShotStringDataset(Dataset):
         rules_dict = self.inner_dataset.get_random_rules()
         rules, bad_bit = rules_dict["rules"], rules_dict["bad_bit"]
 
-        proof = logic.prove_theorem(rules[None,...], torch.ones(1,num_vars))
+        proof = prove_theorem(rules[None,...], torch.ones(1,num_vars))
         thm = proof["states"][0,-1]
         labels = torch.tensor(1).long()
 
@@ -214,7 +213,7 @@ class NextStateTokensDataset(Dataset):
             num_rules = all_rules.size(0)
 
         # big_state already has batch_size == 1
-        next_state, _ = logic.step_rules(all_rules[None,...], big_state)
+        next_state, _ = step_rules(all_rules[None,...], big_state)
 
         # tokens
         state_tokens = torch.cat([torch.ones(num_states,1), 0*all_states, all_states], dim=1)
@@ -272,7 +271,7 @@ class AutoregKStepsTokensDataset(Dataset):
         state = torch.zeros(1, num_vars).long()
         succs = ()
         for t in range(self.num_steps):
-            state, _ = logic.step_rules(rules[None,...], state)
+            state, _ = step_rules(rules[None,...], state)
             succs += (state,)
 
         succs = torch.cat(succs, dim=0).long()
