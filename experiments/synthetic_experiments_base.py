@@ -1,39 +1,37 @@
 import sys
 from pathlib import Path
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from typing import Optional
 import torch
 from transformers import Trainer, TrainingArguments, HfArgumentParser, AutoTokenizer, DataCollatorWithPadding
 import wandb
 
 """ Our imports """
-sys.path.insert(0, str(Path(__file__).parent.parent.resolve()))
-
+from common import *    # Critical definitions and path inserts
 from models import AutoTaskModel
 from my_datasets import *
-from experiments_init import *
-from evaluation_utils import *
+from utils.metrics import *
 
 """ Parser for Hugging Face """
 
 @dataclass
-class SyntheticExperimentArguments:
+class SyntheticExperimentsArguments:
     """ This class captures ALL the possible synthetic experiments we may want to run """
     output_dir: str = field(
         default = str(Path(DUMP_DIR, "synthetic_experiments")),
-        metadata = {"help": "Output directory of synthetic experiments"}
+        metadata = {"help": "Output directory of synthetic experiments."}
     )
 
     syn_exp_name: Optional[str] = field(
         default = None,
-        metadata = {"help": "The experiment to run"}
+        metadata = {"help": "The experiment to run."}
     )
 
     """ Model details """
 
     model_name: Optional[str] = field(
         default = None,
-        metadata = {"help": "The seq2seq model to use"}
+        metadata = {"help": "The seq2seq model to use."}
     )
 
     embed_dim: Optional[int] = field(
@@ -60,7 +58,7 @@ class SyntheticExperimentArguments:
         default = False,
         metadata = {"help": "Weights from the pretrained model are loaded if True. " + \
                     "Note that this restricts changes to the model " + \
-                    "(default num_heads, num_layers, etc. will be used)"}
+                    "(default num_heads, num_layers, etc. will be used)."}
     )
 
     """ Dataset details """
@@ -86,7 +84,7 @@ class SyntheticExperimentArguments:
     )
 
     num_steps: Optional[int] = field(
-        default = None,
+        default = 3,
         metadata = {"help": "The number of steps; used for autoreg_ksteps."}
     )
 
@@ -213,7 +211,7 @@ class SyntheticExperimentArguments:
     )
 
 
-def synexp_args_to_wandb_run_name(args: SyntheticExperimentArguments):
+def synexp_args_to_wandb_run_name(args: SyntheticExperimentsArguments):
     model_str = f"{args.model_name}" + \
                 (f"_pt" if args.use_pretrained else "") + \
                 (f"_d{args.embed_dim}" if args.embed_dim is not None else "") + \
@@ -264,7 +262,7 @@ def synexp_args_to_wandb_run_name(args: SyntheticExperimentArguments):
 
 
 def trainer_stats_for_wandb(
-    args: SyntheticExperimentArguments,
+    args: SyntheticExperimentsArguments,
     trainer: Trainer
 ):
     """ Make some statistics to report to wandb """
@@ -301,7 +299,7 @@ def trainer_stats_for_wandb(
 
 
 def make_trainer_for_synthetic(
-    args: SyntheticExperimentArguments,
+    args: SyntheticExperimentsArguments,
     report_to: str = "wandb"
 ):
     """ Make a Hugging Face Trainer object """
@@ -503,8 +501,9 @@ def make_trainer_for_synthetic(
 """ Main stuff """
 
 if __name__ == "__main__":
-    parser = HfArgumentParser(SyntheticExperimentArguments)
+    parser = HfArgumentParser(SyntheticExperimentsArguments)
     args = parser.parse_args_into_dataclasses()[0]
+    Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     torch.manual_seed(args.seed)
 

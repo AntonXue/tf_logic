@@ -1,7 +1,7 @@
 {
     "model_name": ["gpt2"],
-    "syn_exp_name": ["next_state_from_tokens"],
-    "embed_dim": [256, 512],
+    "syn_exp_name": ["one_shot", "one_shot_str", "next_state", "autoreg_ksteps"],
+    "embed_dim": [256],
     "num_layers": [4],
     "num_heads": [4],
     "min_num_rules": [16],
@@ -21,3 +21,4 @@
     "train_batch_size": [64],
     "eval_batch_size": [64]
 }
+
