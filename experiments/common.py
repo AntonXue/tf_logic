@@ -15,4 +15,5 @@ WANDB_PROJECT = "transformer_friends"
 os.environ["WANDB_PROJECT"] = WANDB_PROJECT
 os.environ["WANDB_LOG_MODEL"] = "checkpoint"
 os.environ["WANDB_DIR"] = DUMP_DIR  # _dump/wandb
+os.environ["WANDB_RESUME"]="allow"
 

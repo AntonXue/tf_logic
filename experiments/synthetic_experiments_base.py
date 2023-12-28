@@ -11,6 +11,7 @@ from common import *    # Critical definitions and path inserts
 from models import AutoTaskModel
 from my_datasets import *
 from utils.metrics import *
+from utils.model_loader_utils import load_checkpoint_from_wandb
 
 """ Parser for Hugging Face """
 
@@ -430,7 +431,7 @@ def make_trainer_for_synthetic(
             num_heads = args.num_heads)
 
         training_args = TrainingArguments(
-            args.output_dir,
+            str(Path(args.output_dir, synexp_args_to_wandb_run_name(args))),
             num_train_epochs = args.num_epochs,
             per_device_train_batch_size = args.train_batch_size,
             per_device_eval_batch_size = args.eval_batch_size,
@@ -440,7 +441,8 @@ def make_trainer_for_synthetic(
             run_name = synexp_args_to_wandb_run_name(args),
             logging_steps = args.logging_steps,
             warmup_ratio = 0.10,
-            save_strategy = "no")
+            save_strategy = "epoch",
+            save_total_limit=2)
 
         return Trainer(
             tfl_model,
@@ -511,8 +513,19 @@ if __name__ == "__main__":
 
     # Log some preliminary training stats
     trainer_stats = trainer_stats_for_wandb(args, trainer)
-    trainer.train()
 
+    experiment_id = synexp_args_to_wandb_run_name(args)
+    checkpoint = load_checkpoint_from_wandb(
+        experiment_out_dir=str(Path(args.output_dir, experiment_id)),
+        experiment_id=experiment_id
+    )
+    if checkpoint is not None:
+        print("Found checkpoint: ", checkpoint)
+        trainer.train(resume_from_checkpoint=checkpoint)
+    else:
+        print("No checkpoint found. Training from scratch.")
+        trainer.train()
+    
     wandb.run.summary["trainer_stats"] = trainer_stats
     wandb.finish()
 
