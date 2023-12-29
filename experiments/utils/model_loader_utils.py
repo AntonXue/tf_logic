@@ -3,6 +3,7 @@ from pathlib import Path
 import torch
 import wandb
 from safetensors import safe_open
+import os
 
 BASE_DIR = str(Path(__file__).parent.parent.parent.resolve())
 sys.path.insert(0, BASE_DIR)
@@ -13,6 +14,31 @@ from experiments import *
 
 DUMP_DIR = str(Path(BASE_DIR, "_dump"))
 
+def download_artifact(
+    artifact_id: str,
+    artifact_dir: str,
+    wandb_project: str = "transformer_friends/transformer_friends",
+    quiet: bool = False,
+    overwrite: bool = False,
+    artifact_type: str = "model",
+    raise_exception_if_not_found: str = True
+):
+    if not artifact_dir.is_dir() or overwrite:
+        if not quiet:
+            print(f"Querying id: {artifact_id}")
+
+        try:
+            api = wandb.Api()
+            artifact = api.artifact(str(Path(wandb_project, artifact_id)), type=artifact_type)
+
+            if not quiet:
+                print(f"Downloading: {artifact}")
+            artifact_dir = artifact.download(artifact_dir)
+        except Exception as e:
+            if raise_exception_if_not_found:
+                raise Exception(e)
+            artifact_dir = None
+    return artifact_dir
 
 def load_next_state_model_from_wandb(
     model_name: str,
@@ -51,17 +77,11 @@ def load_next_state_model_from_wandb(
             f"_ntr{train_len}_ntt{eval_len}" + f":{tag}"
 
     artifact_dir = Path(DUMP_DIR, "artifacts", artifact_id)
-    if not artifact_dir.is_dir() or overwrite:
-        if not quiet:
-            print(f"Querying id: {artifact_id}")
-
-        api = wandb.Api()
-        artifact = api.artifact(str(Path(wandb_project, artifact_id)), type="model")
-
-        if not quiet:
-            print(f"Downloading: {artifact}")
-
-        artifact_dir = artifact.download(artifact_dir)
+    artifact_dir = download_artifact(artifact_id=artifact_id, 
+                                     artifact_dir=artifact_dir,
+                                     wandb_project=wandb_project,
+                                     quiet=quiet,
+                                     overwrite=overwrite)
 
     artifact_file = Path(artifact_dir, "model.safetensors")
 
@@ -71,3 +91,23 @@ def load_next_state_model_from_wandb(
     model.load_state_dict(tensors)
     model.eval()
     return model
+
+def load_checkpoint_from_wandb(
+        experiment_out_dir: str,
+        experiment_id: str
+):
+    if os.path.isdir(experiment_out_dir):
+        # First try fetching checkpoint from local logs
+        checkpoints = os.listdir(experiment_out_dir)
+        checkpoints = sorted([int(name.split("checkpoint-")[-1]) for name in checkpoints if name.startswith("checkpoint")])
+        if len(checkpoints) > 0:
+            # pick the latest checkpoint
+            latest_checkpoint = f"checkpoint-{checkpoints[-1]}"
+            return str(Path(experiment_out_dir, latest_checkpoint))
+    
+    # download the latest checkpoint
+    # This may not always give the latest epoch
+    checkpoint_id = "checkpoint-" + experiment_id + ":latest"
+    artifact_dir = Path(DUMP_DIR, "artifacts", checkpoint_id)
+    checkpoint = download_artifact(artifact_id=checkpoint_id, artifact_dir=artifact_dir, raise_exception_if_not_found=False)
+    return checkpoint
