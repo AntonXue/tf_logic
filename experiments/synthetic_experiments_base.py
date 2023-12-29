@@ -244,7 +244,7 @@ def synexp_args_to_wandb_run_name(args: SyntheticExperimentsArguments):
             f"_ns{args.min_num_states}-{args.max_num_states}" + \
             f"_ap{args.min_ante_prob:.2f}-{args.max_ante_prob:.2f}" + \
             f"_bp{args.min_conseq_prob:.2f}-{args.max_conseq_prob:.2f}" + \
-            f"_sp{args.max_state_prob:.2f}-{args.max_state_prob:.2f}" + \
+            f"_sp{args.min_state_prob:.2f}-{args.max_state_prob:.2f}" + \
             f"_ntr{args.train_len}_ntt{args.eval_len}"
 
     elif args.syn_exp_name == "autoreg_ksteps":
