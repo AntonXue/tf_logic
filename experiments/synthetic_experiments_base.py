@@ -5,6 +5,7 @@ from typing import Optional
 import torch
 from transformers import Trainer, TrainingArguments, HfArgumentParser, AutoTokenizer, DataCollatorWithPadding
 import wandb
+import json
 
 """ Our imports """
 from common import *    # Critical definitions and path inserts
@@ -298,6 +299,29 @@ def trainer_stats_for_wandb(
     else:
         raise ValueError(f"Unrecognized syn_exp_name {args.syn_exp_name}")
 
+# TODO: Refactor this later (move to common.py)
+def set_wandb_run_id(args: SyntheticExperimentsArguments):
+    """ Set the wandb run id for this experiment """
+    run_id_map_file = Path(DUMP_DIR, "run_id_map.json")
+    if not run_id_map_file.exists():
+        run_id_map = {}
+    else:
+        run_id_map = json.load(open(str(run_id_map_file), "r"))
+
+    exp_id = synexp_args_to_wandb_run_name(args)
+    
+    if exp_id in run_id_map.keys():
+        run_id = run_id_map[exp_id]
+        print(f"Found run_id {run_id} for {exp_id}")
+    else:
+        run_id = wandb.util.generate_id()
+        run_id_map[exp_id] = run_id
+        json.dump(run_id_map, open(str(Path(DUMP_DIR, "run_id_map.json")), "w"))
+        print(f"Generated run_id {run_id} for {exp_id}")
+    
+    # Set the run_id to ensure resuming any previous run
+    os.environ["WANDB_RUN_ID"] = run_id
+
 
 def make_trainer_for_synthetic(
     args: SyntheticExperimentsArguments,
@@ -511,6 +535,8 @@ if __name__ == "__main__":
 
     trainer = make_trainer_for_synthetic(args)
 
+    set_wandb_run_id(args)
+    
     # Log some preliminary training stats
     trainer_stats = trainer_stats_for_wandb(args, trainer)
 
