@@ -67,7 +67,7 @@ class AFBlock(nn.Module):
             self.norm2 = nn.Identity()
 
         # Attention block
-        self.attn = nn.MultiheadAttention(config.embed_dim, config.num_heads)
+        self.attn = nn.MultiheadAttention(config.embed_dim, config.num_heads, batch_first=True)
 
         # Feedforward block construction
         self.ffwd = nn.Sequential(

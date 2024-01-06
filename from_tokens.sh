@@ -5,8 +5,8 @@ NUM_HEADS=$4
 NUM_VARS=$5
 
 TRAIN_LEN=32768
-EVAL_LEN=4096
-NUM_EPOCHS=50
+EVAL_LEN=8192
+NUM_EPOCHS=100
 
 MIN_NUM_RULES=16
 MAX_NUM_RULES=64
@@ -24,7 +24,7 @@ TRAIN_BATCH_SIZE=128
 EVAL_BATCH_SIZE=128
 
 python3 experiments/synthetic_experiments_base.py \
-    --syn_exp_name next_state_from_tokens \
+    --syn_exp_name next_state \
     --model_name $MODEL_NAME \
     --embed_dim $EMBED_DIM \
     --num_layers $NUM_LAYERS \
