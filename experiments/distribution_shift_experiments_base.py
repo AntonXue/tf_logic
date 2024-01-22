@@ -11,7 +11,7 @@ from tqdm import tqdm
 from common import *    # Critical definitions and path inserts
 
 from models import *
-from my_datasets import NextStateTokensDataset
+from my_datasets import NextStateTokensDataset, AutoregKStepsTokensDataset
 from utils.model_loader_utils import load_next_state_model_from_wandb
 from utils.metrics import *
 
@@ -22,6 +22,11 @@ class DistributionShiftExperimentsArguments:
     output_dir: str = field(
         default = str(Path(DUMP_DIR, "distribution_shift_experiments")),
         metadata = {"help": "The output directory of distribution shift experiments."}
+    )
+
+    syn_exp_name: Optional[str] = field(
+        default = None,
+        metadata = {"help": "The experiment to run."}
     )
 
     """ Model details """
@@ -46,12 +51,14 @@ class DistributionShiftExperimentsArguments:
         metadata = {"help": "The model's number of attention heads."}
     )
 
-    num_vars: Optional[int] = field(
-        default = None,
-        metadata = {"help": "The number of propositional variables to use."}
-    )
+    
 
     """ Train dataset details """
+
+    train_num_vars: Optional[int] = field(
+        default = None,
+        metadata = {"help": "(Train) The number of propositional variables to use."}
+    )
 
     train_min_num_rules: Optional[int] = field(
         default = None,
@@ -61,6 +68,11 @@ class DistributionShiftExperimentsArguments:
     train_max_num_rules: Optional[int] = field(
         default = None,
         metadata = {"help": "(Train) The maximum number of rules to use."}
+    )
+
+    train_num_steps: Optional[int] = field(
+        default = 3,
+        metadata = {"help": "(Train) The number of steps; used for autoreg_ksteps."}
     )
 
     train_min_num_states: Optional[int] = field(
@@ -103,6 +115,16 @@ class DistributionShiftExperimentsArguments:
         metadata = {"help": "(Train) The maximum_probability of a variable in an initial state being true."}
     )
 
+    train_min_chain_len: Optional[int] = field(
+        default = 2,
+        metadata = {"help": "(Train) The minimum attmepted length of the deduction chain for a random dataset."}
+    )
+
+    train_max_chain_len: Optional[int] = field(
+        default = 5,
+        metadata = {"help": "(Train) The maximum attmepted length of the deduction chain for a random dataset."}
+    )
+
     train_len: Optional[int] = field(
         default = None,
         metadata = {"help": "(Train) The number of elements in the dataset."}
@@ -115,6 +137,11 @@ class DistributionShiftExperimentsArguments:
 
     """ Eval dataset details """
 
+    eval_num_vars: Optional[int] = field(
+        default = None,
+        metadata = {"help": "(Eval) The number of propositional variables to use."}
+    )
+
     eval_min_num_rules: Optional[int] = field(
         default = None,
         metadata = {"help": "(Eval) The minimum number of rules to use."}
@@ -123,6 +150,11 @@ class DistributionShiftExperimentsArguments:
     eval_max_num_rules: Optional[int] = field(
         default = None,
         metadata = {"help": "(Eval) The maximum number of rules to use."}
+    )
+
+    eval_num_steps: Optional[int] = field(
+        default = 3,
+        metadata = {"help": "(Eval) The number of steps; used for autoreg_ksteps."}
     )
 
     eval_min_num_states: Optional[int] = field(
@@ -163,6 +195,16 @@ class DistributionShiftExperimentsArguments:
     eval_max_state_prob: Optional[float] = field(
         default = None,
         metadata = {"help": "(Eval) The maximum_probability of a variable in an initial state being true."}
+    )
+
+    eval_min_chain_len: Optional[int] = field(
+        default = 2,
+        metadata = {"help": "(Eval) The minimum attmepted length of the deduction chain for a random dataset."}
+    )
+
+    eval_max_chain_len: Optional[int] = field(
+        default = 5,
+        metadata = {"help": "(Eval) The maximum attmepted length of the deduction chain for a random dataset."}
     )
 
     eval_len: Optional[int] = field(
@@ -218,7 +260,7 @@ def model_description(args):
 
 def train_dataset_description(args):
     return dataset_description(
-        num_vars = args.num_vars,
+        num_vars = args.train_num_vars,
         min_num_rules = args.train_min_num_rules,
         max_num_rules = args.train_max_num_rules,
         min_num_states = args.train_min_num_states,
@@ -235,7 +277,7 @@ def train_dataset_description(args):
 
 def eval_dataset_description(args):
     return dataset_description(
-        num_vars = args.num_vars,
+        num_vars = args.eval_num_vars,
         min_num_rules = args.eval_min_num_rules,
         max_num_rules = args.eval_max_num_rules,
         min_num_states = args.eval_min_num_states,
@@ -288,7 +330,7 @@ def run_eval(model, dataset, args):
         num_dones += tokens.size(0)
         running_hits += (preds == labels).sum()
 
-        acc = running_hits.item() / (num_dones * dataset.num_vars)
+        acc = running_hits.item() / (num_dones * args.eval_num_vars)
         desc = f"Accuracy {acc:.3f}"
         pbar.set_description(desc)
 
@@ -309,29 +351,56 @@ if __name__ == "__main__":
 
     torch.manual_seed(args.seed)
 
-    model = load_next_state_model_from_wandb(
-        model_name = args.model_name,
-        embed_dim = args.embed_dim,
-        num_layers = args.num_layers,
-        num_heads = args.num_heads,
-        num_vars = args.num_vars,
-        num_rules_range = (args.train_min_num_rules, args.train_max_num_rules),
-        num_states_range = (args.train_min_num_states, args.train_max_num_states),
-        ante_prob_range = (args.train_min_ante_prob, args.train_max_ante_prob),
-        conseq_prob_range = (args.train_min_conseq_prob, args.train_max_conseq_prob),
-        state_prob_range = (args.train_min_state_prob, args.train_max_state_prob),
-        train_len = args.train_len,
-        eval_len = args.train_eval_len,
-    )
+    if args.syn_exp_name == "next_state":
+        model = load_next_state_model_from_wandb(
+            model_name = args.model_name,
+            embed_dim = args.embed_dim,
+            num_layers = args.num_layers,
+            num_heads = args.num_heads,
+            num_vars = args.train_num_vars,
+            num_rules_range = (args.train_min_num_rules, args.train_max_num_rules),
+            num_states_range = (args.train_min_num_states, args.train_max_num_states),
+            ante_prob_range = (args.train_min_ante_prob, args.train_max_ante_prob),
+            conseq_prob_range = (args.train_min_conseq_prob, args.train_max_conseq_prob),
+            state_prob_range = (args.train_min_state_prob, args.train_max_state_prob),
+            train_len = args.train_len,
+            eval_len = args.train_eval_len,
+            task_name="next_state"
+        )
+        dataset = NextStateTokensDataset(
+            num_vars = args.eval_num_vars,
+            num_rules_range = (args.eval_min_num_rules, args.eval_max_num_rules),
+            num_states_range = (args.eval_min_num_states, args.eval_max_num_states),
+            ante_prob_range = (args.eval_min_ante_prob, args.eval_max_ante_prob),
+            conseq_prob_range = (args.eval_min_conseq_prob, args.eval_max_conseq_prob),
+            state_prob_range = (args.eval_min_state_prob, args.eval_max_state_prob),
+            dataset_len = args.eval_len
+        )
+    elif args.syn_exp_name == "autoreg_ksteps":
+        model = load_next_state_model_from_wandb(
+            model_name = args.model_name,
+            embed_dim = args.embed_dim,
+            num_layers = args.num_layers,
+            num_heads = args.num_heads,
+            num_vars = args.train_num_vars,
+            num_rules_range = (args.train_min_num_rules, args.train_max_num_rules),
+            ante_prob_range = (args.train_min_ante_prob, args.train_max_ante_prob),
+            conseq_prob_range = (args.train_min_conseq_prob, args.train_max_conseq_prob),
+            train_len = args.train_len,
+            eval_len = args.train_eval_len,
+            task_name="autoreg_ksteps",
+            num_steps = args.train_num_steps,
+            chain_len_range=(args.train_min_chain_len, args.train_max_chain_len)
+        )
+        dataset = AutoregKStepsTokensDataset(
+            num_vars = args.eval_num_vars,
+            num_rules_range = (args.eval_min_num_rules, args.eval_max_num_rules),
+            ante_prob_range = (args.eval_min_ante_prob, args.eval_max_ante_prob),
+            conseq_prob_range = (args.eval_min_conseq_prob, args.eval_max_conseq_prob),
+            chain_len_range = (args.eval_min_chain_len, args.eval_max_chain_len),
+            num_steps = args.eval_num_steps,
+            dataset_len = args.eval_len)
 
-    dataset = NextStateTokensDataset(
-        num_vars = args.num_vars,
-        num_rules_range = (args.eval_min_num_rules, args.eval_max_num_rules),
-        num_states_range = (args.eval_min_num_states, args.eval_max_num_states),
-        ante_prob_range = (args.eval_min_ante_prob, args.eval_max_ante_prob),
-        conseq_prob_range = (args.eval_min_conseq_prob, args.eval_max_conseq_prob),
-        state_prob_range = (args.eval_min_state_prob, args.eval_max_state_prob),
-        dataset_len = args.eval_len
-    )
+    run_eval(model, dataset, args)
 
 

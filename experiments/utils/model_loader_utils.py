@@ -56,25 +56,49 @@ def load_next_state_model_from_wandb(
     tag: str = "v0",
     wandb_project: str = "transformer_friends/transformer_friends",
     quiet: bool = False,
-    overwrite: bool = False
+    overwrite: bool = False,
+    task_name: str = "next_state",
+    num_steps: int = 3,
+    chain_len_range: tuple[int, int] = (2, 5)
 ):
 
-    model = AutoTaskModel.from_kwargs(
-        task_name = "next_state",
-        num_vars = num_vars,
-        model_name = model_name,
-        input_dim = 1 + 2 * num_vars,
-        embed_dim = embed_dim,
-        num_layers = num_layers,
-        num_heads = num_heads)
-
-    artifact_id = f"model-SynNS_{model_name}_d{embed_dim}_L{num_layers}_H{num_heads}" + \
+    if task_name == "next_state":
+        model = AutoTaskModel.from_kwargs(
+            task_name = "next_state",
+            num_vars = num_vars,
+            model_name = model_name,
+            input_dim = 1 + 2 * num_vars,
+            embed_dim = embed_dim,
+            num_layers = num_layers,
+            num_heads = num_heads)
+        artifact_id = f"model-SynNS_{model_name}_d{embed_dim}_L{num_layers}_H{num_heads}" + \
             f"__nv{num_vars}_nr{num_rules_range[0]}-{num_rules_range[1]}" + \
             f"_ns{num_states_range[0]}-{num_states_range[1]}" + \
             f"_ap{ante_prob_range[0]:.2f}-{ante_prob_range[1]:.2f}" + \
             f"_bp{conseq_prob_range[0]:.2f}-{conseq_prob_range[1]:.2f}" + \
             f"_sp{state_prob_range[0]:.2f}-{state_prob_range[1]:.2f}" + \
             f"_ntr{train_len}_ntt{eval_len}" + f":{tag}"
+        
+    elif task_name == "autoreg_ksteps":
+        model = AutoTaskModel.from_kwargs(
+            task_name = "autoreg_ksteps",
+            num_vars = num_vars,
+            model_name = model_name,
+            input_dim = 1 + 2 * num_vars,
+            embed_dim = embed_dim,
+            num_layers = num_layers,
+            num_heads = num_heads,
+            num_steps = num_steps)
+        artifact_id = f"model-SynAR_{model_name}_d{embed_dim}_L{num_layers}_H{num_heads}" + \
+            f"__nv{num_vars}_ns{num_steps}" + \
+            f"_nr{num_rules_range[0]}-{num_rules_range[1]}" + \
+            f"_ap{ante_prob_range[0]:.2f}-{ante_prob_range[1]:.2f}" + \
+            f"_bp{conseq_prob_range[0]:.2f}-{conseq_prob_range[1]:.2f}" + \
+            f"_cl{chain_len_range[0]}-{chain_len_range[1]}" + \
+            f"_ntr{train_len}_ntt{eval_len}" + f":{tag}"
+        
+    else:
+        raise Exception(f"Unknown Task: {task_name}")
 
     artifact_dir = Path(DUMP_DIR, "artifacts", artifact_id)
     artifact_dir = download_artifact(artifact_id=artifact_id, 
