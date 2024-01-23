@@ -63,7 +63,7 @@ class ForceOutputWithAppendedAttackTokensWrapper(nn.Module):
     def train(self, mode=True):
         """ We don't want the seqcls_model under attack to be in training mode """
         self.seqcls_model.eval()
-        self.attack_model.train()
+        self.attack_model.train(mode=mode)
 
     def forward(
         self,
