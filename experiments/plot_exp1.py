@@ -1,3 +1,13 @@
+"""
+Plot the heatmap for results from Experiment 1.
+
+Usage:
+    python experiments/plot_exp1.py --config_file <config_file> --metric <metric> --plot_file <plot_file> --plot_x <plot_x> --plot_y <plot_y>
+
+Example for Experiment 1:
+    python experiments/plot_exp1.py --config_file synthetic_experiments_config_exp1_plot.json --metric eval/TargetStatesAcc --plot_file test_synthetic_experiments_plot.png --plot_x num_vars --plot_y embed_dim
+"""
+
 import argparse
 import itertools
 import json
