@@ -228,7 +228,7 @@ def synexp_args_to_wandb_run_name(args: SyntheticExperimentsArguments):
             f"_ap{args.min_ante_prob:.2f}-{args.max_ante_prob:.2f}" + \
             f"_bp{args.min_conseq_prob:.2f}-{args.max_conseq_prob:.2f}" + \
             f"_cl{args.min_chain_len}-{args.max_chain_len}" + \
-            f"_ntr{args.train_len}_ntt{args.eval_len}"
+            f"_ntr{args.train_len}_ntt{args.eval_len}_seed{args.seed}"
 
     elif args.syn_exp_name == "one_shot_str":
         return f"SynOSstr__{model_str}__" + \
@@ -237,7 +237,7 @@ def synexp_args_to_wandb_run_name(args: SyntheticExperimentsArguments):
             f"_ap{args.min_ante_prob:.2f}-{args.max_ante_prob:.2f}" + \
             f"_bp{args.min_conseq_prob:.2f}-{args.max_conseq_prob:.2f}" + \
             f"_cl{args.min_chain_len}-{args.max_chain_len}" + \
-            f"_ntr{args.train_len}_ntt{args.eval_len}"
+            f"_ntr{args.train_len}_ntt{args.eval_len}_seed{args.seed}"
 
     elif args.syn_exp_name == "next_state":
         return f"SynNS_{model_str}__" + \
@@ -247,7 +247,7 @@ def synexp_args_to_wandb_run_name(args: SyntheticExperimentsArguments):
             f"_ap{args.min_ante_prob:.2f}-{args.max_ante_prob:.2f}" + \
             f"_bp{args.min_conseq_prob:.2f}-{args.max_conseq_prob:.2f}" + \
             f"_sp{args.min_state_prob:.2f}-{args.max_state_prob:.2f}" + \
-            f"_ntr{args.train_len}_ntt{args.eval_len}"
+            f"_ntr{args.train_len}_ntt{args.eval_len}_seed{args.seed}"
 
     elif args.syn_exp_name == "autoreg_ksteps":
         return f"SynAR_{model_str}__" + \
@@ -257,7 +257,7 @@ def synexp_args_to_wandb_run_name(args: SyntheticExperimentsArguments):
             f"_ap{args.min_ante_prob:.2f}-{args.max_ante_prob:.2f}" + \
             f"_bp{args.min_conseq_prob:.2f}-{args.max_conseq_prob:.2f}" + \
             f"_cl{args.min_chain_len}-{args.max_chain_len}" + \
-            f"_ntr{args.train_len}_ntt{args.eval_len}"
+            f"_ntr{args.train_len}_ntt{args.eval_len}_seed{args.seed}"
 
     else:
         raise ValueError(f"Unrecognized syn_exp_name {args.syn_exp_name}")
@@ -500,7 +500,7 @@ def make_trainer_for_synthetic(
             num_heads = args.num_heads)
 
         training_args = TrainingArguments(
-            args.output_dir,
+            str(Path(args.output_dir, synexp_args_to_wandb_run_name(args))),
             num_train_epochs = args.num_epochs,
             per_device_train_batch_size = args.train_batch_size,
             per_device_eval_batch_size = args.eval_batch_size,
@@ -510,7 +510,8 @@ def make_trainer_for_synthetic(
             run_name = synexp_args_to_wandb_run_name(args),
             logging_steps = args.logging_steps,
             warmup_ratio = 0.10,
-            save_strategy = "no")
+            save_strategy = "epoch",
+            save_total_limit=2)
 
         return Trainer(
             tfl_model,
