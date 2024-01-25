@@ -330,8 +330,8 @@ def run_eval(model, dataset, args):
         num_dones += tokens.size(0)
         running_hits += (preds == labels).sum()
 
-        acc = running_hits.item() / (num_dones * args.eval_num_vars)
-        desc = f"Accuracy {acc:.3f}"
+        acc = running_hits.item() / (num_dones * args.eval_num_vars * args.eval_num_steps)
+        desc = f"Accuracy {acc:.3f} | Running hits {running_hits} | Done {num_dones}"
         pbar.set_description(desc)
 
     stats = {
