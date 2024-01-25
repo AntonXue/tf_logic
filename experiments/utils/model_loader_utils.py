@@ -135,3 +135,56 @@ def load_checkpoint_from_wandb(
     artifact_dir = Path(DUMP_DIR, "artifacts", checkpoint_id)
     checkpoint = download_artifact(artifact_id=checkpoint_id, artifact_dir=artifact_dir, raise_exception_if_not_found=False)
     return checkpoint
+
+def load_stats_from_wandb(
+    model_name: str,
+    embed_dim: int,
+    num_layers: int,
+    num_heads: int,
+    num_vars: int,
+    num_steps: int = 3,
+    chain_len_range: tuple[int, int] = (2, 5),
+    num_rules_range: tuple[int, int] = (16, 64),
+    num_states_range: tuple[int, int] = (8, 32),
+    ante_prob_range: tuple[float, float] = (0.3, 0.5),
+    conseq_prob_range: tuple[float, float] = (0.2, 0.3),
+    state_prob_range: tuple[float, float] = (0.5, 0.5),
+    train_len: int = 32768,
+    eval_len: int = 4096,
+    wandb_project: str = "transformer_friends/transformer_friends",
+    syn_exp_name: str = "next_state",
+    seed: int = 101,
+    return_first: bool = True
+):
+    if syn_exp_name == "next_state":
+        run_name = f"SynNS_{model_name}_d{embed_dim}_L{num_layers}_H{num_heads}" + \
+            f"__nv{num_vars}_nr{num_rules_range[0]}-{num_rules_range[1]}" + \
+            f"_ns{num_states_range[0]}-{num_states_range[1]}" + \
+            f"_ap{ante_prob_range[0]:.2f}-{ante_prob_range[1]:.2f}" + \
+            f"_bp{conseq_prob_range[0]:.2f}-{conseq_prob_range[1]:.2f}" + \
+            f"_sp{state_prob_range[0]:.2f}-{state_prob_range[1]:.2f}" + \
+            f"_ntr{train_len}_ntt{eval_len}_seed{seed}"
+        
+    elif syn_exp_name == "autoreg_ksteps":
+        run_name = f"SynAR_{model_name}_d{embed_dim}_L{num_layers}_H{num_heads}" + \
+            f"__nv{num_vars}_ns{num_steps}" + \
+            f"_nr{num_rules_range[0]}-{num_rules_range[1]}" + \
+            f"_ap{ante_prob_range[0]:.2f}-{ante_prob_range[1]:.2f}" + \
+            f"_bp{conseq_prob_range[0]:.2f}-{conseq_prob_range[1]:.2f}" + \
+            f"_cl{chain_len_range[0]}-{chain_len_range[1]}" + \
+            f"_ntr{train_len}_ntt{eval_len}_seed{seed}"   
+    else:
+        raise Exception(f"Unknown Task: {syn_exp_name}")
+
+    api = wandb.Api()
+
+    runs = api.runs(wandb_project, filters={"config.run_name": run_name})
+
+    if len(runs) == 0:
+        raise Exception(f"No runs found for run_name: {run_name}")
+    elif len(runs) > 1:
+        if not return_first:
+            raise Exception(f"Multiple runs found for run_name: {run_name}")
+    
+    run = runs[0]
+    return run.summary
