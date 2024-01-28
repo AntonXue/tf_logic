@@ -6,6 +6,7 @@ import torch
 from torch.utils.data import DataLoader
 from transformers import Trainer, TrainingArguments, HfArgumentParser
 from tqdm import tqdm
+import json
 
 """ Our imports """
 from common import *    # Critical definitions and path inserts
@@ -27,6 +28,11 @@ class DistributionShiftExperimentsArguments:
     syn_exp_name: Optional[str] = field(
         default = None,
         metadata = {"help": "The experiment to run."}
+    )
+
+    include_seed_in_run_name: bool = field(
+        default = True,
+        metadata = {"help": "Whether or not to include the seed in the run name."}
     )
 
     """ Model details """
@@ -207,7 +213,7 @@ class DistributionShiftExperimentsArguments:
         metadata = {"help": "(Eval) The maximum attmepted length of the deduction chain for a random dataset."}
     )
 
-    eval_len: Optional[int] = field(
+    eval_eval_len: Optional[int] = field(
         default = None,
         metadata = {"help": "(Eval) The number of elements in the dataset."}
     )
@@ -245,13 +251,14 @@ def dataset_description(
     dataset_len: int
 ):
     """ String description of dataset useful for saving files """
-    return f"nv{num_vars}" + \
+    desc = f"nv{num_vars}" + \
         f"_nr{min_num_rules}-{max_num_rules}" + \
         f"_ns{min_num_states}-{max_num_states}" + \
         f"_ap{min_ante_prob:.2f}-{max_ante_prob:.2f}" + \
-        f"_bp{min_conseq_prob:.2f}-{max_conseq_prob:.2f}" + \
-        f"_sp{max_state_prob:.2f}-{max_state_prob:.2f}" + \
-        f"_len{dataset_len}"
+        f"_bp{min_conseq_prob:.2f}-{max_conseq_prob:.2f}"
+    desc += f"_sp{min_state_prob:.2f}-{max_state_prob:.2f}" if min_state_prob is not None else ""
+    desc += f"_len{dataset_len}"
+    return desc
 
 
 def model_description(args):
@@ -288,7 +295,7 @@ def eval_dataset_description(args):
         max_conseq_prob = args.eval_max_conseq_prob,
         min_state_prob = args.eval_min_state_prob,
         max_state_prob = args.eval_max_state_prob,
-        dataset_len = args.eval_len,
+        dataset_len = args.eval_eval_len,
     )
 
 
@@ -296,7 +303,7 @@ def compute_saveto_file(args):
     model_desc = model_description(args)
     train_desc = train_dataset_description(args)
     eval_desc = eval_dataset_description(args)
-    saveto_file = f"{model_desc}__{train_desc}__{eval_desc}.pt"
+    saveto_file = f"{model_desc}__{train_desc}__{eval_desc}.json"
     saveto_file = str(Path(args.output_dir, saveto_file))
     return saveto_file
 
@@ -317,7 +324,7 @@ def run_eval(model, dataset, args):
     print(f"Eval:  {eval_desc}")
     print(f"Will save to:\n  {saveto_file}")
 
-    num_dones, running_hits = 0, 0
+    num_dones, running_hits, states_hits, target_running_hits, target_states_hits = 0, 0, 0, 0, 0
     dataloader = DataLoader(dataset, batch_size=args.batch_size)
     pbar = tqdm(dataloader)
     for batch in pbar:
@@ -329,16 +336,23 @@ def run_eval(model, dataset, args):
 
         num_dones += tokens.size(0)
         running_hits += (preds == labels).sum()
+        states_hits += (torch.mean((preds == labels).float(), axis=2) > 1 - 1e-5).sum()
+        target_running_hits += (preds[:,-1] == labels[:,-1]).sum()
+        target_states_hits += (torch.mean((preds[:,-1] == labels[:,-1]).float(), axis=1) > 1 - 1e-5).sum()
+        
+        target_states_acc = target_states_hits.item() / num_dones
+        desc = f"Target state acc {target_states_acc:.3f} | Target state hits {target_states_hits} | Done {num_dones}"
 
-        acc = running_hits.item() / (num_dones * args.eval_num_vars * args.eval_num_steps)
-        desc = f"Accuracy {acc:.3f} | Running hits {running_hits} | Done {num_dones}"
         pbar.set_description(desc)
 
     stats = {
-        "accuracy" : acc
+        "ElemsAcc": running_hits.item() / (num_dones * args.eval_num_vars * args.eval_num_steps),
+        "StatesAcc": states_hits.item() / (num_dones * args.eval_num_steps),
+        "TargetElemsAcc": target_running_hits.item() / (num_dones * args.eval_num_vars),
+        "TargetStatesAcc": target_states_hits.item() / num_dones,
     }
 
-    torch.save(stats, saveto_file)
+    json.dump(stats, open(saveto_file, "w"))
     return stats
 
 
@@ -365,7 +379,9 @@ if __name__ == "__main__":
             state_prob_range = (args.train_min_state_prob, args.train_max_state_prob),
             train_len = args.train_len,
             eval_len = args.train_eval_len,
-            task_name="next_state"
+            task_name="next_state",
+            include_seed_in_run_name=args.include_seed_in_run_name,
+            seed=args.seed
         )
         dataset = NextStateTokensDataset(
             num_vars = args.eval_num_vars,
@@ -374,7 +390,7 @@ if __name__ == "__main__":
             ante_prob_range = (args.eval_min_ante_prob, args.eval_max_ante_prob),
             conseq_prob_range = (args.eval_min_conseq_prob, args.eval_max_conseq_prob),
             state_prob_range = (args.eval_min_state_prob, args.eval_max_state_prob),
-            dataset_len = args.eval_len
+            dataset_len = args.eval_eval_len
         )
     elif args.syn_exp_name == "autoreg_ksteps":
         model = load_next_state_model_from_wandb(
@@ -390,7 +406,9 @@ if __name__ == "__main__":
             eval_len = args.train_eval_len,
             task_name="autoreg_ksteps",
             num_steps = args.train_num_steps,
-            chain_len_range=(args.train_min_chain_len, args.train_max_chain_len)
+            chain_len_range=(args.train_min_chain_len, args.train_max_chain_len),
+            include_seed_in_run_name=args.include_seed_in_run_name,
+            seed=args.seed
         )
         dataset = AutoregKStepsTokensDataset(
             num_vars = args.eval_num_vars,
@@ -399,7 +417,7 @@ if __name__ == "__main__":
             conseq_prob_range = (args.eval_min_conseq_prob, args.eval_max_conseq_prob),
             chain_len_range = (args.eval_min_chain_len, args.eval_max_chain_len),
             num_steps = args.eval_num_steps,
-            dataset_len = args.eval_len)
+            dataset_len = args.eval_eval_len)
 
     run_eval(model, dataset, args)
 

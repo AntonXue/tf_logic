@@ -59,7 +59,9 @@ def load_next_state_model_from_wandb(
     overwrite: bool = False,
     task_name: str = "next_state",
     num_steps: int = 3,
-    chain_len_range: tuple[int, int] = (2, 5)
+    chain_len_range: tuple[int, int] = (2, 5),
+    seed: int = 101,
+    include_seed_in_run_name: bool = True
 ):
 
     if task_name == "next_state":
@@ -77,8 +79,8 @@ def load_next_state_model_from_wandb(
             f"_ap{ante_prob_range[0]:.2f}-{ante_prob_range[1]:.2f}" + \
             f"_bp{conseq_prob_range[0]:.2f}-{conseq_prob_range[1]:.2f}" + \
             f"_sp{state_prob_range[0]:.2f}-{state_prob_range[1]:.2f}" + \
-            f"_ntr{train_len}_ntt{eval_len}" + f":{tag}"
-        
+            f"_ntr{train_len}_ntt{eval_len}"
+    
     elif task_name == "autoreg_ksteps":
         model = AutoTaskModel.from_kwargs(
             task_name = "autoreg_ksteps",
@@ -95,10 +97,14 @@ def load_next_state_model_from_wandb(
             f"_ap{ante_prob_range[0]:.2f}-{ante_prob_range[1]:.2f}" + \
             f"_bp{conseq_prob_range[0]:.2f}-{conseq_prob_range[1]:.2f}" + \
             f"_cl{chain_len_range[0]}-{chain_len_range[1]}" + \
-            f"_ntr{train_len}_ntt{eval_len}" + f":{tag}"
+            f"_ntr{train_len}_ntt{eval_len}"
         
     else:
         raise Exception(f"Unknown Task: {task_name}")
+
+    if include_seed_in_run_name:
+        artifact_id += f"_seed{seed}"
+    artifact_id += f":{tag}"
 
     artifact_dir = Path(DUMP_DIR, "artifacts", artifact_id)
     artifact_dir = download_artifact(artifact_id=artifact_id, 
@@ -154,7 +160,8 @@ def load_stats_from_wandb(
     wandb_project: str = "transformer_friends/transformer_friends",
     syn_exp_name: str = "next_state",
     seed: int = 101,
-    return_first: bool = True
+    return_first: bool = True,
+    include_seed_in_run_name: bool = True
 ):
     if syn_exp_name == "next_state":
         run_name = f"SynNS_{model_name}_d{embed_dim}_L{num_layers}_H{num_heads}" + \
@@ -163,7 +170,7 @@ def load_stats_from_wandb(
             f"_ap{ante_prob_range[0]:.2f}-{ante_prob_range[1]:.2f}" + \
             f"_bp{conseq_prob_range[0]:.2f}-{conseq_prob_range[1]:.2f}" + \
             f"_sp{state_prob_range[0]:.2f}-{state_prob_range[1]:.2f}" + \
-            f"_ntr{train_len}_ntt{eval_len}_seed{seed}"
+            f"_ntr{train_len}_ntt{eval_len}"
         
     elif syn_exp_name == "autoreg_ksteps":
         run_name = f"SynAR_{model_name}_d{embed_dim}_L{num_layers}_H{num_heads}" + \
@@ -172,10 +179,13 @@ def load_stats_from_wandb(
             f"_ap{ante_prob_range[0]:.2f}-{ante_prob_range[1]:.2f}" + \
             f"_bp{conseq_prob_range[0]:.2f}-{conseq_prob_range[1]:.2f}" + \
             f"_cl{chain_len_range[0]}-{chain_len_range[1]}" + \
-            f"_ntr{train_len}_ntt{eval_len}_seed{seed}"   
+            f"_ntr{train_len}_ntt{eval_len}"   
     else:
         raise Exception(f"Unknown Task: {syn_exp_name}")
 
+    if include_seed_in_run_name:
+        run_name += f"_seed{seed}"
+        
     api = wandb.Api()
 
     runs = api.runs(wandb_project, filters={"config.run_name": run_name})
