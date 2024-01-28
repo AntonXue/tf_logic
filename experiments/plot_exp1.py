@@ -38,7 +38,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--config_file",
         type=str,
-        default="test_synthetic_experiments_config.json",
+        default="synthetic_experiments_config_exp1_plot.json",
         help="Path to JSON config file.",
     )
     parser.add_argument(
@@ -46,6 +46,12 @@ if __name__ == "__main__":
         type=str,
         default="eval/TargetStatesAcc",
         help="Metric to plot",
+    )
+    parser.add_argument(
+        "--metric_label",
+        type=str,
+        default="Accuracy",
+        help="Label for metric to plot",
     )
     parser.add_argument(
         "--plot_file",
@@ -64,6 +70,25 @@ if __name__ == "__main__":
         type=str,
         default="embed_dim",
         help="Parameter to plot on y-axis.",
+    )
+    parser.add_argument(
+        "--x_label",
+        type=str,
+        default="Number of Variables",
+        help="Label for x-axis.",
+    )
+    parser.add_argument(
+        "--y_label",
+        type=str,
+        default="Embedding Dimension",
+        help="Label for y-axis.",
+    )
+    parser.add_argument(
+        "--aggregate_by",
+        type=str,
+        default="mean",
+        choices=["mean", "std"],
+        help="Metric to use for aggregating when there are multiple values for the same (plot_x, plot_y) pair. Default: mean.",
     )
     
     args = parser.parse_args()
@@ -99,31 +124,49 @@ if __name__ == "__main__":
                     syn_exp_name=param_mapping["syn_exp_name"],
                     seed=param_mapping["seed"],
                 )
+                # if stats['train/epoch'] < param_mapping["num_epochs"]:
+                #     metric_val = -1
+                # else:
+                #     metric_val = stats[args.metric]
                 metric_val = stats[args.metric]
             except:
                 metric_val = -1
 
             if param_mapping[args.plot_x] not in metric_dict.keys():
                 metric_dict[param_mapping[args.plot_x]] = {}
-            metric_dict[param_mapping[args.plot_x]][param_mapping[args.plot_y]] = metric_val
+            if param_mapping[args.plot_y] not in metric_dict[param_mapping[args.plot_x]].keys():
+                metric_dict[param_mapping[args.plot_x]][param_mapping[args.plot_y]] = [metric_val]
+            else:
+                metric_dict[param_mapping[args.plot_x]][param_mapping[args.plot_y]].append(metric_val)
 
+    # Aggregate metric values for each (x, y) pair
+    if args.aggregate_by == "mean":
+        for x in metric_dict.keys():
+            for y in metric_dict[x].keys():
+                metric_dict[x][y] = np.mean(metric_dict[x][y])
+    elif args.aggregate_by == "std":
+        for x in metric_dict.keys():
+            for y in metric_dict[x].keys():
+                metric_dict[x][y] = np.std(metric_dict[x][y])
+    else:
+        raise Exception(f"Unknown aggregation method: {args.aggregate_by}")
 
-        # Create a 2D array of metric values (for empty cells, set value to -1)
-        # Sort by x and y
-        x_keys = sorted(metric_dict.keys())
-        y_keys = sorted(metric_dict[x_keys[0]].keys(), reverse=True)
+    # Create a 2D array of metric values (for empty cells, set value to -1)
+    # Sort by x and y
+    x_keys = sorted(metric_dict.keys())
+    y_keys = sorted(metric_dict[x_keys[0]].keys(), reverse=True)
 
-        data = np.array([[metric_dict[x][y] for x in x_keys] for y in y_keys])
-        print(data)
+    data = np.array([[metric_dict[x][y] for x in x_keys] for y in y_keys])
+    print(data)
 
-        fig, ax = plt.subplots()
-        im, cbar = heatmap(data, y_keys, x_keys, row_title=args.plot_y, col_title=args.plot_x, ax=ax,
-                           cmap="YlGn", cbarlabel=args.metric)
-        
-        texts = annotate_heatmap(im, valfmt="{x:.2f}")
+    fig, ax = plt.subplots()
+    im, cbar = heatmap(data, y_keys, x_keys, row_title=args.y_label, col_title=args.x_label, ax=ax,
+                        cmap="YlGn", cbarlabel=args.metric_label)
+    
+    texts = annotate_heatmap(im, valfmt="{x:.2f}")
 
-        fig.tight_layout()
-        plt.savefig(args.plot_file)
+    fig.tight_layout()
+    plt.savefig(args.plot_file)
 
 
 

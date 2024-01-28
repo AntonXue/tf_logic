@@ -1,7 +1,7 @@
 [{
     "model_name": ["gpt2"],
     "syn_exp_name": ["autoreg_ksteps"],
-    "seed": [101],
+    "seed": [101, 102],
     "num_steps": [1],
     "embed_dim": [32, 64, 96, 128, 160, 192, 224, 256],
     "num_layers": [2],
