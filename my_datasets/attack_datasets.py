@@ -2,6 +2,7 @@ import torch
 from torch.utils.data import Dataset
 
 from .utils.logic_utils import *
+from my_datasets.task_datasets import AutoregKStepsTokensDataset
 
 
 class ForceOutputWithAppendedAttackTokensDataset(Dataset):
@@ -83,6 +84,46 @@ class ForceOutputWithAppendedAttackTokensDataset(Dataset):
         return {
             "tokens": all_tokens,
             "target": target
+        }
+    
+class AutoregKStepsTokensAttackDataset(Dataset):
+    def __init__(
+        self,
+        num_vars: int,
+        num_rules_range: tuple[int, int],
+        ante_prob_range: tuple[float, float],
+        conseq_prob_range: tuple[float, float],
+        chain_len_range: tuple[int, int],
+        num_steps: int,
+        dataset_len: int,
+        do_padding: bool = True,
+        num_fillers: int = 2
+    ):
+        self.unperturbed_dataset = AutoregKStepsTokensDataset(
+            num_vars=num_vars,
+            num_rules_range=num_rules_range,
+            ante_prob_range=ante_prob_range,
+            conseq_prob_range=conseq_prob_range,
+            chain_len_range=chain_len_range,
+            num_steps=num_steps,
+            dataset_len=dataset_len,
+            do_padding=do_padding,
+            num_fillers=num_fillers
+        )
+        self.num_vars = num_vars
+
+    def __len__(self):
+        return len(self.unperturbed_dataset)
+    
+    def __getitem__(self, idx):
+        unpermuted_item = self.unperturbed_dataset[idx]
+        tokens = unpermuted_item["tokens"]
+        target = unpermuted_item["target"]
+        # adv_target = shuffled target
+        adv_target = torch.randint(0, 2, (self.num_vars,))
+        return {
+            "tokens": tokens,
+            "target": adv_target
         }
 
 

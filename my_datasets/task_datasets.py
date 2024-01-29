@@ -13,7 +13,8 @@ class OneShotTokensDataset(Dataset):
         conseq_prob_range: tuple[float, float],
         chain_len_range: tuple[int, int],
         dataset_len: int,
-        do_padding: bool = True
+        do_padding: bool = True,
+        num_fillers: int = 2
     ):
         assert num_vars > 2
         assert num_rules_range[0] > 2 and num_rules_range[0] <= num_rules_range[1]
@@ -30,6 +31,7 @@ class OneShotTokensDataset(Dataset):
         self.dataset_len = dataset_len
         self.do_padding = do_padding
         self.max_seq_len = num_rules_range[1] + 1
+        self.num_fillers = num_fillers
 
     def __len__(self):
         return self.dataset_len
@@ -47,7 +49,8 @@ class OneShotTokensDataset(Dataset):
             ante_prob = ap,
             conseq_prob = bp,
             chain_len = chain_len,
-            return_dict = True
+            return_dict = True,
+            num_fillers=self.num_fillers
         )
 
     def __getitem__(self, idx):
@@ -237,7 +240,8 @@ class AutoregKStepsTokensDataset(Dataset):
         chain_len_range: tuple[int, int],
         num_steps: int,
         dataset_len: int,
-        do_padding: bool = True
+        do_padding: bool = True,
+        num_fillers: int = 2
     ):
         self.inner_dataset = OneShotTokensDataset(
             num_vars = num_vars,
@@ -246,6 +250,7 @@ class AutoregKStepsTokensDataset(Dataset):
             conseq_prob_range = conseq_prob_range,
             chain_len_range = chain_len_range,
             dataset_len = dataset_len,
+            num_fillers = num_fillers
         )
 
         self.num_steps = num_steps
