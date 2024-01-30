@@ -79,7 +79,7 @@ class ForceOutputWithAppendedAttackTokensDataset(Dataset):
         # Figure out the attack; big_state already has batch_size == 1
         next_state, _ = step_rules(all_rules[None,...], big_state)
         next_state = next_state[0]
-        target = (torch.randint(0,3,(num_vars,)) - (torch.rand(num_vars) < sp) * next_state).clamp(0,1)
+        target = (torch.randint(0,3,(1, num_vars)) - (torch.rand(num_vars) < sp) * next_state).clamp(0,1)
 
         return {
             "tokens": all_tokens,
@@ -116,14 +116,13 @@ class AutoregKStepsTokensAttackDataset(Dataset):
         return len(self.unperturbed_dataset)
     
     def __getitem__(self, idx):
-        unpermuted_item = self.unperturbed_dataset[idx]
-        tokens = unpermuted_item["tokens"]
-        target = unpermuted_item["target"]
+        unperturbed_item = self.unperturbed_dataset[idx]
+        tokens = unperturbed_item["tokens"]
         # adv_target = shuffled target
-        adv_target = torch.randint(0, 2, (self.num_vars,))
+        adv_target = torch.randint(0, 2, (1, self.num_vars))
         return {
             "tokens": tokens,
-            "target": adv_target
+            "labels": adv_target
         }
 
 

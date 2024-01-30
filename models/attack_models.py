@@ -15,6 +15,7 @@ from .common import *
 @dataclass
 class ForceOutputWithAppendedAttackTokensOutput(ModelOutput):
     loss: Optional[torch.FloatTensor] = None
+    logits: Optional[torch.FloatTensor] = None
     norm_loss: Optional[torch.FloatTensor] = None
     pred_loss: Optional[torch.FloatTensor] = None
     attack_tokens: Optional[torch.FloatTensor] = None
@@ -68,7 +69,7 @@ class ForceOutputWithAppendedAttackTokensWrapper(nn.Module):
     def forward(
         self,
         tokens: torch.LongTensor,
-        target: torch.LongTensor,
+        labels: torch.LongTensor,
     ):
         """ tokens: (batch_size, seq_len, input_dim)
             target: (batch_size, num_labels)
@@ -77,7 +78,7 @@ class ForceOutputWithAppendedAttackTokensWrapper(nn.Module):
 
         atk_model_input = torch.cat([
             self.tokens_embed_fn(tokens.float()).view(-1, tokens.size(1), self.embed_dim),
-            self.target_embed_fn(target.float()).view(-1, 1, self.embed_dim)
+            self.target_embed_fn(labels.float()).view(-1, 1, self.embed_dim)
         ], dim=1)    # (batch_size, seq_len+1, embed_dim)
 
         z = self.attack_model(inputs_embeds=atk_model_input).last_hidden_state
@@ -85,10 +86,11 @@ class ForceOutputWithAppendedAttackTokensWrapper(nn.Module):
         pred = self.seqcls_model(torch.cat([tokens, atk_tokens], dim=1)).logits
 
         norm_loss = self.rho * self.norm_loss_fn(torch.zeros_like(atk_tokens), atk_tokens)
-        pred_loss = self.pred_loss_fn(pred, target.float())
+        pred_loss = self.pred_loss_fn(pred, labels.float())
 
         return ForceOutputWithAppendedAttackTokensOutput(
             loss = norm_loss + pred_loss,
+            logits = pred,
             norm_loss = norm_loss,
             pred_loss = pred_loss,
             attack_tokens = atk_tokens,
