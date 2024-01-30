@@ -7,7 +7,7 @@ import wandb
 from common import *
 from my_datasets.attack_datasets import AutoregKStepsTokensAttackDataset
 from utils.model_loader_utils import load_next_state_model_from_wandb
-from models.attack_models import ForceOutputWithAppendedAttackTokensWrapper
+from models.attack_models import ForceOutputWithAppendedAttackTokensWrapper, ForceOutputWithAppendedAttackSeqClsTokensWrapper
 from transformers import TrainingArguments, Trainer
 from utils.metrics import autoreg_ksteps_metrics
 
@@ -22,14 +22,15 @@ def synexp_args_to_wandb_run_name(param_instance):
     if param_instance["syn_exp_name"] == "autoreg_ksteps":
         return (
             f"SynARAttack_{param_instance['model_name']}"
+            + f"_d{param_instance['embed_dim']}"
+            + f"_L{param_instance['num_layers']}"
+            + f"_H{param_instance['num_heads']}"
             + f"_nv{param_instance['num_vars']}"
             + f"_ns{param_instance['num_steps']}"
             + f"_nr{param_instance['min_num_rules']}-{param_instance['max_num_rules']}"
-            + f"_ap{param_instance['min_ante_prob']:.2f}-{param_instance['max_ante_prob']:.2f}"
-            + f"_bp{param_instance['min_conseq_prob']:.2f}-{param_instance['max_conseq_prob']:.2f}"
-            + f"_cl{param_instance['min_chain_len']}-{param_instance['max_chain_len']}"
-            + f"_ntr{param_instance['train_len']}_ntt{param_instance['eval_len']}_seed{param_instance['seed']}"
+            + f"_seed{param_instance['seed']}"
             + f"_atk-{param_instance['base_attack_model_name']}_nat{param_instance['num_attack_tokens']}"
+            + f"_atkntr{param_instance['attack_train_len']}_atkntt{param_instance['attack_eval_len']}"
         )
 
 def run_attack(attacker_model, reasoner_model, train_dataset, eval_dataset, param_instance, output_dir=DEFAULT_DUMP_DIR):
@@ -45,7 +46,9 @@ def run_attack(attacker_model, reasoner_model, train_dataset, eval_dataset, para
         run_name = synexp_args_to_wandb_run_name(param_instance),
         logging_steps = 10,
         warmup_ratio = 0.10,
-        save_strategy = "no")
+        save_strategy = "epoch",
+        save_total_limit = 2,
+        load_best_model_at_end = True)
 
     trainer = Trainer(
         attacker_model,
@@ -152,7 +155,7 @@ if __name__ == "__main__":
                 seed=param_instance["seed"],
             )
 
-            attacker_model = ForceOutputWithAppendedAttackTokensWrapper(
+            attacker_model = ForceOutputWithAppendedAttackSeqClsTokensWrapper(
                 seqcls_model=reasoner_model,
                 num_attack_tokens=param_instance["num_attack_tokens"],
                 base_attack_model_name=param_instance["base_attack_model_name"] if "base_attack_model_name" in param_instance else "gpt2",
