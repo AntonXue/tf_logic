@@ -113,10 +113,14 @@ def load_next_state_model_from_wandb(
                                      quiet=quiet,
                                      overwrite=overwrite)
 
-    artifact_file = Path(artifact_dir, "model.safetensors")
+    if "model.saftensors" in os.listdir(artifact_dir):
+        artifact_file = Path(artifact_dir, "model.safetensors")
 
-    with safe_open(str(artifact_file), framework="pt", device="cpu") as f:
-        tensors = {k: f.get_tensor(k) for k in f.keys()}
+        with safe_open(str(artifact_file), framework="pt", device="cpu") as f:
+            tensors = {k: f.get_tensor(k) for k in f.keys()}
+    elif "pytorch_model.bin" in os.listdir(artifact_dir):
+        artifact_file = Path(artifact_dir, "pytorch_model.bin")
+        tensors = torch.load(artifact_file)
 
     model.load_state_dict(tensors)
     model.eval()
