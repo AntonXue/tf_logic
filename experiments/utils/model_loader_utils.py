@@ -113,7 +113,8 @@ def load_next_state_model_from_wandb(
                                      quiet=quiet,
                                      overwrite=overwrite)
 
-    if "model.saftensors" in os.listdir(artifact_dir):
+    tensors = None
+    if "model.safetensors" in os.listdir(artifact_dir):
         artifact_file = Path(artifact_dir, "model.safetensors")
 
         with safe_open(str(artifact_file), framework="pt", device="cpu") as f:
@@ -121,6 +122,8 @@ def load_next_state_model_from_wandb(
     elif "pytorch_model.bin" in os.listdir(artifact_dir):
         artifact_file = Path(artifact_dir, "pytorch_model.bin")
         tensors = torch.load(artifact_file)
+    else:
+        raise Exception(f"No model.safetensors or pytorch_model.bin found in {artifact_dir}")
 
     model.load_state_dict(tensors)
     model.eval()
@@ -165,7 +168,9 @@ def load_stats_from_wandb(
     syn_exp_name: str = "next_state",
     seed: int = 101,
     return_first: bool = True,
-    include_seed_in_run_name: bool = True
+    include_seed_in_run_name: bool = True,
+    exp_type: str = None, # Set this to "attack" if you want to load attack results
+    attack_params: dict = None # Set this to the attack params if you want to load attack results
 ):
     if syn_exp_name == "next_state":
         run_name = f"SynNS_{model_name}_d{embed_dim}_L{num_layers}_H{num_heads}" + \
@@ -183,12 +188,20 @@ def load_stats_from_wandb(
             f"_ap{ante_prob_range[0]:.2f}-{ante_prob_range[1]:.2f}" + \
             f"_bp{conseq_prob_range[0]:.2f}-{conseq_prob_range[1]:.2f}" + \
             f"_cl{chain_len_range[0]}-{chain_len_range[1]}" + \
-            f"_ntr{train_len}_ntt{eval_len}"   
+            f"_ntr{train_len}_ntt{eval_len}" 
     else:
         raise Exception(f"Unknown Task: {syn_exp_name}")
 
     if include_seed_in_run_name:
         run_name += f"_seed{seed}"
+
+    if exp_type == "attack" and syn_exp_name == "autoreg_ksteps":
+        run_name = f"SynARAttack_{model_name}_d{embed_dim}_L{num_layers}_H{num_heads}" + \
+            f"_nv{num_vars}_ns{num_steps}" + \
+            f"_nr{num_rules_range[0]}-{num_rules_range[1]}" + \
+            f"_seed{seed}" + \
+            f"_atk-{attack_params['base_attack_model_name']}_nat{attack_params['num_attack_tokens']}" + \
+            f"_atkntr{attack_params['attack_train_len']}_atkntt{attack_params['attack_eval_len']}"
         
     api = wandb.Api()
 
