@@ -3,7 +3,7 @@ Script to run the theory attack on learned models.
 
 The theory attack attempts to make the model predict a pre-chosen binary vector s_tgt as follows:
 1. Choose a binary vector s_tgt.
-2. Scale it by a factor lambda_val to get lambda_adjusted_s_tgt = s_tgt - lambda_val * (1 - s_tgt).
+2. Scale it by a factor lambda_val to get lambda_adjusted_s_tgt = lambda_val * (2 * s_tgt - 1).
 3. Create the u_atk vector as [0 0n lambda_adjusted_s_tgt] where 0n is a vector of n 0s.
 4. Replace the last token of the input sequence with u_atk.
 5. Run the model on the new sequence and check if the prediction is s_tgt.
@@ -23,8 +23,7 @@ from tqdm import tqdm
 import os
 
 LAMBDA = [10**i for i in range(-3, 10)]
-LAMBDA.reverse()
-DEFAULT_DUMP_DIR = str(Path(DUMP_DIR, "theory_attack_experiments_l1"))
+DEFAULT_DUMP_DIR = str(Path(DUMP_DIR, "theory_attack_experiments"))
 
 
 def get_param_dict_list_from_config_file(config_file) -> list:
@@ -83,7 +82,7 @@ def run_eval(
         s_tgts = torch.randint(0, 2, (tokens.size(0), 1, num_vars))
 
         for lambda_val in lambda_list:
-            lambda_adjusted_s_tgts = s_tgts - lambda_val * (1 - s_tgts)
+            lambda_adjusted_s_tgts = lambda_val * (2 * s_tgts - 1)
 
             # u_atks shape: (batch_size, 2*num_vars + 1, 1)
             u_atks = torch.cat(

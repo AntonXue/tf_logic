@@ -24,7 +24,7 @@ import os
 
 LAMBDA = [10**i for i in range(-3, 10)]
 LAMBDA.reverse()
-DEFAULT_DUMP_DIR = str(Path(DUMP_DIR, "theory_attack_experiments_l1"))
+DEFAULT_DUMP_DIR = str(Path(DUMP_DIR, "theory_attack_experiments_l1_comp"))
 
 
 def get_param_dict_list_from_config_file(config_file) -> list:
@@ -75,7 +75,18 @@ def run_eval(
     }
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
     pbar = tqdm(dataloader)
-    for batch in pbar:
+    for i, batch in enumerate(pbar):
+        # If this is the penultimate batch in the dataloader, break
+        try:
+            batch_2 = next(iter(dataloader))
+        except StopIteration:
+            break
+
+        if batch['tokens'].size(0) != batch_2['tokens'].size(0):
+            break
+
+        assert not torch.equal(batch['tokens'], batch_2['tokens']), "Batch and batch_2 should be different."
+
         tokens, orig_labels = batch["tokens"], batch["labels"]
 
         # Create the adversarial target states
@@ -98,15 +109,26 @@ def run_eval(
             out = model(adv_tokens, labels=s_tgts)
             preds = (out.logits > 0).long()
 
-            lambda_metrics[lambda_val]["running_hits"] += (preds == s_tgts).sum()
+            # If there is another batch, run the attack on it as well
+            tokens_2, orig_labels_2 = batch_2["tokens"], batch_2["labels"]
+            u_atks_2 = torch.cat(
+                (torch.zeros(tokens_2.size(0), 1, num_vars + 1), lambda_adjusted_s_tgts),
+                dim=2,
+            )
+
+            adv_tokens_2 = torch.cat((tokens_2[:, :-1, :], u_atks_2), dim=1)
+            out_2 = model(adv_tokens_2, labels=s_tgts)
+            preds_2 = (out_2.logits > 0).long()
+
+            lambda_metrics[lambda_val]["running_hits"] += (preds == preds_2).sum()
             lambda_metrics[lambda_val]["states_hits"] += (
-                torch.mean((preds == s_tgts).float(), axis=2) > 1 - 1e-5
+                torch.mean((preds == preds_2).float(), axis=2) > 1 - 1e-5
             ).sum()
             lambda_metrics[lambda_val]["target_running_hits"] += (
-                preds[:, -1] == s_tgts[:, -1]
+                preds[:, -1] == preds_2[:, -1]
             ).sum()
             lambda_metrics[lambda_val]["target_states_hits"] += (
-                torch.mean((preds[:, -1] == s_tgts[:, -1]).float(), axis=1) > 1 - 1e-5
+                torch.mean((preds[:, -1] == preds_2[:, -1]).float(), axis=1) > 1 - 1e-5
             ).sum()
             lambda_metrics[lambda_val]["num_dones"] += tokens.size(0)
 
@@ -117,7 +139,7 @@ def run_eval(
                 lambda_metrics[lambda_val]["target_states_hits"].item()
                 / lambda_metrics[lambda_val]["num_dones"]
             )
-            desc = f"Target Elems acc {target_elems_acc:.3f} | Target state acc {target_states_acc:.3f}"
+            desc = f"Batch {i}, lambda {lambda_val} | Target Elems acc {target_elems_acc:.3f} | Target state acc {target_states_acc:.3f}"
 
             pbar.set_description(desc)
 
