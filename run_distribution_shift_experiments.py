@@ -18,6 +18,8 @@ from pathlib import Path
 from experiments.common import * 
 import numpy as np
 
+os.environ["MKL_SERVICE_FORCE_INTEL"] = "1"
+
 common_params = ["output_dir", "syn_exp_name", "include_seed_in_run_name", "model_name", "embed_dim", "num_layers", "num_heads", "batch_size", "seed", "use_gpu"]
 train_params = ["train_num_vars", "train_min_num_rules", "train_max_num_rules", "train_num_steps", "train_min_num_states", "train_max_num_states", "train_min_ante_prob", "train_max_ante_prob", "train_min_conseq_prob", "train_max_conseq_prob", "train_min_state_prob", "train_max_state_prob", "train_min_chain_len", "train_max_chain_len", "train_len", "train_eval_len"]
 eval_params = ["eval_num_vars", "eval_min_num_rules", "eval_max_num_rules", "eval_num_steps", "eval_min_num_states", "eval_max_num_states", "eval_min_ante_prob", "eval_max_ante_prob", "eval_min_conseq_prob", "eval_max_conseq_prob", "eval_min_state_prob", "eval_max_state_prob", "eval_min_chain_len", "eval_max_chain_len", "eval_eval_len"]
@@ -48,7 +50,7 @@ EVAL_RULES_DICT_LIST = [
         "min_num_rules": k,
         "max_num_rules": k,
     }
-    for k in [1, 2, 4, 8, 16, 32, 64, 128, 256, 512]
+    for k in [8, 16, 32, 64, 128, 256, 512]
 ]
 
 def get_param_dict_list_from_config_file(config_file) -> list:
@@ -115,12 +117,18 @@ def log_experiment_status(json_file, experiment_id, status):
 def run_experiment(param_dict, param_tuple, eval_dict, log_file):
     param_str = get_flags_str(param_dict, param_tuple, eval_dict)
 
-    command = "python3 experiments/distribution_shift_experiments_base.py {}".format(param_str)
+    command = "python3 experiments/distribution_shift_experiments_base.py --output_dir _dump/distribution_shift_exps_final {}".format(param_str)
     print("Running command: {}".format(command))
 
     if log_experiment_status(log_file, param_str, "running"):
         # Run experiment
         ret = subprocess.call(command, shell=True)
+
+        # If experiment failed, end this script
+        if ret != 0:
+            print("Experiment failed.")
+            log_experiment_status(log_file, param_str, "failed")
+            exit(1)
     log_experiment_status(log_file, param_str, "finished")
 
 if __name__ == "__main__":

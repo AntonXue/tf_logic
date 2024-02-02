@@ -263,7 +263,8 @@ def dataset_description(
 
 def model_description(args):
     return f"{args.model_name}" + \
-        f"_d{args.embed_dim}_L{args.num_layers}_H{args.num_heads}"
+        f"_d{args.embed_dim}_L{args.num_layers}_H{args.num_heads}" + \
+        f"_seed{args.seed}" if args.include_seed_in_run_name else ""
 
 def train_dataset_description(args):
     return dataset_description(
