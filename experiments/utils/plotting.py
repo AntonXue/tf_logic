@@ -67,6 +67,9 @@ def heatmap(data, row_labels, col_labels, row_title, col_title, ax=None,
     ax.set_xlabel(col_title)
     ax.set_ylabel(row_title)
 
+    ax.xaxis.set_tick_params(size=0)
+    ax.yaxis.set_tick_params(size=0)
+
     return im, cbar
 
 

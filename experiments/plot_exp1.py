@@ -16,6 +16,12 @@ from utils.plotting import heatmap, annotate_heatmap
 import matplotlib.pyplot as plt
 import numpy as np
 
+
+plt.rcParams.update({'font.size': 12})
+plt.rcParams['axes.labelsize'] = 14
+plt.rcParams['legend.fontsize'] = 10
+plt.style.use('seaborn-v0_8-colorblind')
+
 def get_param_dict_list_from_config_file(config_file) -> list:
     """Returns a list of dictionaries of parameters from a JSON config file."""
     config = json.load(open(config_file, "r"))
@@ -74,7 +80,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--x_label",
         type=str,
-        default="Number of Variables",
+        default="Number of Propositions",
         help="Label for x-axis.",
     )
     parser.add_argument(
