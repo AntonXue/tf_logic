@@ -159,11 +159,17 @@ class AutoregKStepsTaskOutput(ModelOutput):
 
 
 class AutoregKStepsTaskModel(SeqClsModel):
-    def __init__(self, seqcls_model: SeqClsModel, num_steps: int):
+    def __init__(
+        self,
+        seqcls_model: SeqClsModel,
+        num_steps: int,
+        only_supervise_target: bool = True
+    ):
         super().__init__()
         self.seqcls_model = seqcls_model
         self.num_steps = num_steps
         self.state_to_token = nn.Linear(seqcls_model.num_labels, seqcls_model.input_dim)
+        self.only_supervise_target = only_supervise_target
 
     @property
     def model_name(self):
@@ -208,7 +214,10 @@ class AutoregKStepsTaskModel(SeqClsModel):
         loss = None
         if labels is not None:
             loss_fn = nn.BCEWithLogitsLoss()
-            loss = loss_fn(all_succ_logits, labels.float()).to(tokens.device)
+            if self.only_supervise_target:
+                loss = loss_fn(all_succ_logits[:,-1], labels[:,-1].float()).to(tokens.device)
+            else:
+                loss = loss_fn(all_succ_logits, labels.float()).to(tokens.device)
 
         return AutoregKStepsTaskOutput(
             loss = loss,

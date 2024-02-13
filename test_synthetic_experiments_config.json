@@ -1,4 +1,4 @@
-{
+[{
     "model_name": ["gpt2"],
     "syn_exp_name": ["one_shot", "one_shot_str", "next_state", "autoreg_ksteps"],
     "embed_dim": [256],
@@ -18,7 +18,8 @@
     "train_len": [200],
     "eval_len": [40],
     "num_epochs": [2],
+    "num_steps": [3],
     "train_batch_size": [64],
     "eval_batch_size": [64]
-}
+}]
 
