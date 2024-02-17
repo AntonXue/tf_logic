@@ -33,32 +33,28 @@ def random_rules_with_chain(
         init_state = (torch.rand(n) < sp)
         init_state[chain_bits] = 0
         init_state[bad_bit] = 0
-    init_state = init_state.long()
+    init_state = init_state
 
-    all_as, all_bs = [], []
-
-    # Construct the chain first
-    all_as.append((torch.rand(n) < ap) * init_state)
-    all_bs.append(F.one_hot(chain_bits[0], n) + (torch.rand(n) < bp) * other_vec)
+    # chain_bits, init_state, and other_vec are disjoint
+    chain_as = (torch.rand(chain_len+1, n) < ap) * init_state
+    chain_bs = (torch.rand(chain_len+1, n) < bp) * other_vec
+    chain_bs[0, chain_bits[0]] = 1
     for k in range(len(chain_bits) - 1):
-        all_as.append(F.one_hot(chain_bits[k], n) + (torch.rand(n) < ap) * init_state)
-        all_bs.append(F.one_hot(chain_bits[k+1], n) + (torch.rand(n) < bp) * other_vec)
+        chain_as[k+1, chain_bits[k]] = 1
+        chain_bs[k+1, chain_bits[k+1]] = 1
 
-    # Now make the filler rules
-    for _ in range(num_fillers):
-        all_as.append((torch.rand(n) < ap) * init_state)
-        all_bs.append((torch.rand(n) < bp) * other_vec)
+    # Filler rules
+    filler_as = (torch.rand(num_fillers, n) < ap) * init_state
+    filler_bs = (torch.rand(num_fillers, n) < bp) * other_vec
 
-    # Now add the adversarial rules
-    num_bad_rules = r - len(all_as)
-    for _ in range(num_bad_rules):
-        bad_a = (torch.rand(n) < ap).long()
-        bad_a[bad_bit] = 1
-        all_as.append(bad_a)
-        all_bs.append(torch.rand(n) < bp)
+    # Bad rules
+    num_bad_rules = r - len(chain_as) - len(filler_as)
+    bad_as = (torch.rand(num_bad_rules, n) < ap)
+    bad_bs = (torch.rand(num_bad_rules, n) < bp)
+    bad_as[:,bad_bit] = 1
 
-    all_as = torch.stack(all_as)    # (r,n)
-    all_bs = torch.stack(all_bs)    # (r,n)
+    all_as = torch.cat([chain_as, filler_as, bad_as], dim=0)
+    all_bs = torch.cat([chain_bs, filler_bs, bad_bs], dim=0)
     all_rules = torch.cat([all_as, all_bs], dim=1).long()
     all_rules = all_rules[torch.randperm(r)]
 
