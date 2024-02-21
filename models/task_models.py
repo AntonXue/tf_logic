@@ -45,9 +45,9 @@ class OneShotTaskModel(SeqClsModel):
         self,
         tokens: torch.LongTensor,
         labels: Optional[torch.LongTensor] = None,
-        seqcls_model_kwargs: dict = {}
+        **kwargs
     ):
-        seqcls_out = self.seqcls_model(tokens.float(), labels=labels, **seqcls_model_kwargs)
+        seqcls_out = self.seqcls_model(tokens.float(), labels=labels, **kwargs)
         return OneShotTaskOutput(
             loss = seqcls_out.loss,
             logits = seqcls_out.logits,
@@ -90,13 +90,13 @@ class OneShotStringTaskModel(SeqClsModel):
         input_ids: torch.LongTensor,
         attention_mask: torch.LongTensor,
         labels: Optional[torch.LongTensor] = None,
-        seqcls_model_kwargs: dict = {}
+        **kwargs
     ):
         seqcls_out = self.seqcls_model(
             input_ids = input_ids,
             labels = labels,
             attention_mask = attention_mask,
-            **seqcls_model_kwargs)
+            **kwargs)
 
         return OneShotStringTaskOutput(
             loss = seqcls_out.loss,
@@ -154,15 +154,27 @@ class AutoregKStepsTaskModel(SeqClsModel):
     def forward(
         self,
         tokens: torch.LongTensor,
+        attention_mask: Optional[torch.LongTensor] = None,
         labels: Optional[torch.LongTensor] = None,
-        seqcls_model_kwargs: dict = {}
+        **kwargs
     ):
+        """
+            tokens: (batch_size, seq_len, token_dim)
+            attention_mask: (batch_size, seq_len)
+        """
+        N, L, _ = tokens.shape
+        device = tokens.device
         all_succ_logits = ()
         all_seqcls_outs = ()
         all_tokens = tokens
 
         for t in range(self.num_steps):
-            seqcls_out = self.seqcls_model(all_tokens.float(), labels=None, **seqcls_model_kwargs)
+            seqcls_out = self.seqcls_model(
+                all_tokens.float(),
+                attention_mask = attention_mask,
+                labels = None,
+                **kwargs
+            )
             all_seqcls_outs += (seqcls_out,)
 
             succ_logits = seqcls_out.logits # (N,n)
@@ -170,7 +182,13 @@ class AutoregKStepsTaskModel(SeqClsModel):
 
             succ_state = (succ_logits > 0)  # (N,n)
             succ_state_token = self.state_to_token(succ_state.unsqueeze(1).float()) # (N,1,token_dim)
-            all_tokens = torch.cat([all_tokens, succ_state_token], dim=1).long()
+
+            # Prepare for next round of generation
+            all_tokens = torch.cat([all_tokens, succ_state_token], dim=1).float()
+
+            # Augment the attention mask by one to the right to attend to the token we just generated
+            if attention_mask is not None:
+                attention_mask = torch.cat([attention_mask, torch.ones(N,1).to(device)], dim=1).long()
 
         all_succ_logits = torch.stack(all_succ_logits, dim=1) # (N,num_steps,n)
 

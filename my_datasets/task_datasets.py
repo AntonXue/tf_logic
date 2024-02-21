@@ -210,7 +210,7 @@ class AutoregKStepsTokensDataset(Dataset):
 
 
 class TiledAutoregKStepsTokensDataset(Dataset):
-    """ [zero_pads] [rules] [prestepped_states]
+    """ [rules] [prestepped_states] [zero_pads]
     """
     def __init__(
         self,
@@ -288,18 +288,32 @@ class TiledAutoregKStepsTokensDataset(Dataset):
         if self.do_padding:
             pad_len = self.max_seq_len - num_rules - len(prestep_states)
 
-        all_tokens = torch.cat([
-            torch.zeros(pad_len, 2*num_vars), # zero paddings
-            rules,                      # the rules
-            torch.cat([                 # prestepped states
+        # Prepare the data
+        rule_tokens = rules
+
+        prestep_tokens = torch.cat([
                 torch.zeros(len(prestep_states), num_vars),
-                torch.cat(prestep_states, dim=0)
-            ], dim=1)
-        ])
+                torch.cat(prestep_states, dim=0),
+            ],
+            dim=1
+        )
+
+        pad_tokens = torch.zeros(pad_len, 2*num_vars)
+
+        all_tokens = torch.cat([rule_tokens, prestep_tokens, pad_tokens], dim=0)
+
+        attention_mask = torch.cat([
+            torch.ones(num_rules),
+            torch.ones(len(prestep_states)),
+            torch.zeros(pad_len),
+        ]).long()
+
+        labels = torch.cat(todo_states, dim=0).long()
 
         return {
             "tokens": all_tokens,
-            "labels": torch.cat(todo_states, dim=0)
+            "attention_mask": attention_mask,
+            "labels": labels
         }
 
 

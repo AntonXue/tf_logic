@@ -1,7 +1,7 @@
 [{
-    "model_name": ["gpt2"],
+    "model_name": ["gpt2", "mytf"],
     "syn_exp_name": ["sf_autoreg_ksteps"],
-    "embed_dim": [128],
+    "embed_dim": [64],
     "num_layers": [1],
     "num_heads": [1],
     "min_num_rules": [32],
@@ -13,10 +13,10 @@
     "max_conseq_prob": [0.3],
     "min_chain_len": [8],
     "max_chain_len": [16],
-    "train_len": [256],
-    "eval_len": [256],
-    "num_epochs": [5],
-    "num_steps": [5],
+    "train_len": [380],
+    "eval_len": [380],
+    "num_epochs": [10],
+    "num_steps": [1,2,3],
     "train_batch_size": [4],
     "eval_batch_size": [4]
 }]
