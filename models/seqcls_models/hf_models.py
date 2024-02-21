@@ -41,6 +41,7 @@ class HFSeqClsConfig:
         overwriting_config_kwargs: Optional[dict] = None,
         use_pretrained: Optional[bool] = None,
         pretrained_kwargs: Optional[dict] = None,
+        **kwargs
     ):
         self.model_name = model_name
         self.input_dim = input_dim
@@ -52,6 +53,7 @@ class HFSeqClsConfig:
         self.max_seq_len = max_seq_len
         self.overwriting_config_kwargs = overwriting_config_kwargs
         self.use_pretrained = use_pretrained
+        self.extra_kwargs = kwargs
 
         # transformers.GPT2Config
         if model_name == "gpt2":

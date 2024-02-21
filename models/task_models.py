@@ -105,50 +105,6 @@ class OneShotStringTaskModel(SeqClsModel):
         )
 
 
-""" Next-state models """
-
-@dataclass
-class NextStateTaskOutput(ModelOutput):
-    loss: Optional[torch.FloatTensor] = None
-    logits: Optional[torch.FloatTensor] = None
-    seqcls_output: Optional[ModelOutput] = None
-
-
-class NextStateTaskModel(SeqClsModel):
-    def __init__(self, seqcls_model: SeqClsModel):
-        super().__init__()
-        self.seqcls_model = seqcls_model
-
-    @property
-    def model_name(self):
-        return self.seqcls_model.model_name
-
-    @property
-    def input_dim(self):
-        return self.seqcls_model.input_dim
-
-    @property
-    def embed_dim(self):
-        return self.seqcls_model.embed_dim
-
-    @property
-    def num_labels(self):
-        return self.seqcls_model.num_labels
-
-    def forward(
-        self,
-        tokens: torch.LongTensor,
-        labels: Optional[torch.LongTensor] = None,
-        seqcls_model_kwargs: dict = {}
-    ):
-        seqcls_out = self.seqcls_model(tokens.float(), labels=labels, **seqcls_model_kwargs)
-        return NextStateTaskOutput(
-            loss = seqcls_out.loss,
-            logits = seqcls_out.logits,
-            seqcls_output = seqcls_out
-        )
-
-
 """ Autoregressive models """
 
 @dataclass
@@ -158,18 +114,26 @@ class AutoregKStepsTaskOutput(ModelOutput):
     all_seqcls_outputs: Optional[tuple[ModelOutput]] = None
 
 
+
 class AutoregKStepsTaskModel(SeqClsModel):
+    """ train_supervision_mode
+            * all: supervise on all the outputs
+            * first: only supervise the first output
+            * final: only supervise the final output
+    """
     def __init__(
         self,
         seqcls_model: SeqClsModel,
         num_steps: int,
-        only_supervise_target: bool = True
+        train_supervision_mode: str = "all"
     ):
         super().__init__()
         self.seqcls_model = seqcls_model
         self.num_steps = num_steps
         self.state_to_token = nn.Linear(seqcls_model.num_labels, seqcls_model.input_dim)
-        self.only_supervise_target = only_supervise_target
+        assert train_supervision_mode in ["all", "first", "final"]
+        self.train_supervision_mode = train_supervision_mode
+        self.loss_fn = nn.BCEWithLogitsLoss()
 
     @property
     def model_name(self):
@@ -193,7 +157,6 @@ class AutoregKStepsTaskModel(SeqClsModel):
         labels: Optional[torch.LongTensor] = None,
         seqcls_model_kwargs: dict = {}
     ):
-
         all_succ_logits = ()
         all_seqcls_outs = ()
         all_tokens = tokens
@@ -202,22 +165,25 @@ class AutoregKStepsTaskModel(SeqClsModel):
             seqcls_out = self.seqcls_model(all_tokens.float(), labels=None, **seqcls_model_kwargs)
             all_seqcls_outs += (seqcls_out,)
 
-            succ_logits = seqcls_out.logits.view(-1,1,self.seqcls_model.num_labels)  # (N,1,n)
+            succ_logits = seqcls_out.logits # (N,n)
             all_succ_logits += (succ_logits,)
 
-            succ_state = (succ_logits > 0)
-            succ_state_token = self.state_to_token(succ_state.float())
+            succ_state = (succ_logits > 0)  # (N,n)
+            succ_state_token = self.state_to_token(succ_state.unsqueeze(1).float()) # (N,1,token_dim)
             all_tokens = torch.cat([all_tokens, succ_state_token], dim=1).long()
 
-        all_succ_logits = torch.cat(all_succ_logits, dim=1)
+        all_succ_logits = torch.stack(all_succ_logits, dim=1) # (N,num_steps,n)
 
         loss = None
         if labels is not None:
-            loss_fn = nn.BCEWithLogitsLoss()
-            if self.only_supervise_target:
-                loss = loss_fn(all_succ_logits[:,-1], labels[:,-1].float()).to(tokens.device)
+            if self.train_supervision_mode == "first":
+                loss = self.loss_fn(all_succ_logits[:,0], labels[:,0].float()).to(tokens.device)
+            elif self.train_supervision_mode == "final":
+                loss = self.loss_fn(all_succ_logits[:,-1], labels[:,-1].float()).to(tokens.device)
+            elif self.train_supervision_mode == "all":
+                loss = self.loss_fn(all_succ_logits, labels.float()).to(tokens.device)
             else:
-                loss = loss_fn(all_succ_logits, labels.float()).to(tokens.device)
+                raise ValueError(f"Unknown train_supervision_mode: {self.train_supervision_mode}")
 
         return AutoregKStepsTaskOutput(
             loss = loss,
