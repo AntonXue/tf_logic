@@ -89,7 +89,7 @@ class OneShotTokensDataset(Dataset):
 
 
 class OneShotStringDataset(Dataset):
-    """ For task of checking one-shot QED, generate a bunch of random rules 
+    """ For task of checking one-shot QED, generate a bunch of random rules
     The rules and theorem are represented as strings"""
     def __init__(
         self,
@@ -151,6 +151,7 @@ class OneShotStringDataset(Dataset):
 
 
 class AutoregKStepsTokensDataset(Dataset):
+    """ [rules] [prev_states] """
     def __init__(
         self,
         num_vars: int,
@@ -158,69 +159,8 @@ class AutoregKStepsTokensDataset(Dataset):
         ante_prob_range: tuple[float, float],
         conseq_prob_range: tuple[float, float],
         chain_len_range: tuple[int, int],
+        num_prevs_range: tuple[int, int],
         num_steps: int,
-        dataset_len: int,
-        do_padding: bool = True,
-        num_fillers: int = 2
-    ):
-        self.inner_dataset = OneShotTokensDataset(
-            num_vars = num_vars,
-            num_rules_range = num_rules_range,
-            ante_prob_range = ante_prob_range,
-            conseq_prob_range = conseq_prob_range,
-            chain_len_range = chain_len_range,
-            dataset_len = dataset_len,
-            num_fillers = num_fillers
-        )
-
-        self.num_steps = num_steps
-        self.do_padding = do_padding
-        self.max_seq_len = num_rules_range[1]
-
-    def __len__(self):
-        """ We can indefinitely generate more, but set an artificial cap """
-        return len(self.inner_dataset)       
-
-    def __getitem__(self, idx):
-        num_vars = self.inner_dataset.num_vars
-        rules_dict = self.inner_dataset.get_random_rules()
-        rules = rules_dict["rules"]
-        num_rules = rules.size(0)
-
-        if self.do_padding:
-            pad_len = self.max_seq_len - num_rules
-            pad_rules = torch.zeros(pad_len, 2*num_vars)
-            rules = torch.cat([rules, pad_rules], dim=0).long()
-            num_rules = rules.size(0)
-
-        state = torch.zeros(1, num_vars).long()
-        succs = ()
-        for t in range(self.num_steps):
-            state, _ = step_rules(rules[None,...], state)
-            succs += (state,)
-
-        succs = torch.cat(succs, dim=0).long()
-        all_tokens = torch.cat([torch.zeros(num_rules,1), rules], dim=1)
-        all_tokens = all_tokens[torch.randperm(all_tokens.size(0))]
-        
-        return {
-            "tokens": all_tokens,
-            "labels": succs
-        }
-
-
-class TiledAutoregKStepsTokensDataset(Dataset):
-    """ [rules] [prestepped_states] [zero_pads]
-    """
-    def __init__(
-        self,
-        num_vars: int,
-        num_rules_range: tuple[int, int],
-        ante_prob_range: tuple[float, float],
-        conseq_prob_range: tuple[float, float],
-        chain_len_range: tuple[int, int],
-        num_presteps_range: tuple[int, int],
-        num_todo_steps: int,
         dataset_len: int,
         do_padding: bool = True,
     ):
@@ -232,17 +172,19 @@ class TiledAutoregKStepsTokensDataset(Dataset):
         assert conseq_prob_range[0] <= conseq_prob_range[1]
         assert chain_len_range[0] <= chain_len_range[1]
         assert num_rules_range[0] > chain_len_range[1] + 2
+        assert num_prevs_range[0] >= 1
+        assert num_prevs_range[0] <= num_prevs_range[1]
 
         self.num_vars = num_vars
         self.num_rules_range = num_rules_range
         self.ante_prob_range = ante_prob_range
         self.conseq_prob_range = conseq_prob_range
         self.chain_len_range = chain_len_range
-        self.num_presteps_range = num_presteps_range
-        self.num_todo_steps = num_todo_steps
+        self.num_prevs_range = num_prevs_range
+        self.num_steps = num_steps
         self.dataset_len = dataset_len
-        # max_num_presteps + 1 because we begin pre-stepping at the zero state
-        self.max_seq_len = num_rules_range[1] + num_presteps_range[1] + 1
+
+        self.max_seq_len = num_rules_range[1] + num_prevs_range[1]
         self.do_padding = do_padding
 
     def __len__(self):
@@ -273,47 +215,35 @@ class TiledAutoregKStepsTokensDataset(Dataset):
         rules = rules_dict["rules"]
         num_rules = rules.size(0)
 
-        num_presteps = torch.randint(self.num_presteps_range[0], self.num_presteps_range[1]+1, ())
+        # Generate the previous states
+        num_prevs = torch.randint(self.num_prevs_range[0], self.num_prevs_range[1]+1, ())
         state = torch.zeros(1, num_vars)
-        prestep_states = (state,)
-        for _ in range(num_presteps):
+        prevs = (state,)
+        for _ in range(num_prevs - 1):
             state, _ = step_rules(rules[None,...], state)
-            prestep_states += (state,)
+            prevs += (state,)
+        prevs = torch.cat(prevs, dim=0)
 
-        todo_states = ()
-        for _ in range(self.num_todo_steps):
+        # Generate the successor states
+        succs = ()
+        for _ in range(self.num_steps):
             state, _ = step_rules(rules[None,...], state)
-            todo_states += (state,)
+            succs += (state,)
+        succs = torch.cat(succs, dim=0)
 
+        # Pad and shuffle the rules if necessary
         if self.do_padding:
-            pad_len = self.max_seq_len - num_rules - len(prestep_states)
+            pad_len = self.max_seq_len - num_rules - num_prevs
+            pad_rules = torch.zeros(pad_len, 2*num_vars)
+            rules = torch.cat([rules, torch.zeros(pad_len, 2*num_vars)], dim=0)
+            rules = rules[torch.randperm(rules.size(0))]
 
-        # Prepare the data
-        rule_tokens = rules
-
-        prestep_tokens = torch.cat([
-                torch.zeros(len(prestep_states), num_vars),
-                torch.cat(prestep_states, dim=0),
-            ],
-            dim=1
-        )
-
-        pad_tokens = torch.zeros(pad_len, 2*num_vars)
-
-        all_tokens = torch.cat([rule_tokens, prestep_tokens, pad_tokens], dim=0)
-
-        attention_mask = torch.cat([
-            torch.ones(num_rules),
-            torch.ones(len(prestep_states)),
-            torch.zeros(pad_len),
-        ]).long()
-
-        labels = torch.cat(todo_states, dim=0).long()
+        # Prepare the output tokens
+        prev_tokens = torch.cat([torch.zeros(num_prevs, num_vars), prevs], dim=1)
+        all_tokens = torch.cat([rules, prev_tokens], dim=0)
 
         return {
             "tokens": all_tokens,
-            "attention_mask": attention_mask,
-            "labels": labels
+            "labels": succs
         }
-
 
