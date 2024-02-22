@@ -62,20 +62,21 @@ class AutoTaskModel:
             seqcls_model = AutoSeqClsModel.from_kwargs(model_name, **kwargs)
             return OneShotStringTaskModel(seqcls_model)
 
-        elif task_name == "next_state":
-            num_vars = kwargs.pop("num_vars")
-            kwargs["problem_type"] = "multi_label_classification"
-            kwargs["num_labels"] = num_vars
-            seqcls_model = AutoSeqClsModel.from_kwargs(model_name, **kwargs)
-            return NextStateTaskModel(seqcls_model)
-
         elif task_name == "autoreg_ksteps":
             num_vars = kwargs.pop("num_vars")
             num_steps = kwargs.pop("num_steps")
             kwargs["problem_type"] = "multi_label_classification"
             kwargs["num_labels"] = num_vars
             seqcls_model = AutoSeqClsModel.from_kwargs(model_name, **kwargs)
-            return AutoregKStepsTaskModel(seqcls_model, num_steps=num_steps)
+            return AutoregKStepsTaskModel(seqcls_model, num_steps=num_steps, train_supervision_mode="all")
+
+        elif task_name == "sf_autoreg_ksteps":
+            num_vars = kwargs.pop("num_vars")
+            num_steps = kwargs.pop("num_steps")
+            kwargs["problem_type"] = "multi_label_classification"
+            kwargs["num_labels"] = num_vars
+            seqcls_model = AutoSeqClsModel.from_kwargs(model_name, **kwargs)
+            return AutoregKStepsTaskModel(seqcls_model, num_steps=num_steps, train_supervision_mode="first")
 
         else:
             raise NotImplementedError(f"{task_name} not supported")
@@ -102,20 +103,21 @@ class AutoTaskModel:
             seqcls_model = AutoSeqClsModel.from_pretrained(model_name, **kwargs)
             return OneShotStringTaskModel(seqcls_model)
 
-        elif task_name == "next_state":
-            num_vars = kwargs.pop("num_vars")
-            kwargs["problem_type"] = "multi_label_classification"
-            kwargs["num_labels"] = num_vars
-            seqcls_model = AutoSeqClsModel.from_pretrained(model_name, **kwargs)
-            return NextStateTaskModel(seqcls_model, config)
-
         elif task_name == "autoreg_ksteps":
             num_vars = kwargs.pop("num_vars")
             num_steps = kwargs.pop("num_steps")
             kwargs["problem_type"] = "multi_label_classification"
             kwargs["num_labels"] = num_vars
             seqcls_model = AutoSeqClsModel.from_pretrained(model_name, **kwargs)
-            return AutoregKStepsTaskModel(seqcls_model, config)
+            return AutoregKStepsTaskModel(seqcls_model, num_steps=num_steps, train_supervision_mode="all")
+
+        elif task_name == "sf_autoreg_ksteps":
+            num_vars = kwargs.pop("num_vars")
+            num_steps = kwargs.pop("num_steps")
+            kwargs["problem_type"] = "multi_label_classification"
+            kwargs["num_labels"] = num_vars
+            seqcls_model = AutoSeqClsModel.from_pretrained(model_name, **kwargs)
+            return AutoregKStepsTaskModel(seqcls_model, num_steps=num_steps, train_supervision_mode="first")
 
         else:
             raise NotImplementedError(f"{task_name} not supported")

@@ -76,8 +76,31 @@ class AFBlock(nn.Module):
             nn.Linear(config.ffwd_dim, config.embed_dim)
         )
 
-    def forward(self, x: torch.FloatTensor):
-        z, a = self.attn(x, x, x)
+    def forward(self, x: torch.FloatTensor, attention_mask: Optional[torch.LongTensor] = None):
+        """
+            x: (batch_size, seq_len, embed_dim)
+            attention_mask: (batch_size, seq_len)
+                1: not masked (do not ignore)
+                0: masked (ignore)
+        """
+        N, L, _ = x.shape
+
+        # Lower-triangular matrix (causal) mask
+        lower_tri = torch.tril(torch.ones(L,L), diagonal=0).view(1,1,L,L).to(x.device)
+
+        # If None, supply the default mask
+        if attention_mask is None:
+            mask = lower_tri.repeat(N,self.attn.num_heads,1,1)
+
+        # Otherwise, mask the given mask with the causal one
+        else:
+            mask = lower_tri * attention_mask.view(N,1,1,L)
+            mask = mask.repeat(1,self.attn.num_heads,1,1)
+
+        # Fill and flatten the attention mask; sub-diagonals are zero; super-diagonals are -inf
+        mask = (1.0 - mask).view(-1,L,L) * -999
+
+        z, a = self.attn(x, x, x, attn_mask=mask)
         z = self.norm1(x + z)
         z = self.norm2(z + self.ffwd(z))
         return z, a
@@ -103,17 +126,23 @@ class MyTfModel(nn.Module):
     def forward(
         self,
         x: torch.FloatTensor,
+        attention_mask: Optional[torch.LongTensor] = None,
         output_hidden_states: Optional[bool] = None,
         output_attentions : Optional[bool] = None
     ):
-        """ x : (batch_size, seq_len, embed_dim) """
+        """
+            x : (batch_size, seq_len, embed_dim)
+            attention_mask: (batch_size, seq_len)
+                1: not masked (attended)
+                0: masked (ignored)
+        """
         x = x + self.pos_embedding(torch.arange(0, x.size(1)).to(x.device))
 
         all_hidden_states = (x,) if output_hidden_states else None
         all_attentions = () if output_attentions else None
 
         for block in self.af_blocks:
-            x, a = block(x)
+            x, a = block(x, attention_mask=attention_mask)
 
             if output_hidden_states:
                 all_hidden_states += (x,)
@@ -180,12 +209,24 @@ class MyTfSeqClsModel(SeqClsModel):
     def forward(
         self,
         x: torch.FloatTensor,
+        attention_mask: Optional[torch.FloatTensor] = None,
         output_hidden_states: Optional[bool] = None,
         output_attentions : Optional[bool] = None,
         labels: Optional[torch.LongTensor] = None
     ):
+        """
+            x : (batch_size, seq_len, embed_dim)
+            attention_mask: (batch_size, seq_len)
+                1: not masked (do not ignore)
+                0: masked (ignore)
+        """
         x = self.embed_fn(x)
-        tf_out = self.mytf(x, output_hidden_states=output_hidden_states, output_attentions=output_attentions)
+        tf_out = self.mytf(
+            x,
+            attention_mask = attention_mask,
+            output_hidden_states = output_hidden_states,
+            output_attentions = output_attentions
+        )
         logits = self.cls_head(tf_out.last_hidden_state)[:,0]   # (batch_size, num_labels)
 
         loss = None

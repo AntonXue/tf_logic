@@ -77,9 +77,9 @@ class ForceOutputWithAppendedAttackTokensDataset(Dataset):
         all_tokens = all_tokens[torch.randperm(all_tokens.size(0))]
 
         # Figure out the attack; big_state already has batch_size == 1
-        next_state, _ = step_rules(all_rules[None,...], big_state)
-        next_state = next_state[0]
-        target = (torch.randint(0,3,(1, num_vars)) - (torch.rand(num_vars) < sp) * next_state).clamp(0,1)
+        succ_state, _ = step_rules(all_rules[None,...], big_state)
+        succ_state = succ_state[0]
+        target = (torch.randint(0,3,(1, num_vars)) - (torch.rand(num_vars) < sp) * succ_state).clamp(0,1)
 
         return {
             "tokens": all_tokens,

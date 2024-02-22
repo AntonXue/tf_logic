@@ -160,16 +160,6 @@ class SyntheticExperimentsArguments:
         metadata = {"help": "The maximum number of rules to randomly generate."}
     )
 
-    min_num_states: Optional[int] = field(
-        default = 5,
-        metadata = {"help": "The minimum number of states to randomly generate."}
-    )
-
-    max_num_states: Optional[int] = field(
-        default = 10,
-        metadata = {"help": "The maximum number of states to randomly generate."}
-    )
-
     train_len: Optional[int] = field(
         default = None,
         metadata = {"help": "The number of elements in the training dataset."}
@@ -239,18 +229,19 @@ def synexp_args_to_wandb_run_name(args: SyntheticExperimentsArguments):
             f"_cl{args.min_chain_len}-{args.max_chain_len}" + \
             f"_ntr{args.train_len}_ntt{args.eval_len}_seed{args.seed}"
 
-    elif args.syn_exp_name == "next_state":
-        return f"SynNS_{model_str}__" + \
-            f"nv{args.num_vars}" + \
-            f"_nr{args.min_num_rules}-{args.max_num_rules}" + \
-            f"_ns{args.min_num_states}-{args.max_num_states}" + \
-            f"_ap{args.min_ante_prob:.2f}-{args.max_ante_prob:.2f}" + \
-            f"_bp{args.min_conseq_prob:.2f}-{args.max_conseq_prob:.2f}" + \
-            f"_sp{args.min_state_prob:.2f}-{args.max_state_prob:.2f}" + \
-            f"_ntr{args.train_len}_ntt{args.eval_len}_seed{args.seed}"
-
     elif args.syn_exp_name == "autoreg_ksteps":
         return f"SynAR_{model_str}__" + \
+            f"nv{args.num_vars}" + \
+            f"_ns{args.num_steps}" + \
+            f"_nr{args.min_num_rules}-{args.max_num_rules}" + \
+            f"_ap{args.min_ante_prob:.2f}-{args.max_ante_prob:.2f}" + \
+            f"_bp{args.min_conseq_prob:.2f}-{args.max_conseq_prob:.2f}" + \
+            f"_cl{args.min_chain_len}-{args.max_chain_len}" + \
+            f"_ntr{args.train_len}_ntt{args.eval_len}_seed{args.seed}"
+
+
+    elif args.syn_exp_name == "sf_autoreg_ksteps":
+        return f"SynSFAR_{model_str}__" + \
             f"nv{args.num_vars}" + \
             f"_ns{args.num_steps}" + \
             f"_nr{args.min_num_rules}-{args.max_num_rules}" + \
@@ -284,13 +275,7 @@ def trainer_stats_for_wandb(
             "eval_qeds": num_eval_qeds.item()
         }
 
-    elif args.syn_exp_name == "next_state":
-        return {
-            "train_len": len(trainer.train_dataset),
-            "eval_len": len(trainer.eval_dataset),
-        }
-
-    elif args.syn_exp_name == "autoreg_ksteps":
+    elif args.syn_exp_name in ["autoreg_ksteps", "sf_autoreg_ksteps"]:
         return {
             "train_len": len(trainer.train_dataset),
             "eval_len": len(trainer.eval_dataset),
@@ -432,50 +417,6 @@ def make_trainer_for_synthetic(
             compute_metrics = one_shot_metrics)
 
 
-    elif args.syn_exp_name == "next_state":
-        big_dataset = NextStateTokensDataset(
-            num_vars = args.num_vars,
-            num_rules_range = (args.min_num_rules, args.max_num_rules),
-            num_states_range = (args.min_num_states, args.max_num_states),
-            ante_prob_range = (args.min_ante_prob, args.max_ante_prob),
-            conseq_prob_range = (args.min_conseq_prob, args.max_conseq_prob),
-            state_prob_range = (args.min_state_prob, args.max_state_prob),
-            dataset_len = args.train_len + args.eval_len)
-
-        train_dataset, eval_dataset = \
-            torch.utils.data.random_split(big_dataset, [args.train_len, args.eval_len])
-
-        tfl_model = AutoTaskModel.from_kwargs(
-            task_name = args.syn_exp_name,
-            num_vars = args.num_vars,
-            model_name = args.model_name,
-            input_dim = big_dataset[0]["tokens"].size(-1),
-            embed_dim = args.embed_dim,
-            num_layers = args.num_layers,
-            num_heads = args.num_heads)
-
-        training_args = TrainingArguments(
-            str(Path(args.output_dir, synexp_args_to_wandb_run_name(args))),
-            num_train_epochs = args.num_epochs,
-            per_device_train_batch_size = args.train_batch_size,
-            per_device_eval_batch_size = args.eval_batch_size,
-            auto_find_batch_size = args.auto_find_batch_size,
-            evaluation_strategy = "epoch",
-            report_to = report_to,
-            run_name = synexp_args_to_wandb_run_name(args),
-            logging_steps = args.logging_steps,
-            warmup_ratio = 0.10,
-            save_strategy = "epoch",
-            save_total_limit=2)
-
-        return Trainer(
-            tfl_model,
-            training_args,
-            train_dataset = train_dataset,
-            eval_dataset = eval_dataset,
-            compute_metrics = next_state_metrics)
-
-
     elif args.syn_exp_name == "autoreg_ksteps":
         big_dataset = AutoregKStepsTokensDataset(
             num_vars = args.num_vars,
@@ -519,6 +460,61 @@ def make_trainer_for_synthetic(
             train_dataset = train_dataset,
             eval_dataset = eval_dataset,
             compute_metrics = autoreg_ksteps_metrics)
+
+
+    elif args.syn_exp_name == "sf_autoreg_ksteps":
+        train_dataset = TiledAutoregKStepsTokensDataset(
+            num_vars = args.num_vars,
+            num_rules_range = (args.min_num_rules, args.max_num_rules),
+            ante_prob_range = (args.min_ante_prob, args.max_ante_prob),
+            conseq_prob_range = (args.min_conseq_prob, args.max_conseq_prob),
+            chain_len_range = (args.min_chain_len, args.max_chain_len),
+            num_presteps_range = (0, args.min_chain_len),
+            num_todo_steps = args.num_steps,
+            dataset_len = args.train_len)
+
+        # The eval dataset has sequences shorter than the training dataset
+        eval_dataset = TiledAutoregKStepsTokensDataset(
+            num_vars = args.num_vars,
+            num_rules_range = (args.min_num_rules, args.max_num_rules - args.num_steps),
+            ante_prob_range = (args.min_ante_prob, args.max_ante_prob),
+            conseq_prob_range = (args.min_conseq_prob, args.max_conseq_prob),
+            chain_len_range = (args.min_chain_len, args.max_chain_len),
+            num_presteps_range = (0, args.min_chain_len),
+            num_todo_steps = args.num_steps,
+            dataset_len = args.eval_len)
+
+        tfl_model = AutoTaskModel.from_kwargs(
+            task_name = args.syn_exp_name,
+            num_vars = args.num_vars,
+            num_steps = args.num_steps,
+            model_name = args.model_name,
+            input_dim = train_dataset[0]["tokens"].size(-1),
+            embed_dim = args.embed_dim,
+            num_layers = args.num_layers,
+            num_heads = args.num_heads)
+
+        training_args = TrainingArguments(
+            str(Path(args.output_dir, synexp_args_to_wandb_run_name(args))),
+            num_train_epochs = args.num_epochs,
+            per_device_train_batch_size = args.train_batch_size,
+            per_device_eval_batch_size = args.eval_batch_size,
+            auto_find_batch_size = args.auto_find_batch_size,
+            evaluation_strategy = "epoch",
+            report_to = report_to,
+            run_name = synexp_args_to_wandb_run_name(args),
+            logging_steps = args.logging_steps,
+            warmup_ratio = 0.10,
+            save_strategy = "epoch",
+            save_total_limit=2)
+
+        return Trainer(
+            tfl_model,
+            training_args,
+            train_dataset = train_dataset,
+            eval_dataset = eval_dataset,
+            compute_metrics = autoreg_ksteps_metrics)
+
 
 
     else:

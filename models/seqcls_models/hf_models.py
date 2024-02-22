@@ -41,6 +41,7 @@ class HFSeqClsConfig:
         overwriting_config_kwargs: Optional[dict] = None,
         use_pretrained: Optional[bool] = None,
         pretrained_kwargs: Optional[dict] = None,
+        **kwargs
     ):
         self.model_name = model_name
         self.input_dim = input_dim
@@ -52,6 +53,7 @@ class HFSeqClsConfig:
         self.max_seq_len = max_seq_len
         self.overwriting_config_kwargs = overwriting_config_kwargs
         self.use_pretrained = use_pretrained
+        self.extra_kwargs = kwargs
 
         # transformers.GPT2Config
         if model_name == "gpt2":
@@ -172,15 +174,25 @@ class HFSeqClsModel(SeqClsModel):
         return self.config.problem_type
 
     def forward_iter_batch(
-            self,
-            x: torch.FloatTensor,
-            labels: Optional[torch.LongTensor],
-            **kwargs):
+        self,
+        x: torch.FloatTensor,
+        attention_mask: Optional[torch.LongTensor],
+        labels: Optional[torch.LongTensor],
+        **kwargs
+    ):
         """ Some models (e.g., GPT-2) can't handle batch_size > 1 when using inputs_embeds """
         all_outs = []
         for i, xi in enumerate(x):
             li = None if labels is None else labels[i:i+1]
-            all_outs.append(self.model(inputs_embeds=xi[None,...], labels=li, **kwargs))
+            ai = None if attention_mask is None else attention_mask[i:i+1]
+            all_outs.append(
+                self.model(
+                    inputs_embeds = xi[None,...],
+                    attention_mask = ai,
+                    labels = li,
+                    **kwargs
+                )
+            )
 
         loss = None
         if labels is not None:
@@ -212,19 +224,26 @@ class HFSeqClsModel(SeqClsModel):
         self,
         x: Optional[torch.FloatTensor] = None,
         input_ids: Optional[torch.LongTensor] = None,
-        labels: Optional[torch.LongTensor] = None,
         attention_mask: Optional[torch.LongTensor] = None,
+        labels: Optional[torch.LongTensor] = None,
         **kwargs
     ):
         """ x:         (batch_size, seq_len, input_dim)
             input_ids: (batch_size, seq_len)
         """
+
+        # Exactly one of x or input_ids must be present
         assert not (x is None and input_ids is None)
         assert not (x is not None and input_ids is not None)
 
         # When using input ids, the result is simpler
         if input_ids is not None:
-            return self.model(input_ids=input_ids, labels=labels, attention_mask=attention_mask, **kwargs)
+            return self.model(
+                input_ids = input_ids,
+                attention_mask = attention_mask,
+                labels = labels,
+                **kwargs
+            )
 
         # Otherwise we transform the input_dim sequence into one of embed_dim
         x = self.embed_fn(x)
@@ -236,10 +255,15 @@ class HFSeqClsModel(SeqClsModel):
         # GPT-2 can only handle batch size == 1 when using inputs_embeds
         if isinstance(self.model, GPT2ForSequenceClassification) or \
             isinstance(self.model, LlamaForSequenceClassification):
-            out = self.forward_iter_batch(x, labels, **kwargs)
+            out = self.forward_iter_batch(x, attention_mask, labels, **kwargs)
 
         else:
-            out = self.model(inputs_embeds=x, labels=labels, **kwargs)
+            out = self.model(
+                inputs_embeds = x,
+                attention_mask = attention_mask,
+                labels = labels,
+                **kwargs
+            )
 
         return out
 
