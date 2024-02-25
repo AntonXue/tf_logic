@@ -6,17 +6,16 @@ import torch.nn.functional as F
 """ Propositional Horn Clauses """
 
 def random_rules_with_chain(
-    num_rules: int,
     num_vars: int,
+    num_rules: int,
     ante_prob: float,
     conseq_prob: float,
     chain_len: int,
     state_prob: Optional[float] = None,
-    num_fillers: int = 2,
     return_dict: bool = False
 ):
     """ Make one rule at a time (batch_size == 1) """
-    assert num_rules > num_fillers + chain_len
+    assert num_rules > chain_len
     assert num_vars > chain_len
     r, n, ap, bp, sp = num_rules, num_vars, ante_prob, conseq_prob, state_prob
 
@@ -36,38 +35,49 @@ def random_rules_with_chain(
     init_state = init_state
 
     # chain_bits, init_state, and other_vec are disjoint
-    chain_as = (torch.rand(chain_len+1, n) < ap) * init_state
-    chain_bs = (torch.rand(chain_len+1, n) < bp) * other_vec
-    chain_bs[0, chain_bits[0]] = 1
-    for k in range(len(chain_bits) - 1):
-        chain_as[k+1, chain_bits[k]] = 1
-        chain_bs[k+1, chain_bits[k+1]] = 1
+    # a1, a2, a3, ..., ak, X
+    #    /   /   /        /
+    # b1, b2, b3, ..., bk
+    chain_as = (torch.rand(chain_len, n) < ap) * init_state
+    chain_bs = (torch.rand(chain_len, n) < bp) * other_vec
+    for i, cb in enumerate(chain_bits):
+        chain_bs[i, cb] = 1
+        # The initial chain_a receives no chain_bit
+        if i < chain_len - 1:
+            chain_as[i+1, cb] = 1
 
-    # Filler rules
-    filler_as = (torch.rand(num_fillers, n) < ap) * init_state
-    filler_bs = (torch.rand(num_fillers, n) < bp) * other_vec
+    # Track all the states that could possibly be generated:
+    #   all_states = [s0, s1, s2, ... sn]
+    all_states = torch.zeros(num_vars + 1, num_vars)
+    all_states[0] = init_state
+    s = init_state
+    for i, b in enumerate(chain_bs):
+        s += b
+        all_states[i+1] = s
+    all_states[chain_len+1:] = s
+    all_states = all_states.clamp(0,1).long()
 
     # Bad rules
-    num_bad_rules = r - len(chain_as) - len(filler_as)
+    num_bad_rules = r - len(chain_as)
     bad_as = (torch.rand(num_bad_rules, n) < ap)
     bad_bs = (torch.rand(num_bad_rules, n) < bp)
     bad_as[:,bad_bit] = 1
 
-    all_as = torch.cat([chain_as, filler_as, bad_as], dim=0)
-    all_bs = torch.cat([chain_bs, filler_bs, bad_bs], dim=0)
+    all_as = torch.cat([chain_as, bad_as], dim=0)
+    all_bs = torch.cat([chain_bs, bad_bs], dim=0)
     all_rules = torch.cat([all_as, all_bs], dim=1).long()
     all_rules = all_rules[torch.randperm(r)]
 
     if return_dict:
         return {
             "rules": all_rules,
-            "init_state": init_state,
+            "states": all_states,
             "chain_bits": chain_bits,
             "other_bits": other_bits,
-            "bad_bit" : bad_bit
+            "bad_bit" : bad_bit,
         }
     else:
-        return all_rules, init_state
+        return all_rules, all_states
 
 
 """ Functionalities """
@@ -116,19 +126,19 @@ def prove_theorem(
     _, n = theorem.shape
     assert n2 == n*2
 
-    all_states, all_hits, chain_len = [], [], torch.zeros(N).long()
-    z = torch.zeros_like(theorem) if init_state is None else init_state
+    s = torch.zeros_like(theorem).long() if init_state is None else init_state
+    all_states, all_hits, chain_len = [s], [], torch.zeros(N).long()
     for t in range(n):
-        z_new, h = step_rules(rules, z)
-        all_states.append(z_new)
+        succ, h = step_rules(rules, s)
+        all_states.append(succ)
         all_hits.append(h)
-        chain_len += ((z_new - z).sum(dim=1)) > 0   # Incr if derived something new
-        z = z_new
+        chain_len += ((succ - s).sum(dim=1)) > 0    # Increment if got something new
+        s = succ
 
     return {
         "rules": rules,
         "theorem": theorem,
-        "qed": all_leq(theorem, z),
+        "qed": all_leq(theorem, s),
         "states": torch.stack(all_states, dim=1), # (N,n,n)
         "hits": torch.stack(all_hits, dim=1), # (N,n,r)
         "chain_len": chain_len, # (N,)

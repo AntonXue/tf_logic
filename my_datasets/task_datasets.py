@@ -14,7 +14,6 @@ class OneShotTokensDataset(Dataset):
         chain_len_range: tuple[int, int],
         dataset_len: int,
         do_padding: bool = True,
-        num_fillers: int = 2
     ):
         assert num_vars > 2
         assert num_rules_range[0] > 2 and num_rules_range[0] <= num_rules_range[1]
@@ -31,7 +30,6 @@ class OneShotTokensDataset(Dataset):
         self.dataset_len = dataset_len
         self.do_padding = do_padding
         self.max_seq_len = num_rules_range[1] + 1
-        self.num_fillers = num_fillers
 
     def __len__(self):
         return self.dataset_len
@@ -45,13 +43,12 @@ class OneShotTokensDataset(Dataset):
         bp = (max_bp - min_bp) * torch.rand(()) + min_bp
 
         return random_rules_with_chain(
-            num_rules = num_rules,
             num_vars = self.num_vars,
+            num_rules = num_rules,
             ante_prob = ap,
             conseq_prob = bp,
             chain_len = chain_len,
             return_dict = True,
-            num_fillers = self.num_fillers
         )
 
     def __getitem__(self, idx):
@@ -174,6 +171,7 @@ class AutoregKStepsTokensDataset(Dataset):
         assert num_rules_range[0] > chain_len_range[1] + 2
         assert num_prevs_range[0] >= 1
         assert num_prevs_range[0] <= num_prevs_range[1]
+        assert num_prevs_range[1] + num_steps <= num_vars
 
         self.num_vars = num_vars
         self.num_rules_range = num_rules_range
@@ -200,36 +198,24 @@ class AutoregKStepsTokensDataset(Dataset):
         bp = (max_bp - min_bp) * torch.rand(()) + min_bp
 
         return random_rules_with_chain(
-            num_rules = num_rules,
             num_vars = self.num_vars,
+            num_rules = num_rules,
             ante_prob = ap,
             conseq_prob = bp,
             chain_len = chain_len,
             return_dict = True,
-            num_fillers = 0
         )
 
     def __getitem__(self, idx):
         num_vars = self.num_vars
         rules_dict = self.get_random_rules()
-        rules = rules_dict["rules"]
+        rules, states = rules_dict["rules"], rules_dict["states"]
         num_rules = rules.size(0)
 
         # Generate the previous states
         num_prevs = torch.randint(self.num_prevs_range[0], self.num_prevs_range[1]+1, ())
-        state = torch.zeros(1, num_vars)
-        prevs = (state,)
-        for _ in range(num_prevs - 1):
-            state, _ = step_rules(rules[None,...], state)
-            prevs += (state,)
-        prevs = torch.cat(prevs, dim=0)
-
-        # Generate the successor states
-        succs = ()
-        for _ in range(self.num_steps):
-            state, _ = step_rules(rules[None,...], state)
-            succs += (state,)
-        succs = torch.cat(succs, dim=0)
+        prevs = states[:num_prevs]
+        succs = states[num_prevs:num_prevs+self.num_steps]
 
         # Pad and shuffle the rules if necessary
         if self.do_padding:
