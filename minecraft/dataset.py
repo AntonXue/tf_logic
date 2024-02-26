@@ -5,6 +5,10 @@ import json
 import itertools
 import random
 
+"""
+TODO: Add support for num_items range
+"""
+
 class MinecraftAutoregKStepsTokensDataset(Dataset):
     def __init__(
         self,
@@ -20,51 +24,60 @@ class MinecraftAutoregKStepsTokensDataset(Dataset):
         self.max_num_distractors = max_num_distractors
         self.tokenizer = tokenizer
         self.padding = padding
-        self.dataset = self.generate_dataset()
+        self.dataset_len = dataset_len
+        self.dataset = self._generate_base_dataset()
+        self.dataset = self._generate_dataset_with_distractions()
         # Shuffle the dataset
         random.seed(seed)
         random.shuffle(self.dataset)
-        self.dataset_len = min(len(self.dataset), dataset_len)
 
     def __len__(self):
         return self.dataset_len
 
-    def _get_minecraft_recipes(self):
+    def _get_minecraft_rules(self):
         dataset_dir = r"/home/akhare/repos/Minecraft-Crafting-Web/minecraft-data/recipes"
-        recipe_files = os.listdir(dataset_dir)
-        recipe_files = [os.path.join(dataset_dir, f) for f in recipe_files if f.endswith(".json")]
-        recipes = [json.load(open(f)) for f in recipe_files]
-        return recipes
+        raw_rule_files = os.listdir(dataset_dir)
+        raw_rule_files = [os.path.join(dataset_dir, f) for f in raw_rule_files if f.endswith(".json")]
+        raw_rules = [json.load(open(f)) for f in raw_rule_files]
+        return raw_rules
 
-    def _get_minecraft_rules(self, recipes):
+    def _process_minecraft_rules(self, raw_rules):
+        """Collect all the crafting rules from the raw rules.
+
+        Args:
+            raw_rules (list): List of raw rules
+
+        Returns:
+            rules: List of crafting rules where each elemet is a (antecedents, consequents, raw_rule) tuple
+        """
         rules = []
-        for recipe in recipes:
+        for raw_rule in raw_rules:
             try:
-                if "crafting" not in recipe["type"]:
+                if "crafting" not in raw_rule["type"]:
                     continue
                 antecedents = set()
                 consequents = set()
-                antecedents_group_key = "key" if "key" in recipe else "ingredients" if "ingredients" in recipe else "ingredient" if ("ingredient" in recipe and len(recipe["ingredient"]) > 1) else None
+                antecedents_group_key = "key" if "key" in raw_rule else "ingredients" if "ingredients" in raw_rule else "ingredient" if ("ingredient" in raw_rule and len(raw_rule["ingredient"]) > 1) else None
                 if antecedents_group_key is not None:
-                    for ingredient in (recipe[antecedents_group_key].values() if antecedents_group_key == "key" else recipe[antecedents_group_key]):
+                    for ingredient in (raw_rule[antecedents_group_key].values() if antecedents_group_key == "key" else raw_rule[antecedents_group_key]):
                         antecedents.add(ingredient["item"] if "item" in ingredient else ingredient["tag"])
                 else:
-                    if "ingredient" in recipe:
-                        antecedents.add(recipe["ingredient"]["item"] if "item" in recipe["ingredient"] else recipe["ingredient"]["tag"])
-                    if "base" in recipe:
-                        antecedents.add(recipe["base"]["item"] if "item" in recipe["base"] else recipe["base"]["tag"])
-                    if "addition" in recipe:
-                        antecedents.add(recipe["addition"]["item"] if "item" in recipe["addition"] else recipe["addition"]["tag"])
-                if "result" in recipe:
-                    consequents.add(recipe["result"]["item"] if "item" in recipe["result"] else recipe["result"])
+                    if "ingredient" in raw_rule:
+                        antecedents.add(raw_rule["ingredient"]["item"] if "item" in raw_rule["ingredient"] else raw_rule["ingredient"]["tag"])
+                    if "base" in raw_rule:
+                        antecedents.add(raw_rule["base"]["item"] if "item" in raw_rule["base"] else raw_rule["base"]["tag"])
+                    if "addition" in raw_rule:
+                        antecedents.add(raw_rule["addition"]["item"] if "item" in raw_rule["addition"] else raw_rule["addition"]["tag"])
+                if "result" in raw_rule:
+                    consequents.add(raw_rule["result"]["item"] if "item" in raw_rule["result"] else raw_rule["result"])
                 if len(consequents) > 0:
-                    rules.append((antecedents, consequents, recipe))
+                    rules.append((antecedents, consequents, raw_rule))
             except:
                 continue
         return rules
     
-    def _get_all_ways_to_craft(self, item, rules, items_so_far=None, depth=0):
-        """Get all the ways to craft an item
+    def _get_all_recipes_for_item(self, item, rules, items_so_far=None, depth=0):
+        """Get all the recipes for an item
 
         Args:
             item (str): The item to craft
@@ -73,75 +86,50 @@ class MinecraftAutoregKStepsTokensDataset(Dataset):
             depth (int, optional): Depth of the chain. Defaults to 0.
 
         Returns:
-            histories: List of all ways to craft an item
+            recipes: List of all recipes for an item (all ways to craft an item)
         """
-        histories = []
+        recipes = []
         for antecedents, consequents, _ in rules:
             if item in consequents:
-                history = [(antecedents, item, depth)]
+                recipe = [(antecedents, item, depth)]
                 if items_so_far is None:
                     items_so_far = [item]
                 else:
                     items_so_far.append(item)
-                antecedent_histories = []
+                antecedent_recipes = []
                 for antecedent in antecedents:
                     if antecedent in items_so_far:
                         continue
-                    all_ways_to_craft_antecedent = self._get_all_ways_to_craft(antecedent, rules, items_so_far, depth + 1)
-                    if len(all_ways_to_craft_antecedent) > 0:
-                        antecedent_histories.append(all_ways_to_craft_antecedent)
-                histories.append(history)
+                    all_recipes_for_antecedent = self._get_all_recipes_for_item(antecedent, rules, items_so_far, depth + 1)
+                    if len(all_recipes_for_antecedent) > 0:
+                        antecedent_recipes.append(all_recipes_for_antecedent)
+                recipes.append(recipe)
                 
-                for antecendent_way_combination in itertools.product(*antecedent_histories):
-                    for chain_len in range(1, len(antecendent_way_combination) + 1):
-                        for antecedent_history_combination in itertools.combinations(antecendent_way_combination, chain_len):
-                            history_combination = history.copy()
+                for antecendent_recipe_combination in itertools.product(*antecedent_recipes):
+                    for chain_len in range(1, len(antecendent_recipe_combination) + 1):
+                        for antecedent_recipe_combination_at_chain_len in itertools.combinations(antecendent_recipe_combination, chain_len):
+                            recipe_combination = recipe.copy()
                             # Extend by flattening the list
-                            for antecedent_history in antecedent_history_combination:
-                                history_combination.extend(antecedent_history)
-                            histories.append(history_combination)
-        return histories
+                            for antecedent_recipe in antecedent_recipe_combination_at_chain_len:
+                                recipe_combination.extend(antecedent_recipe)
+                            if recipe_combination not in recipes:
+                                recipes.append(recipe_combination)
+        return recipes
     
-    def _remove_redundant_histories(self, histories):
-        """Prune the list of histories to only unique histories
+    def _remove_redundant_recipes(self, recipes):
+        """Prune the list of recipes to only unique recipes
         
         Args:
-            histories (list): List of histories
+            recipes (list): List of recipes
             
         Returns:
-            unique_histories: List of unique histories
+            unique_recipes: List of unique recipes
         """
-        unique_histories = []
-        for history in histories:
-            if history not in unique_histories:
-                unique_histories.append(history)
-        return unique_histories
-
-    def generate_dataset(self):
-        recipes = self._get_minecraft_recipes()
-        rules = self._get_minecraft_rules(recipes)
-        all_items = set(list(rule[1])[0] for rule in rules)
-        all_histories = []
-        for item in all_items:
-            ways_to_craft_item = self._get_all_ways_to_craft(item, rules)
-            for way in ways_to_craft_item:
-                # Check if depth < num_steps
-                if max([step[2] for step in way]) < self.num_steps:
-                    continue
-                # Cut off the history at num_steps
-                way_steps = [step for step in way if step[2] <= self.num_steps]
-                # Add distractor rules
-                num_distractors = random.randint(0, self.max_num_distractors)
-                distractor_rules = random.sample(rules, num_distractors)
-                for distractor_rule in distractor_rules:
-                    way_steps.append((distractor_rule[0], distractor_rule[1], -1))
-                # Add the history to the list of all histories
-                all_histories.append(way_steps)
-
-        print("Number of histories: ", len(all_histories))
-        print("Number of unique histories: ", len(self._remove_redundant_histories(all_histories)))
-        return all_histories
-        # return self._remove_redundant_histories(all_histories)  # Can result in variable length dataset since distractors are randomly added
+        unique_recipes = []
+        for recipe in recipes:
+            if recipe not in unique_recipes:
+                unique_recipes.append(recipe)
+        return unique_recipes
     
     def _get_components(self, recipe: list):
         """Get the components of a recipe
@@ -164,62 +152,120 @@ class MinecraftAutoregKStepsTokensDataset(Dataset):
             "facts": facts,
             "target": target
         }
+    
+    def _get_components_with_distrations(self, recipe: list, qed: bool = True):
+        """Get the components of a recipe with distractors.
+        Distractors are recipes that can be derived but are not the target.
 
-    def _get_string_rep(self, recipe: list, qed: bool = True):
-        true_facts = []
-        distractor_facts = []
-        facts = []
-        target = None
-        rules = []
-        max_depth = max([rule[2] for rule in recipe])
-        rules_str = "[RULES_START] "
-        if not qed and len(recipe) > 1:
-            # Choose a random subset of rules
-            target_rule = recipe[0]
-            recipe = random.sample(recipe[1:], random.randint(1, len(recipe)-1))
-            recipe.append(target_rule)
-        random.shuffle(recipe)
-        for rule in recipe:
-            if rule[2] == 0:
-                target = rule[1]
-                # Check if any of the antecedents are facts
-                for antecedent in rule[0]:
-                    if antecedent not in [rule[1] for rule in recipe]:
-                        true_facts.append(antecedent)
-            elif rule[2] == max_depth:
-                true_facts.extend(rule[0])
-            elif rule[2] == -1:
-                distractor_facts.extend(rule[0])
-            if (rule[0], rule[1]) not in rules:
-                rules.append((rule[0], rule[1]))
-                rules_str += f"{' + '.join(rule[0])} -> {''.join(rule[1])} , "
-        facts = true_facts + distractor_facts
-        if not qed:
-            # Choose a random subset of facts
-            if len(true_facts) > 0:
-                true_facts = random.sample(true_facts, random.randint(0, len(true_facts)-1))
-            if len(distractor_facts) > 0:
-                distractor_facts = random.sample(distractor_facts, random.randint(0, len(distractor_facts)))
-            facts = true_facts + distractor_facts
-        # Shuffle the facts
-        random.shuffle(facts)
-        rules_str = rules_str[:-2]
-        rules_str += "[RULES_END]"
-        facts_str = "[FACTS_START] " + " , ".join(set(facts)) + " [FACTS_END]"
-        target_str = f"[TARGET_START] {target} [TARGET_END]"
-        final_str = f"{rules_str} {facts_str} {target_str}"
-        # Remove minecraft: prefix
-        final_str = final_str.replace("minecraft:", "")
-        return final_str
+        Args:
+            recipe (list): The recipe
+            qed (bool, optional): Whether the recipe is qed or not. Defaults to True.
+
+        Returns:
+            components (dict): Dictionary containing the components (rules, facts, target)
+        """
+        
+        recipe_components = self._get_components(recipe)
+        num_distractors = random.randint(0, self.max_num_distractors)
+        # Distractors are recipes that can be derived but are not the target
+        distractor_recipes = random.sample(self.dataset, num_distractors)
+        distractor_components = [self._get_components(distractor_recipe) for distractor_recipe in distractor_recipes]
+
+        if qed:
+            return {
+                "rules": recipe_components["rules"] + [distractor["rules"][0] for distractor in distractor_components],
+                "facts": recipe_components["facts"] + [antecedent for distractor in distractor_components for antecedent in distractor["rules"][0][0]],
+                "target": recipe_components["target"],
+                "qed": True
+            }
+        
+        # If not qed, choose a random subset of rules and facts (cannot include all facts)
+        return {
+            "rules": random.sample(recipe_components["rules"], random.randint(0, len(recipe_components["rules"]))) + [distractor["rules"][0] for distractor in distractor_components],
+            "facts": random.sample(recipe_components["facts"], random.randint(0, len(recipe_components["facts"])-1)) + [antecedent for distractor in distractor_components for antecedent in distractor["rules"][0][0]],
+            "target": recipe_components["target"],
+            "qed": False
+        }
+    
+    def _generate_base_dataset(self):
+        """Generate the base dataset.
+
+        Returns:
+            dataset: List of all recipes with num_steps steps
+        """
+
+        raw_rules = self._get_minecraft_rules()
+        rules = self._process_minecraft_rules(raw_rules)
+        all_items = set(list(rule[1])[0] for rule in rules)
+        all_recipes = []
+        for item in all_items:
+            all_recipes_for_item = self._get_all_recipes_for_item(item, rules)
+            for recipe in all_recipes_for_item:
+                # Check if depth < num_steps
+                if max([rule[2] for rule in recipe]) < self.num_steps:
+                    continue
+                # Cut off the recipe at num_steps
+                if self.num_steps >= 0:
+                    recipe_with_num_steps = [rule for rule in recipe if rule[2] <= self.num_steps]
+                else:
+                    recipe_with_num_steps = recipe
+                # Add the recipe to the list of all recipes
+                all_recipes.append(recipe_with_num_steps)
+
+        print("Number of recipes: ", len(all_recipes))
+        print("Number of unique recipes: ", len(self._remove_redundant_recipes(all_recipes)))
+        return all_recipes
+    
+    def _generate_dataset_with_distractions(self):
+        """Generate the dataset with distractors.
+        The dataset is generated by taking the original dataset and adding distractors to it.
+        The size of the new dataset matches the requirement by creating multiple copies of the samples from the original dataset and randomly adding distractions.
+        The dataset is balanced with half the samples being qed and the other half being non-qed.
+        """
+
+        dataset = []
+        num_samples_per_recipe = self.dataset_len // len(self.dataset)
+        num_qed_samples = num_samples_per_recipe // 2
+        for recipe in self.dataset:
+            qed_samples = [self._get_components_with_distrations(recipe, qed=True) for _ in range(num_qed_samples)]
+            non_qed_samples = [self._get_components_with_distrations(recipe, qed=False) for _ in range(num_samples_per_recipe - num_qed_samples)]
+            dataset.extend(qed_samples + non_qed_samples)
+        return dataset
+    
+    def _stringify_recipe(self, recipe: dict, rule_start_tag: str = "[RULES_START]", rule_end_tag: str = "[RULES_END]", fact_start_tag: str = "[FACTS_START]", fact_end_tag: str = "[FACTS_END]", target_start_tag: str = "[TARGET_START]", target_end_tag: str = "[TARGET_END]", rules_separator: str = " , ", facts_separator: str = " , ", rules_ante_conseq_separator: str = " -> ", rules_ante_separator: str = " + "):
+        """Convert the components of a recipe to a string representation.
+
+        Args:
+            recipe (dict): The components of the recipe
+            rule_start_tag (str, optional): Start tag for rules. Defaults to "[RULES_START]".
+            rule_end_tag (str, optional): End tag for rules. Defaults to "[RULES_END]".
+            fact_start_tag (str, optional): Start tag for facts. Defaults to "[FACTS_START]".
+            fact_end_tag (str, optional): End tag for facts. Defaults to "[FACTS_END]".
+            target_start_tag (str, optional): Start tag for target. Defaults to "[TARGET_START]".
+            target_end_tag (str, optional): End tag for target. Defaults to "[TARGET_END]".
+            rules_separator (str, optional): Separator for rules. Defaults to " , ".
+            facts_separator (str, optional): Separator for facts. Defaults to " , ".
+            rules_ante_conseq_separator (str, optional): Separator for antecedents and consequents in rules. Defaults to " -> ".
+            rules_ante_separator (str, optional): Separator for antecedents in rules. Defaults to " + ".
+
+        Returns:
+            str: String representation of the recipe (<rules_start_tag> <rules> <rules_end_tag> <facts_start_tag> <facts> <facts_end_tag> <target_start_tag> <target> <target_end_tag>)
+        """
+
+        rules = rules_separator.join([f"{rules_ante_separator.join(rule[0])} {rules_ante_conseq_separator} {rule[1]}" for rule in recipe["rules"]])
+        facts = facts_separator.join(recipe["facts"])
+        target = recipe["target"]
+        final_str = f"{rule_start_tag} {rules} {rule_end_tag} {fact_start_tag} {facts} {fact_end_tag} {target_start_tag} {target} {target_end_tag}"
+        return final_str.replace("minecraft:", "")
     
     def __getitem__(self, idx):
         recipe = self.dataset[idx]
-        qed = True if idx % 2 == 0 else False
+        qed = recipe["qed"]
         if qed:
             labels = torch.tensor(1).long()
         else:
             labels = torch.tensor(0).long()
-        item = self._get_string_rep(recipe, qed)
+        item = self._stringify_recipe(recipe)
         if not self.tokenizer:
             return Exception("Tokenizer not provided.")
         encoding = self.tokenizer(item, truncation=True, padding=self.padding)
