@@ -218,7 +218,8 @@ def synexp_args_to_wandb_run_name(args: SyntheticExperimentsArguments):
             f"_ap{args.min_ante_prob:.2f}-{args.max_ante_prob:.2f}" + \
             f"_bp{args.min_conseq_prob:.2f}-{args.max_conseq_prob:.2f}" + \
             f"_cl{args.min_chain_len}-{args.max_chain_len}" + \
-            f"_ntr{args.train_len}_ntt{args.eval_len}_seed{args.seed}"
+            f"_ntr{args.train_len}_ntt{args.eval_len}_bsz{args.train_batch_size}" + \
+            f"_seed{args.seed}"
 
     elif args.syn_exp_name == "one_shot_str":
         return f"SynOSstr__{model_str}__" + \
@@ -227,7 +228,8 @@ def synexp_args_to_wandb_run_name(args: SyntheticExperimentsArguments):
             f"_ap{args.min_ante_prob:.2f}-{args.max_ante_prob:.2f}" + \
             f"_bp{args.min_conseq_prob:.2f}-{args.max_conseq_prob:.2f}" + \
             f"_cl{args.min_chain_len}-{args.max_chain_len}" + \
-            f"_ntr{args.train_len}_ntt{args.eval_len}_seed{args.seed}"
+            f"_ntr{args.train_len}_ntt{args.eval_len}_bsz{args.train_batch_size}" + \
+            f"_seed{args.seed}"
 
     elif args.syn_exp_name == "autoreg_ksteps":
         return f"SynAR_{model_str}__" + \
@@ -237,7 +239,8 @@ def synexp_args_to_wandb_run_name(args: SyntheticExperimentsArguments):
             f"_ap{args.min_ante_prob:.2f}-{args.max_ante_prob:.2f}" + \
             f"_bp{args.min_conseq_prob:.2f}-{args.max_conseq_prob:.2f}" + \
             f"_cl{args.min_chain_len}-{args.max_chain_len}" + \
-            f"_ntr{args.train_len}_ntt{args.eval_len}_seed{args.seed}"
+            f"_ntr{args.train_len}_ntt{args.eval_len}_bsz{args.train_batch_size}" + \
+            f"_seed{args.seed}"
 
     else:
         raise ValueError(f"Unrecognized syn_exp_name {args.syn_exp_name}")
@@ -448,6 +451,7 @@ def make_trainer_for_synthetic(
             report_to = report_to,
             run_name = synexp_args_to_wandb_run_name(args),
             logging_steps = args.logging_steps,
+            learning_rate = 5e-4,
             warmup_ratio = 0.10,
             save_strategy = "epoch",
             save_total_limit = 2)
