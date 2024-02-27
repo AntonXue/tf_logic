@@ -4,7 +4,7 @@
     "seed": [201],
     "num_steps": [3],
     "min_chain_len": [4],
-    "max_chain_len": [8],
+    "max_chain_len": [7],
     "embed_dim": [160, 192],
     "num_layers": [1],
     "num_heads": [1],
