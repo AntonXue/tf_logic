@@ -5,6 +5,9 @@ import json
 import itertools
 import random
 
+"""
+TODO: Add support for disjoint train and test datasets
+"""
 
 class MinecraftAutoregKStepsBaseDataset(Dataset):
     def __init__(
@@ -391,6 +394,7 @@ class MinecraftAutoregKStepsBaseDataset(Dataset):
             "input_ids": encoding.input_ids,
             "attention_mask": encoding.attention_mask,
             "recipe": recipe,
+            "num_vars": recipe["num_vars"] if "num_vars" in recipe else None,
         }
 
 
