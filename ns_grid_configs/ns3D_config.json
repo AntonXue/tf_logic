@@ -1,0 +1,24 @@
+[{
+    "model_name": ["gpt2"],
+    "syn_exp_name": ["autoreg_ksteps"],
+    "seed": [201],
+    "num_steps": [3],
+    "min_chain_len": [4],
+    "max_chain_len": [7],
+    "embed_dim": [224, 256],
+    "num_layers": [1],
+    "num_heads": [1],
+    "min_num_rules": [32],
+    "max_num_rules": [64],
+    "num_vars": [8, 16, 24, 32, 40, 48, 56, 64],
+    "min_ante_prob": [0.2],
+    "max_ante_prob": [0.3],
+    "min_conseq_prob": [0.2],
+    "max_conseq_prob": [0.3],
+    "train_len": [65536],
+    "eval_len": [32768],
+    "num_epochs": [64],
+    "train_batch_size": [1024],
+    "eval_batch_size": [1024]
+}]
+
