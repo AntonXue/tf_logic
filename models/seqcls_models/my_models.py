@@ -54,8 +54,42 @@ class MyTfOutput(ModelOutput):
     attentions: Optional[tuple[torch.FloatTensor]] = None
 
 
-class AFBlock(nn.Module):
-    """ A single attention-feedforward block """
+class MySelfAttention(nn.Module):
+    def __init__(self, embed_dim):
+        super().__init__()
+        self.Wq = nn.Linear(embed_dim, embed_dim)
+        self.Wk = nn.Linear(embed_dim, embed_dim)
+        self.Wv = nn.Linear(embed_dim, embed_dim)
+
+    def forward(self, x: torch.FloatTensor, attention_mask: Optional[torch.LongTensor] = None):
+        """
+            x: (batch_size, seq_len, embed_dim)
+            attention_mask: (batch_size, seq_len)
+                1: not masked (do not ignore)
+                0: masked (ignore)
+        """
+        N, L, d = x.shape
+        lower_tri = torch.tril(torch.ones(L,L), diagonal=0).view(1,L,L).to(x.device)
+        # If None, apply the default mask
+        if attention_mask is None:
+            mask = lower_tri.repeat(N,1,1)
+        # Otherwise, mas kthe given mask with the causal one
+        else:
+            mask = lower_tri * attention_mask.view(N,1,L)
+
+        # Fill and flatten the attention mask; sub-diagonals are zero; super-diagonals are -inf
+        mask = (1.0 - mask).view(N,L,L) * -999
+
+        # Computations
+        Q, K, V = self.Wq(x), self.Wk(x), self.Wv(x)
+        wts = torch.bmm(Q, K.transpose(1,2)) / (x.size(-1)**0.5) # (N,L,L)
+        wts = F.softmax(wts + mask, dim=2)
+        out = torch.bmm(wts, V)
+        return out, wts
+
+
+class MyAFBlock(nn.Module):
+    """ A single attention-feedforward block, simplified """
     def __init__(self, config: MyTfConfig):
         super().__init__()
         # Norm layers
@@ -67,7 +101,10 @@ class AFBlock(nn.Module):
             self.norm2 = nn.Identity()
 
         # Attention block
-        self.attn = nn.MultiheadAttention(config.embed_dim, config.num_heads, batch_first=True)
+        assert config.num_heads > 0
+        self.attn_heads = nn.ModuleList([
+            MySelfAttention(config.embed_dim) for _ in range(config.num_heads)
+        ])
 
         # Feedforward block construction
         self.ffwd = nn.Sequential(
@@ -83,27 +120,15 @@ class AFBlock(nn.Module):
                 1: not masked (do not ignore)
                 0: masked (ignore)
         """
-        N, L, _ = x.shape
+        # Apply attentions
+        z = self.norm1(x)
+        attn_out, attn_wts = zip(*[ah(z, attention_mask=attention_mask) for ah in self.attn_heads])
+        attn_wts = torch.stack(attn_wts, dim=1)
+        x = x + sum(attn_out)
 
-        # Lower-triangular matrix (causal) mask
-        lower_tri = torch.tril(torch.ones(L,L), diagonal=0).view(1,1,L,L).to(x.device)
-
-        # If None, supply the default mask
-        if attention_mask is None:
-            mask = lower_tri.repeat(N,self.attn.num_heads,1,1)
-
-        # Otherwise, mask the given mask with the causal one
-        else:
-            mask = lower_tri * attention_mask.view(N,1,1,L)
-            mask = mask.repeat(1,self.attn.num_heads,1,1)
-
-        # Fill and flatten the attention mask; sub-diagonals are zero; super-diagonals are -inf
-        mask = (1.0 - mask).view(-1,L,L) * -999
-
-        z, a = self.attn(x, x, x, attn_mask=mask)
-        z = self.norm1(x + z)
-        z = self.norm2(z + self.ffwd(z))
-        return z, a
+        # Apply the feedforward
+        x = x + self.ffwd(self.norm2(x))
+        return x, attn_wts
 
 
 class MyTfModel(nn.Module):
@@ -112,7 +137,7 @@ class MyTfModel(nn.Module):
     def __init__(self, config: MyTfConfig):
         super().__init__()
         self.config = config
-        self.af_blocks = nn.ModuleList([AFBlock(config) for _ in range(config.num_layers)])
+        self.af_blocks = nn.ModuleList([MyAFBlock(config) for _ in range(config.num_layers)])
         self.pos_embedding = nn.Embedding(config.max_seq_len, config.embed_dim)
 
     @property
@@ -227,7 +252,7 @@ class MyTfSeqClsModel(SeqClsModel):
             output_hidden_states = output_hidden_states,
             output_attentions = output_attentions
         )
-        logits = self.cls_head(tf_out.last_hidden_state)[:,0]   # (batch_size, num_labels)
+        logits = self.cls_head(tf_out.last_hidden_state)[:,-1]   # (batch_size, num_labels)
 
         loss = None
         if labels is not None:

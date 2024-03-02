@@ -5,7 +5,7 @@
     "num_steps": [1],
     "min_chain_len": [4],
     "max_chain_len": [7],
-    "embed_dim": [32, 64, 96, 128, 160, 192, 224, 256],
+    "embed_dim": [256],
     "num_layers": [1],
     "num_heads": [1],
     "min_num_rules": [32],
