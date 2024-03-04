@@ -167,8 +167,10 @@ def load_stats_from_wandb(
     wandb_project: str = "transformer_friends/transformer_friends",
     syn_exp_name: str = "next_state",
     seed: int = 101,
+    train_batch_size: int = 64,
     return_first: bool = True,
     include_seed_in_run_name: bool = True,
+    include_train_batch_size_in_run_name: bool = True,  # To support recent name changes
     exp_type: str = None, # Set this to "attack" if you want to load attack results
     attack_params: dict = None # Set this to the attack params if you want to load attack results
 ):
@@ -192,6 +194,9 @@ def load_stats_from_wandb(
     else:
         raise Exception(f"Unknown Task: {syn_exp_name}")
 
+    if include_train_batch_size_in_run_name:
+        run_name += f"_bsz{train_batch_size}"
+
     if include_seed_in_run_name:
         run_name += f"_seed{seed}"
 
@@ -212,6 +217,5 @@ def load_stats_from_wandb(
     elif len(runs) > 1:
         if not return_first:
             raise Exception(f"Multiple runs found for run_name: {run_name}")
-    
     run = runs[0]
     return run.summary

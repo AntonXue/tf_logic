@@ -153,6 +153,7 @@ if __name__ == "__main__":
                         num_heads=param_mapping["num_heads"],
                         num_vars=param_mapping["num_vars"],
                         num_steps=param_mapping["num_steps"],
+                        chain_len_range=(param_mapping["min_chain_len"], param_mapping["max_chain_len"]),
                         num_rules_range=(param_mapping["min_num_rules"], param_mapping["max_num_rules"]),
                         ante_prob_range = (param_mapping["min_ante_prob"], param_mapping["max_ante_prob"]),
                         conseq_prob_range = (param_mapping["min_conseq_prob"], param_mapping["max_conseq_prob"]),
@@ -160,6 +161,7 @@ if __name__ == "__main__":
                         eval_len = param_mapping["eval_len"],
                         syn_exp_name=param_mapping["syn_exp_name"],
                         seed=param_mapping["seed"],
+                        train_batch_size=param_mapping["train_batch_size"],
                     )
                 # if stats['train/epoch'] < param_mapping["num_epochs"]:
                 #     metric_val = -1
@@ -203,7 +205,7 @@ if __name__ == "__main__":
     texts = annotate_heatmap(im, valfmt="{x:.2f}")
 
     fig.tight_layout()
-    plt.savefig(args.plot_file)
+    plt.savefig(args.plot_file, bbox_inches="tight")
 
 
 
