@@ -12,7 +12,7 @@ import json
 from common import *    # Critical definitions and path inserts
 from models import AutoTaskModel
 from my_datasets import *
-from minecraft.dataset import MinecraftAutoregKStepsTokensDataset
+from minecraft.dataset import MinecraftAutoregKStepsNVarsDataset
 from utils.metrics import *
 from utils.model_loader_utils import load_checkpoint_from_wandb
 from datasets import Dataset
@@ -51,6 +51,16 @@ class MinecraftExperimentsArguments:
     num_steps: Optional[int] = field(
         default = 3,
         metadata = {"help": "The number of steps; used for autoreg_ksteps."}
+    )
+
+    min_num_vars: Optional[int] = field(
+        default = 16,
+        metadata = {"help": "The minimum number of propositional variables to use."}
+    )
+
+    max_num_vars: Optional[int] = field(
+        default = 32,
+        metadata = {"help": "The maximum number of propositional variables to use."}
     )
 
     train_len: Optional[int] = field(
@@ -112,6 +122,8 @@ def minecraftexp_args_to_wandb_run_name(args: MinecraftExperimentsArguments):
     elif args.syn_exp_name == "one_shot_str":
         return f"MinecraftOSstr__{model_str}__" + \
             f"ns{args.num_steps}" + \
+            f"_nv{args.min_num_vars}-{args.max_num_vars}" + \
+            f"_tbs{args.train_batch_size}_ebs{args.eval_batch_size}" + \
             f"_ntr{args.train_len}_ntt{args.eval_len}_seed{args.seed}"
 
     elif args.syn_exp_name == "next_state":
@@ -211,8 +223,9 @@ def make_trainer_for_synthetic(
         tokenizer.pad_token = tokenizer.eos_token
         data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
 
-        big_dataset = MinecraftAutoregKStepsTokensDataset(
+        big_dataset = MinecraftAutoregKStepsNVarsDataset(
             num_steps=args.num_steps,
+            num_vars_range=(args.min_num_vars, args.max_num_vars),
             dataset_len=args.train_len + args.eval_len,
             tokenizer=tokenizer)
         
@@ -222,7 +235,7 @@ def make_trainer_for_synthetic(
             train_len, eval_len = int(train_len), len(big_dataset) - int(train_len)
 
         print(f"train_len: {train_len}, eval_len: {eval_len}")
-
+        
         train_dataset, eval_dataset = \
             torch.utils.data.random_split(big_dataset, [train_len, eval_len])
 
@@ -237,11 +250,15 @@ def make_trainer_for_synthetic(
                 "label": [eval_dataset[i]['labels'] for i in range(len(eval_dataset))],
             }).with_format("torch")
 
+            print("Created HF datasets")
+
             def tokenize_function(item):
                 return tokenizer(item["data"], truncation=True)
 
             train_dataset = train_hf_dataset.map(tokenize_function, batched=True)
             eval_dataset = eval_hf_dataset.map(tokenize_function, batched=True)
+
+            print("Tokenized HF datasets")
 
             tfl_model = AutoModelForSequenceClassification.from_pretrained(
                             args.model_name, num_labels=2
@@ -305,11 +322,15 @@ if __name__ == "__main__":
         experiment_out_dir=str(Path(args.output_dir, experiment_id)),
         experiment_id=experiment_id
     )
+    baseline_eval_results = None
     if checkpoint is not None:
         print("Found checkpoint: ", checkpoint)
         trainer.train(resume_from_checkpoint=checkpoint)
     else:
         print("No checkpoint found. Training from scratch.")
+        # Evaluate the model before training and log the results
+        baseline_eval_results = trainer.evaluate()
+        wandb.run.summary["eval_before_train"] = baseline_eval_results
         trainer.train()
     
     wandb.run.summary["trainer_stats"] = trainer_stats
