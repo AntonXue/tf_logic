@@ -20,11 +20,11 @@ class MyTfConfig:
         ffwd_dim: Optional[int] = None,
         num_heads: Optional[int] = None,
         num_layers: Optional[int] = None,
-        activ: Optional[str] = None,
-        do_norm: Optional[bool] = None,
-        layer_norm_epsilon: Optional[float] = None,
+        attention_style: Optional[str] = None,
+        do_layer_norm: Optional[bool] = None,
         num_labels: Optional[int] = None,
         problem_type: Optional[str] = None,
+        use_positional_encoding: Optional[bool] = None,
         max_seq_len: Optional[int] = None
     ):
         self.input_dim = default(input_dim, 256)
@@ -32,12 +32,12 @@ class MyTfConfig:
         self.ffwd_dim = default(ffwd_dim, 4 * self.embed_dim)
         self.num_heads = default(num_heads, 4)
         self.num_layers = default(num_layers, 8)
-        self.activ = default(activ, "relu")
-        self.do_norm = default(do_norm, True)
-        self.layer_norm_epsilon = default(layer_norm_epsilon, 1e-5)
+        self.attention_style = default(attention_style, "linear")
+        self.do_layer_norm = default(do_layer_norm, True)
         self.num_labels = default(num_labels, None)
         self.problem_type = default(problem_type, None)
-        self.max_seq_len = default(max_seq_len, 1024)
+        self.use_positional_encoding = default(use_positional_encoding, False)
+        self.max_seq_len = default(max_seq_len, 1024) if self.use_positional_encoding else None
 
     def to_dict(self):
         """ This is required by the HF Trainer """
@@ -55,35 +55,31 @@ class MyTfOutput(ModelOutput):
 
 
 class MySelfAttention(nn.Module):
-    def __init__(self, embed_dim):
+    def __init__(self, embed_dim: int, attention_style: str):
         super().__init__()
         self.Wq = nn.Linear(embed_dim, embed_dim)
         self.Wk = nn.Linear(embed_dim, embed_dim)
         self.Wv = nn.Linear(embed_dim, embed_dim)
+        assert attention_style in ["linear", "causal_softmax"]
+        self.attention_style = attention_style
 
-    def forward(self, x: torch.FloatTensor, attention_mask: Optional[torch.LongTensor] = None):
-        """
-            x: (batch_size, seq_len, embed_dim)
-            attention_mask: (batch_size, seq_len)
-                1: not masked (do not ignore)
-                0: masked (ignore)
-        """
+    def forward(self, x: torch.FloatTensor):
+        """ x: (batch_size, seq_len, embed_dim) """
         N, L, d = x.shape
-        lower_tri = torch.tril(torch.ones(L,L), diagonal=0).view(1,L,L).to(x.device)
-        # If None, apply the default mask
-        if attention_mask is None:
-            mask = lower_tri.repeat(N,1,1)
-        # Otherwise, mas kthe given mask with the causal one
-        else:
-            mask = lower_tri * attention_mask.view(N,1,L)
-
-        # Fill and flatten the attention mask; sub-diagonals are zero; super-diagonals are -inf
-        mask = (1.0 - mask).view(N,L,L) * -999
-
-        # Computations
         Q, K, V = self.Wq(x), self.Wk(x), self.Wv(x)
-        wts = torch.bmm(Q, K.transpose(1,2)) / (x.size(-1)**0.5) # (N,L,L)
-        wts = F.softmax(wts + mask, dim=2)
+        wts = torch.bmm(Q, K.transpose(1,2)) / (d**0.5) # (N,L,L)
+
+        if self.attention_style == "linear":
+            pass
+
+        elif self.attention_style == "causal_softmax":
+            mask = torch.triu(torch.ones(L,L), diagonal=1).to(x.device)
+            mask = mask.view(1,L,L).repeat(N,1,1) * -999 # Super-diag has -infty
+            wts = F.softmax(wts + mask, dim=2)
+
+        else:
+            raise ValueError(f"Unknown attention_style {self.attention_style}")
+
         out = torch.bmm(wts, V)
         return out, wts
 
@@ -93,9 +89,10 @@ class MyAFBlock(nn.Module):
     def __init__(self, config: MyTfConfig):
         super().__init__()
         # Norm layers
-        if config.do_norm:
-            self.norm1 = nn.LayerNorm(config.embed_dim, eps=config.layer_norm_epsilon)
-            self.norm2 = nn.LayerNorm(config.embed_dim, eps=config.layer_norm_epsilon)
+        if config.do_layer_norm:
+            self.norm1 = nn.LayerNorm(config.embed_dim, elementwise_affine=False)
+            self.norm2 = nn.Identity()
+            # self.norm2 = nn.LayerNorm(config.embed_dim, elementwise_affine=False)
         else:
             self.norm1 = nn.Identity()
             self.norm2 = nn.Identity()
@@ -103,7 +100,7 @@ class MyAFBlock(nn.Module):
         # Attention block
         assert config.num_heads > 0
         self.attn_heads = nn.ModuleList([
-            MySelfAttention(config.embed_dim) for _ in range(config.num_heads)
+            MySelfAttention(config.embed_dim, config.attention_style) for _ in range(config.num_heads)
         ])
 
         # Feedforward block construction
@@ -113,16 +110,11 @@ class MyAFBlock(nn.Module):
             nn.Linear(config.ffwd_dim, config.embed_dim)
         )
 
-    def forward(self, x: torch.FloatTensor, attention_mask: Optional[torch.LongTensor] = None):
-        """
-            x: (batch_size, seq_len, embed_dim)
-            attention_mask: (batch_size, seq_len)
-                1: not masked (do not ignore)
-                0: masked (ignore)
-        """
+    def forward(self, x: torch.FloatTensor):
+        """ x: (batch_size, seq_len, embed_dim) """
         # Apply attentions
         z = self.norm1(x)
-        attn_out, attn_wts = zip(*[ah(z, attention_mask=attention_mask) for ah in self.attn_heads])
+        attn_out, attn_wts = zip(*[ah(z) for ah in self.attn_heads])
         attn_wts = torch.stack(attn_wts, dim=1)
         x = x + sum(attn_out)
 
@@ -138,7 +130,8 @@ class MyTfModel(nn.Module):
         super().__init__()
         self.config = config
         self.af_blocks = nn.ModuleList([MyAFBlock(config) for _ in range(config.num_layers)])
-        self.pos_embedding = nn.Embedding(config.max_seq_len, config.embed_dim)
+        if config.use_positional_encoding:
+            self.positional_encoding = nn.Embedding(config.max_seq_len, config.embed_dim)
 
     @property
     def model_name(self):
@@ -151,23 +144,18 @@ class MyTfModel(nn.Module):
     def forward(
         self,
         x: torch.FloatTensor,
-        attention_mask: Optional[torch.LongTensor] = None,
         output_hidden_states: Optional[bool] = None,
         output_attentions : Optional[bool] = None
     ):
-        """
-            x : (batch_size, seq_len, embed_dim)
-            attention_mask: (batch_size, seq_len)
-                1: not masked (attended)
-                0: masked (ignored)
-        """
-        x = x + self.pos_embedding(torch.arange(0, x.size(1)).to(x.device))
+        """ x : (batch_size, seq_len, embed_dim) """
+        if self.config.use_positional_encoding:
+            x = x + self.positional_encoding(torch.arange(0, x.size(1)).to(x.device))
 
         all_hidden_states = (x,) if output_hidden_states else None
         all_attentions = () if output_attentions else None
 
         for block in self.af_blocks:
-            x, a = block(x, attention_mask=attention_mask)
+            x, a = block(x)
 
             if output_hidden_states:
                 all_hidden_states += (x,)
@@ -234,24 +222,19 @@ class MyTfSeqClsModel(SeqClsModel):
     def forward(
         self,
         x: torch.FloatTensor,
-        attention_mask: Optional[torch.FloatTensor] = None,
         output_hidden_states: Optional[bool] = None,
         output_attentions : Optional[bool] = None,
         labels: Optional[torch.LongTensor] = None
     ):
-        """
-            x : (batch_size, seq_len, embed_dim)
-            attention_mask: (batch_size, seq_len)
-                1: not masked (do not ignore)
-                0: masked (ignore)
-        """
+        """ x : (batch_size, seq_len, embed_dim) """
         x = self.embed_fn(x)
+
         tf_out = self.mytf(
             x,
-            attention_mask = attention_mask,
             output_hidden_states = output_hidden_states,
             output_attentions = output_attentions
         )
+
         logits = self.cls_head(tf_out.last_hidden_state)[:,-1]   # (batch_size, num_labels)
 
         loss = None

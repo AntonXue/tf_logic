@@ -31,7 +31,6 @@ def load_model_from_wandb(
     quiet: bool = False,
     overwrite: bool = False
 ):
-
     model = AutoTaskModel.from_kwargs(
         task_name = "autoreg_ksteps",
         num_vars = num_vars,
@@ -74,41 +73,52 @@ def load_model_from_wandb(
     return model
 
 
-def quickload_next_state_model_and_dataset(
+def quickload_model_and_dataset(
+    embed_dim: int,
+    num_vars: int,
+    num_steps: int,
     model_name: str = "gpt2",
-    embed_dim: int = 1024,
-    num_layers: int = 2,
-    num_heads: int = 4,
-    num_vars: int = 128,
-    num_rules_range: tuple[int, int] = (16, 64),
-    num_states_range: tuple[int, int] = (8, 32),
-    ante_prob_range: tuple[float, float] = (0.3, 0.5),
+    num_rules_range: tuple[int, int] = (32, 64),
+    ante_prob_range: tuple[float, float] = (0.2, 0.3),
     conseq_prob_range: tuple[float, float] = (0.2, 0.3),
-    state_prob_range: tuple[float, float] = (0.5, 0.5),
-    dataset_len = 8192
+    chain_len_range: tuple[int, int] = (4, 7),
+    num_trains: int = 65536,
+    num_evals: int = 32768,
+    batch_size: int = 1024,
+    seed: int = 201,
+    tag: str = "v0",
+    wandb_project: str = "transformer_friends/transformer_friends",
+    quiet: bool = True,
+    overwrite: bool = True
 ):
     model = load_model_from_wandb(
-        model_name = model_name,
         embed_dim = embed_dim,
-        num_layers = num_layers,
-        num_heads = num_heads,
         num_vars = num_vars,
+        num_steps = num_steps,
+        model_name = model_name,
         num_rules_range = num_rules_range,
-        num_states_range = num_states_range,
         ante_prob_range = ante_prob_range,
         conseq_prob_range = conseq_prob_range,
-        state_prob_range = state_prob_range,
-        num_trains = 32768,
-        num_evals = 8192,
-        quiet = True)
+        chain_len_range = chain_len_range,
+        num_trains = num_trains,
+        num_evals = num_evals,
+        batch_size = batch_size,
+        seed = seed,
+        tag = tag,
+        wandb_project = wandb_project,
+        quiet = quiet,
+        overwrite = overwrite
+    )
 
-    dataset = NextStateTokensDataset(
+    dataset = AutoregKStepsTokensDataset(
         num_vars = num_vars,
         num_rules_range = num_rules_range,
-        num_states_range = num_states_range,
         ante_prob_range = ante_prob_range,
         conseq_prob_range = conseq_prob_range,
-        state_prob_range = state_prob_range,
-        dataset_len = dataset_len)
+        chain_len_range = chain_len_range,
+        num_prevs_range = (1, chain_len_range[0]),
+        num_steps = num_steps,
+        dataset_len = num_evals
+    )
 
     return model, dataset
