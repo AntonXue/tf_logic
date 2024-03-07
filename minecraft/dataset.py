@@ -18,7 +18,10 @@ class MinecraftAutoregKStepsBaseDataset(Dataset):
         seed: int = 101,
         tokenizer=None,
         padding: str = "longest",
+        task_type: str = "binary_classification"    # Binary classification or Next Token Prediction
     ):
+        assert task_type in ["binary_classification", "next_token_prediction"], "Task type should be either 'binary_classification' or 'next_token_prediction'"
+        self.task_type = task_type
         self.num_steps = num_steps - 1  # Since the first step is the target (depth = 0)
         self.seed = seed
         self.max_num_distractors = max_num_distractors
@@ -275,6 +278,25 @@ class MinecraftAutoregKStepsBaseDataset(Dataset):
             "target": recipe_components["target"],
             "qed": False,
         }
+    
+    def _get_chain_of_thought_for_recipe(self, recipe: dict):
+        """Get the sequence of derivable facts for a recipe."""
+
+        base_facts = recipe["facts"]
+        rules = recipe["rules"]
+        derivable_facts = base_facts
+        can_derive = True
+        
+        while can_derive:
+            new_facts = []
+            for rule in rules:
+                if all(antecedent in derivable_facts for antecedent in rule[0]):
+                    new_facts.append(rule[1])
+            # If new facts are already derivable, stop
+            if all(fact in derivable_facts for fact in new_facts):
+                can_derive = False
+            derivable_facts = derivable_facts + list(set(new_facts) - set(derivable_facts))
+        return derivable_facts[len(base_facts):]
 
     def _generate_base_dataset(self):
         """Generate the base dataset.
@@ -335,6 +357,7 @@ class MinecraftAutoregKStepsBaseDataset(Dataset):
     def _stringify_recipe(
         self,
         recipe: dict,
+        cot_states: list,
         rule_start_tag: str = "[RULES_START]",
         rule_end_tag: str = "[RULES_END]",
         fact_start_tag: str = "[FACTS_START]",
@@ -345,6 +368,9 @@ class MinecraftAutoregKStepsBaseDataset(Dataset):
         facts_separator: str = " , ",
         rules_ante_conseq_separator: str = " -> ",
         rules_ante_separator: str = " + ",
+        cot_states_start_tag: str = "[STATES_START]",
+        cot_states_end_tag: str = "[STATES_END]",
+        cot_states_separator: str = " , ",
     ):
         """Convert the components of a recipe to a string representation.
 
@@ -372,8 +398,14 @@ class MinecraftAutoregKStepsBaseDataset(Dataset):
             ]
         )
         facts = facts_separator.join(recipe["facts"])
-        target = recipe["target"]
-        final_str = f"{rule_start_tag} {rules} {rule_end_tag} {fact_start_tag} {facts} {fact_end_tag} {target_start_tag} {target} {target_end_tag}"
+        if self.task_type == "binary_classification":
+            target = recipe["target"]
+            final_str = f"{rule_start_tag} {rules} {rule_end_tag} {fact_start_tag} {facts} {fact_end_tag} {target_start_tag} {target} {target_end_tag}"
+        elif self.task_type == "next_token_prediction":
+            states = cot_states_separator.join(cot_states)
+            final_str = f"{rule_start_tag} {rules} {rule_end_tag} {fact_start_tag} {facts} {fact_end_tag} {cot_states_start_tag} {states} {cot_states_end_tag}"
+        else:
+            raise Exception("Task type not supported. Supported task types: binary_classification, next_token_prediction")
         return final_str.replace("minecraft:", "")
 
     def __getitem__(self, idx):
@@ -383,7 +415,8 @@ class MinecraftAutoregKStepsBaseDataset(Dataset):
             labels = torch.tensor(1).long()
         else:
             labels = torch.tensor(0).long()
-        item = self._stringify_recipe(recipe)
+        cot_states = self._get_chain_of_thought_for_recipe(recipe)
+        item = self._stringify_recipe(recipe, cot_states)
         if not self.tokenizer:
             return Exception("Tokenizer not provided.")
         encoding = self.tokenizer(item, truncation=True, padding=self.padding)
@@ -394,6 +427,7 @@ class MinecraftAutoregKStepsBaseDataset(Dataset):
             "input_ids": encoding.input_ids,
             "attention_mask": encoding.attention_mask,
             "recipe": recipe,
+            "cot_states": cot_states,
             "num_vars": recipe["num_vars"] if "num_vars" in recipe else None,
         }
 
@@ -410,6 +444,7 @@ class MinecraftAutoregKStepsNVarsDataset(MinecraftAutoregKStepsBaseDataset):
         seed: int = 101,
         tokenizer=None,
         padding: str = "longest",
+        task_type: str = "next_token_prediction"    # Binary classification or Next Token Prediction
     ):
         assert (
             num_vars_range[0] <= num_vars_range[1]
@@ -417,7 +452,13 @@ class MinecraftAutoregKStepsNVarsDataset(MinecraftAutoregKStepsBaseDataset):
         self.min_num_vars = num_vars_range[0]
         self.max_num_vars = num_vars_range[1]
         super().__init__(
-            num_steps, dataset_len, max_num_distractors, seed, tokenizer, padding
+            num_steps=num_steps,
+            dataset_len=dataset_len,
+            max_num_distractors=max_num_distractors,
+            seed=seed,
+            tokenizer=tokenizer,
+            padding=padding,
+            task_type=task_type
         )
         self.num_vars_histogram = [k["num_vars"] for k in self.dataset]
         self.num_vars_histogram = {
