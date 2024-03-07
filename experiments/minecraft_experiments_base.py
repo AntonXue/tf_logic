@@ -3,10 +3,13 @@ from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Optional
 import torch
-from transformers import Trainer, TrainingArguments, HfArgumentParser, AutoTokenizer, DataCollatorWithPadding
-from transformers import AutoModelForSequenceClassification
+from transformers import HfArgumentParser, AutoTokenizer, Trainer, TrainingArguments
+from transformers import AutoModelForSequenceClassification, DataCollatorWithPadding                                # For one-shot string
+from transformers import AutoModelForCausalLM, DataCollatorForLanguageModeling                                      # For autoreg_ksteps
+from transformers import AutoModelForSeq2SeqLM, DataCollatorForSeq2Seq, Seq2SeqTrainer, Seq2SeqTrainingArguments    # For seq2seq
 import wandb
 import json
+import evaluate
 
 """ Our imports """
 from common import *    # Critical definitions and path inserts
@@ -110,44 +113,32 @@ def minecraftexp_args_to_wandb_run_name(args: MinecraftExperimentsArguments):
     model_str = f"{args.model_name}" + \
                 (f"_pt" if args.use_pretrained else "")
 
-    if args.syn_exp_name == "one_shot":
-        return f"MinecraftOS_{model_str}__" + \
-            f"nv{args.num_vars}" + \
-            f"_nr{args.min_num_rules}-{args.max_num_rules}" + \
-            f"_ap{args.min_ante_prob:.2f}-{args.max_ante_prob:.2f}" + \
-            f"_bp{args.min_conseq_prob:.2f}-{args.max_conseq_prob:.2f}" + \
-            f"_cl{args.min_chain_len}-{args.max_chain_len}" + \
-            f"_ntr{args.train_len}_ntt{args.eval_len}_seed{args.seed}"
-
-    elif args.syn_exp_name == "one_shot_str":
-        return f"MinecraftOSstr__{model_str}__" + \
+    if args.syn_exp_name == "one_shot_str":
+        # MinecraftBC: Binary Classification
+        return f"MinecraftBC__{model_str}__" + \
             f"ns{args.num_steps}" + \
             f"_nv{args.min_num_vars}-{args.max_num_vars}" + \
             f"_tbs{args.train_batch_size}_ebs{args.eval_batch_size}" + \
             f"_ntr{args.train_len}_ntt{args.eval_len}_seed{args.seed}"
 
-    elif args.syn_exp_name == "next_state":
-        return f"MinecraftNS_{model_str}__" + \
-            f"nv{args.num_vars}" + \
-            f"_nr{args.min_num_rules}-{args.max_num_rules}" + \
-            f"_ns{args.min_num_states}-{args.max_num_states}" + \
-            f"_ap{args.min_ante_prob:.2f}-{args.max_ante_prob:.2f}" + \
-            f"_bp{args.min_conseq_prob:.2f}-{args.max_conseq_prob:.2f}" + \
-            f"_sp{args.min_state_prob:.2f}-{args.max_state_prob:.2f}" + \
-            f"_ntr{args.train_len}_ntt{args.eval_len}_seed{args.seed}"
-
     elif args.syn_exp_name == "autoreg_ksteps":
-        return f"MinecraftAR_{model_str}__" + \
-            f"nv{args.num_vars}" + \
+        # MinecraftNTP: Next Token Prediction
+        return f"MinecraftNTP_{model_str}__" + \
             f"_ns{args.num_steps}" + \
-            f"_nr{args.min_num_rules}-{args.max_num_rules}" + \
-            f"_ap{args.min_ante_prob:.2f}-{args.max_ante_prob:.2f}" + \
-            f"_bp{args.min_conseq_prob:.2f}-{args.max_conseq_prob:.2f}" + \
-            f"_cl{args.min_chain_len}-{args.max_chain_len}" + \
+            f"_nv{args.min_num_vars}-{args.max_num_vars}" + \
+            f"_tbs{args.train_batch_size}_ebs{args.eval_batch_size}" + \
+            f"_ntr{args.train_len}_ntt{args.eval_len}_seed{args.seed}"
+    
+    elif args.syn_exp_name == "seq2seq":
+        # MinecraftSeq2Seq: Seq2Seq
+        return f"MinecraftSeq2Seq_{model_str}__" + \
+            f"_ns{args.num_steps}" + \
+            f"_nv{args.min_num_vars}-{args.max_num_vars}" + \
+            f"_tbs{args.train_batch_size}_ebs{args.eval_batch_size}" + \
             f"_ntr{args.train_len}_ntt{args.eval_len}_seed{args.seed}"
 
     else:
-        raise ValueError(f"Unrecognized syn_exp_name {args.syn_exp_name}")
+        raise ValueError(f"Unrecognized exp_name {args.syn_exp_name}")
 
 
 def trainer_stats_for_wandb(
@@ -155,7 +146,7 @@ def trainer_stats_for_wandb(
     trainer: Trainer
 ):
     """ Make some statistics to report to wandb """
-    if args.syn_exp_name in ["one_shot", "one_shot_str"]:
+    if args.syn_exp_name == "one_shot_str":
         num_train_qeds = torch.tensor(0)
         for i in range(len(trainer.train_dataset)):
             num_train_qeds += trainer.train_dataset[i]["label"]
@@ -171,20 +162,20 @@ def trainer_stats_for_wandb(
             "eval_qeds": num_eval_qeds.item()
         }
 
-    elif args.syn_exp_name == "next_state":
+    elif args.syn_exp_name == "autoreg_ksteps":
         return {
             "train_len": len(trainer.train_dataset),
             "eval_len": len(trainer.eval_dataset),
         }
-
-    elif args.syn_exp_name == "autoreg_ksteps":
+    
+    elif args.syn_exp_name == "seq2seq":
         return {
             "train_len": len(trainer.train_dataset),
             "eval_len": len(trainer.eval_dataset),
         }
 
     else:
-        raise ValueError(f"Unrecognized syn_exp_name {args.syn_exp_name}")
+        raise ValueError(f"Unrecognized exp_name {args.syn_exp_name}")
 
 # TODO: Refactor this later (move to common.py)
 def set_wandb_run_id(args: MinecraftExperimentsArguments):
@@ -209,18 +200,63 @@ def set_wandb_run_id(args: MinecraftExperimentsArguments):
     # Set the run_id to ensure resuming any previous run
     os.environ["WANDB_RUN_ID"] = run_id
 
-
 def make_trainer_for_synthetic(
     args: MinecraftExperimentsArguments,
     report_to: str = "wandb"
 ):
     """ Make a Hugging Face Trainer object """
 
+    tokenizer = AutoTokenizer.from_pretrained(args.model_name)
+
+    new_tokens = ["[RULES_START]", "[RULES_END]", "[FACTS_START]", "[FACTS_END]", "[STATES_START]", "[STATES_END]"]
+    new_tokens += ["->"]
+    new_tokens += ["+"]
+    new_tokens = set(new_tokens) - set(tokenizer.vocab.keys())
+    tokenizer.add_tokens(list(new_tokens))
+    tokenizer.pad_token = tokenizer.eos_token
+
+    def tokenize_function(item):
+        return tokenizer(item["data"], truncation=True, padding="max_length", max_length=128)
+    
+    # Add labels to the datasets where the labels are the same as the input ids
+    # This is because the model is autoregressive and the labels are the same as the input
+    def add_labels_to_examples(examples):
+        if "labels" not in examples:
+            examples["labels"] = examples["input_ids"].clone()
+        else:
+            labels = tokenizer(examples["labels"], truncation=True, padding="max_length")
+            examples["labels"] = labels["input_ids"]
+        return examples
+    
+    metric = evaluate.load("exact_match")
+
+    def compute_metrics(eval_preds):
+        preds, labels = eval_preds
+        preds = np.where(preds != -100, preds, tokenizer.pad_token_id)
+        labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
+
+        print("preds.shape: ", preds.shape)
+        print("labels.shape: ", labels.shape)
+
+        print("preds[0]: ", preds[0])
+        print("labels[0]: ", labels[0])
+
+        # Batch decode both the predictions and the labels
+        decoded_preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
+        decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
+
+        # Log the first few examples
+        for i in range(5):
+            print(f"preds: {decoded_preds[i]}")
+            print(f"labels: {decoded_labels[i]}")
+            print("----------------------------")
+
+        score = metric.compute(predictions=decoded_preds, references=decoded_labels)
+        print(score)
+        return score
+
     if args.syn_exp_name == "one_shot_str":
-        print("Creating a trainer for one_shot_str")
-        # Get the tokenizer to create the dataset
-        tokenizer = AutoTokenizer.from_pretrained(args.model_name)
-        tokenizer.pad_token = tokenizer.eos_token
+        print("Creating a trainer for Binary Classification")
         data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
 
         big_dataset = MinecraftAutoregKStepsNVarsDataset(
@@ -238,42 +274,28 @@ def make_trainer_for_synthetic(
         
         train_dataset, eval_dataset = \
             torch.utils.data.random_split(big_dataset, [train_len, eval_len])
+        
+        train_hf_dataset = Dataset.from_dict({
+            "data": [train_dataset[i]['data'] for i in range(len(train_dataset))],
+            "label": [train_dataset[i]['labels'] for i in range(len(train_dataset))],
+        }).with_format("torch")
 
-        if args.use_pretrained:
-            train_hf_dataset = Dataset.from_dict({
-                "data": [train_dataset[i]['data'] for i in range(len(train_dataset))],
-                "label": [train_dataset[i]['labels'] for i in range(len(train_dataset))],
-            }).with_format("torch")
+        eval_hf_dataset = Dataset.from_dict({
+            "data": [eval_dataset[i]['data'] for i in range(len(eval_dataset))],
+            "label": [eval_dataset[i]['labels'] for i in range(len(eval_dataset))],
+        }).with_format("torch")
 
-            eval_hf_dataset = Dataset.from_dict({
-                "data": [eval_dataset[i]['data'] for i in range(len(eval_dataset))],
-                "label": [eval_dataset[i]['labels'] for i in range(len(eval_dataset))],
-            }).with_format("torch")
+        print("Created HF datasets")
+    
+        train_dataset = train_hf_dataset.map(tokenize_function, batched=True)
+        eval_dataset = eval_hf_dataset.map(tokenize_function, batched=True)
 
-            print("Created HF datasets")
+        print("Tokenized HF datasets")
 
-            def tokenize_function(item):
-                return tokenizer(item["data"], truncation=True)
-
-            train_dataset = train_hf_dataset.map(tokenize_function, batched=True)
-            eval_dataset = eval_hf_dataset.map(tokenize_function, batched=True)
-
-            print("Tokenized HF datasets")
-
-            tfl_model = AutoModelForSequenceClassification.from_pretrained(
-                            args.model_name, num_labels=2
-                        )
-            tfl_model.config.pad_token_id = tokenizer.pad_token_id
-
-        else:
-            tfl_model = AutoTaskModel.from_kwargs(
-                task_name = args.syn_exp_name,
-                num_vars = args.num_vars,
-                model_name = args.model_name,
-                embed_dim = args.embed_dim,
-                num_layers = args.num_layers,
-                num_heads = args.num_heads)
-            tfl_model.seqcls_model.model.config.pad_token_id = tokenizer.pad_token_id
+        tfl_model = AutoModelForSequenceClassification.from_pretrained(
+                        args.model_name, num_labels=2
+                    )
+        tfl_model.config.pad_token_id = tokenizer.pad_token_id
 
         training_args = TrainingArguments(
             str(Path(args.output_dir, minecraftexp_args_to_wandb_run_name(args))),
@@ -296,6 +318,152 @@ def make_trainer_for_synthetic(
             tokenizer = tokenizer,
             data_collator = data_collator,
             compute_metrics = one_shot_metrics)
+    
+    elif args.syn_exp_name == "autoreg_ksteps":
+        print("Creating a trainer for Next Token Prediction")
+        data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
+        
+        big_dataset = MinecraftAutoregKStepsNVarsDataset(
+            num_steps=args.num_steps,
+            num_vars_range=(args.min_num_vars, args.max_num_vars),
+            dataset_len=args.train_len + args.eval_len,
+            tokenizer=tokenizer)
+        
+        train_len, eval_len = args.train_len, args.eval_len
+        if len(big_dataset) < args.train_len + args.eval_len:
+            train_len, eval_len = len(big_dataset) * (args.train_len / (args.train_len + args.eval_len)), len(big_dataset) * (args.eval_len / (args.train_len + args.eval_len))
+            train_len, eval_len = int(train_len), len(big_dataset) - int(train_len)
+
+        print(f"train_len: {train_len}, eval_len: {eval_len}")
+        
+        train_dataset, eval_dataset = \
+            torch.utils.data.random_split(big_dataset, [train_len, eval_len])
+        
+        train_hf_dataset = Dataset.from_dict({
+            "data": [train_dataset[i]['data'] for i in range(len(train_dataset))],
+        }).with_format("torch")
+
+        eval_hf_dataset = Dataset.from_dict({
+            "data": [eval_dataset[i]['data'] for i in range(len(eval_dataset))],
+        }).with_format("torch")
+
+        print("Created HF datasets")
+
+        # Add all space-separated tokens to the tokenizer
+        more_new_tokens = set(" ".join([train_dataset[i]['data'] for i in range(len(train_dataset))]).split())
+        more_new_tokens = more_new_tokens.union(set(" ".join([eval_dataset[i]['data'] for i in range(len(eval_dataset))]).split()))
+        # Remove , from the tokens
+        more_new_tokens = set([token.replace(",", "") for token in more_new_tokens])
+        more_new_tokens.add(",")
+        more_new_tokens = more_new_tokens - set(tokenizer.vocab.keys())
+        tokenizer.add_tokens(list(more_new_tokens))
+
+        train_dataset = train_hf_dataset.map(tokenize_function, batched=True)
+        eval_dataset = eval_hf_dataset.map(tokenize_function, batched=True)
+
+        print("Tokenized HF datasets")
+        
+        train_dataset = train_dataset.map(add_labels_to_examples, batched=True)
+        eval_dataset = eval_dataset.map(add_labels_to_examples, batched=True)
+
+        tfl_model = AutoModelForCausalLM.from_pretrained(args.model_name, pad_token_id=tokenizer.eos_token_id)
+        tfl_model.resize_token_embeddings(len(tokenizer))
+
+        training_args = TrainingArguments(
+            str(Path(args.output_dir, minecraftexp_args_to_wandb_run_name(args))),
+            num_train_epochs = args.num_epochs,
+            per_device_train_batch_size = args.train_batch_size,
+            per_device_eval_batch_size = args.eval_batch_size,
+            auto_find_batch_size = args.auto_find_batch_size,
+            evaluation_strategy = "epoch",
+            report_to = report_to,
+            run_name = minecraftexp_args_to_wandb_run_name(args),
+            logging_steps = args.logging_steps,
+            warmup_ratio = 0.10,
+            save_strategy = "no")
+        
+        def preprocess_logits_for_metrics(logits, labels):
+            if isinstance(logits, tuple):
+                # Depending on the model and config, logits may contain extra tensors,
+                # like past_key_values, but logits always come first
+                logits = logits[0]
+            return logits.argmax(dim=-1)
+
+        return Trainer(
+            tfl_model,
+            training_args,
+            train_dataset = train_dataset,
+            eval_dataset = eval_dataset,
+            tokenizer = tokenizer,
+            data_collator = data_collator,
+            preprocess_logits_for_metrics = preprocess_logits_for_metrics,
+            compute_metrics = compute_metrics)
+    
+    elif args.syn_exp_name == "seq2seq":
+        print("Creating a trainer for Seq2Seq")
+    
+        big_dataset = MinecraftAutoregKStepsNVarsDataset(
+            num_steps=args.num_steps,
+            num_vars_range=(args.min_num_vars, args.max_num_vars),
+            dataset_len=args.train_len + args.eval_len,
+            tokenizer=tokenizer)
+        
+        train_len, eval_len = args.train_len, args.eval_len
+        if len(big_dataset) < args.train_len + args.eval_len:
+            train_len, eval_len = len(big_dataset) * (args.train_len / (args.train_len + args.eval_len)), len(big_dataset) * (args.eval_len / (args.train_len + args.eval_len))
+            train_len, eval_len = int(train_len), len(big_dataset) - int(train_len)
+
+        print(f"train_len: {train_len}, eval_len: {eval_len}")
+        
+        train_dataset, eval_dataset = \
+            torch.utils.data.random_split(big_dataset, [train_len, eval_len])
+        
+        train_hf_dataset = Dataset.from_dict({
+            "data": [train_dataset[i]['data'].split("[STATES_START]")[0].strip() for i in range(len(train_dataset))],
+            "labels": ["[STATES_START]" + train_dataset[i]['data'].split("[STATES_START]")[1] for i in range(len(train_dataset))],
+        }).with_format("torch")
+
+        eval_hf_dataset = Dataset.from_dict({
+            "data": [eval_dataset[i]['data'].split("[STATES_START]")[0].strip() for i in range(len(eval_dataset))],
+            "labels": ["[STATES_START]" + eval_dataset[i]['data'].split("[STATES_START]")[1] for i in range(len(eval_dataset))],
+        }).with_format("torch")
+
+        print("Created HF datasets")
+    
+        train_dataset = train_hf_dataset.map(tokenize_function, batched=True)
+        eval_dataset = eval_hf_dataset.map(tokenize_function, batched=True)
+
+        print("Tokenized HF datasets")
+        
+        train_dataset = train_dataset.map(add_labels_to_examples, batched=True)
+        eval_dataset = eval_dataset.map(add_labels_to_examples, batched=True)
+
+        tfl_model = AutoModelForSeq2SeqLM.from_pretrained(args.model_name, pad_token_id=tokenizer.eos_token_id)
+
+        data_collator = DataCollatorForSeq2Seq(tokenizer=tokenizer, model=tfl_model)
+
+        training_args = Seq2SeqTrainingArguments(
+            str(Path(args.output_dir, minecraftexp_args_to_wandb_run_name(args))),
+            num_train_epochs = args.num_epochs,
+            per_device_train_batch_size = args.train_batch_size,
+            per_device_eval_batch_size = args.eval_batch_size,
+            auto_find_batch_size = args.auto_find_batch_size,
+            evaluation_strategy = "epoch",
+            report_to = report_to,
+            run_name = minecraftexp_args_to_wandb_run_name(args),
+            logging_steps = args.logging_steps,
+            warmup_ratio = 0.10,
+            save_strategy = "no",
+            predict_with_generate=True)
+        
+        return Seq2SeqTrainer(
+            tfl_model,
+            training_args,
+            train_dataset = train_dataset,
+            eval_dataset = eval_dataset,
+            tokenizer = tokenizer,
+            data_collator = data_collator,
+            compute_metrics = compute_metrics)
 
     else:
         raise ValueError(f"Unrecognized exp_name {args.syn_exp_name}")
