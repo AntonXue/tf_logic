@@ -21,19 +21,20 @@ class MyTfConfig:
         num_heads: Optional[int] = None,
         num_layers: Optional[int] = None,
         attention_style: Optional[str] = None,
-        do_layer_norm: Optional[bool] = None,
-        num_labels: Optional[int] = None,
+        do_layer_norm: Optional[bool] = None, num_labels: Optional[int] = None,
+        use_nn_linear_bias: Optional[bool] = True,
         problem_type: Optional[str] = None,
         use_positional_encoding: Optional[bool] = None,
-        max_seq_len: Optional[int] = None
+        max_seq_len: Optional[int] = None,
     ):
         self.input_dim = default(input_dim, 256)
         self.embed_dim = default(embed_dim, 512)
         self.ffwd_dim = default(ffwd_dim, 4 * self.embed_dim)
         self.num_heads = default(num_heads, 4)
         self.num_layers = default(num_layers, 8)
-        self.attention_style = default(attention_style, "linear")
+        self.attention_style = default(attention_style, "softmax")
         self.do_layer_norm = default(do_layer_norm, True)
+        self.use_nn_linear_bias = default(use_nn_linear_bias, True)
         self.num_labels = default(num_labels, None)
         self.problem_type = default(problem_type, None)
         self.use_positional_encoding = default(use_positional_encoding, False)
@@ -55,13 +56,16 @@ class MyTfOutput(ModelOutput):
 
 
 class MySelfAttention(nn.Module):
-    def __init__(self, embed_dim: int, attention_style: str):
+    def __init__(self, config: MyTfConfig):
         super().__init__()
-        self.Wq = nn.Linear(embed_dim, embed_dim)
-        self.Wk = nn.Linear(embed_dim, embed_dim)
-        self.Wv = nn.Linear(embed_dim, embed_dim)
-        assert attention_style in ["linear", "causal_softmax"]
-        self.attention_style = attention_style
+        self.embed_dim = embed_dim = config.embed_dim
+        self.use_bias = use_bias = config.use_nn_linear_bias
+        self.Wq = nn.Linear(embed_dim, embed_dim, bias=use_bias)
+        self.Wk = nn.Linear(embed_dim, embed_dim, bias=use_bias)
+        self.Wv = nn.Linear(embed_dim, embed_dim, bias=use_bias)
+
+        assert config.attention_style in ["linear", "softmax"]
+        self.attention_style = config.attention_style
 
     def forward(self, x: torch.FloatTensor):
         """ x: (batch_size, seq_len, embed_dim) """
@@ -72,7 +76,7 @@ class MySelfAttention(nn.Module):
         if self.attention_style == "linear":
             pass
 
-        elif self.attention_style == "causal_softmax":
+        elif self.attention_style == "softmax":
             mask = torch.triu(torch.ones(L,L), diagonal=1).to(x.device)
             mask = mask.view(1,L,L).repeat(N,1,1) * -999 # Super-diag has -infty
             wts = F.softmax(wts + mask, dim=2)
@@ -99,15 +103,13 @@ class MyAFBlock(nn.Module):
 
         # Attention block
         assert config.num_heads > 0
-        self.attn_heads = nn.ModuleList([
-            MySelfAttention(config.embed_dim, config.attention_style) for _ in range(config.num_heads)
-        ])
+        self.attn_heads = nn.ModuleList([MySelfAttention(config) for _ in range(config.num_heads)])
 
         # Feedforward block construction
         self.ffwd = nn.Sequential(
-            nn.Linear(config.embed_dim, config.ffwd_dim),
+            nn.Linear(config.embed_dim, config.ffwd_dim, bias=config.use_nn_linear_bias),
             nn.ReLU(),
-            nn.Linear(config.ffwd_dim, config.embed_dim)
+            nn.Linear(config.ffwd_dim, config.embed_dim, bias=config.use_nn_linear_bias)
         )
 
     def forward(self, x: torch.FloatTensor):
@@ -196,8 +198,8 @@ class MyTfSeqClsModel(SeqClsModel):
 
         self.config = config
         self.mytf = MyTfModel(config)
-        self.embed_fn = nn.Linear(config.input_dim, config.embed_dim)
-        self.cls_head = nn.Linear(config.embed_dim, config.num_labels)
+        self.embed_fn = nn.Linear(config.input_dim, config.embed_dim, bias=config.use_nn_linear_bias)
+        self.cls_head = nn.Linear(config.embed_dim, config.num_labels, bias=config.use_nn_linear_bias)
 
     @property
     def model_name(self):

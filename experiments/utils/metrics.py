@@ -22,7 +22,7 @@ def one_shot_metrics(eval_preds):
         return {"Accuracy": acc, "AvgOnes": avg_ones}
 
 
-def next_state_metrics(eval_preds):
+def mytf_succ_metrics(eval_preds):
     if isinstance(eval_preds.predictions, tuple):
         logits = eval_preds.predictions[0]
     else:
@@ -56,5 +56,4 @@ def autoreg_ksteps_metrics(eval_preds):
         "TargetStatesAcc": target_states_acc,
         "AvgOnes": avg_ones,
     }
-
 

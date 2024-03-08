@@ -5,6 +5,7 @@ import torch.nn as nn
 from transformers.utils import ModelOutput
 
 from .common import *
+from .seqcls_models.my_models import *
 
 """ We wrap some seqcls models to have properly named parameters in their forwrad function
     to conform to what comes out of the datasets.
@@ -196,4 +197,63 @@ class AutoregKStepsTaskModel(SeqClsModel):
             all_seqcls_outputs = all_seqcls_outs
         )
 
+
+""" Specialized task model for MyTf """
+
+@dataclass
+class MyTfSuccTaskOutput(ModelOutput):
+    loss: Optional[torch.FloatTensor] = None
+    logits: Optional[torch.FloatTensor] = None
+    mytf_output: Optional[ModelOutput] = None
+
+
+class MyTfSuccTaskModel(SeqClsModel):
+    def __init__(self, num_vars: int, **kwargs):
+        super().__init__()
+        self.num_vars = num_vars
+        self.mytf = MyTfModel(MyTfConfig(**kwargs))
+
+    @property
+    def model_name(self):
+        return self.mytf.model_name
+
+    @property
+    def input_dim(self):
+        return 2 * self.num_vars
+
+    @property
+    def embed_dim(self):
+        return self.mytf.embed_dim
+
+    @property
+    def num_labels(self):
+        return self.num_vars
+
+    def forward(
+        self,
+        tokens: torch.LongTensor,
+        labels: Optional[torch.LongTensor] = None,
+        **kwargs
+    ):
+        # Simple embedding
+        N, L, _ = tokens.shape
+        pad_len = self.embed_dim - self.input_dim
+        x = torch.cat([
+            torch.ones(N,L,1).to(tokens.device),
+            torch.zeros(N,L,pad_len-1).to(tokens.device),
+            tokens
+        ], dim=2)
+
+        out = self.mytf(x)
+        logits = out.last_hidden_state[:,-1,-self.num_vars:]
+
+        loss = None
+        if labels is not None:
+            loss = nn.BCEWithLogitsLoss()(logits, labels.view(N,self.num_vars).float())
+
+        return MyTfSuccTaskOutput(
+            loss = loss,
+            logits = logits,
+            mytf_output = out
+        )
 
