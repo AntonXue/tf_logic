@@ -4,6 +4,7 @@ import os
 import json
 import itertools
 import random
+from .utils import stringify_recipe_with_tags, stringify_recipe_with_text
 
 """
 TODO: Add support for disjoint train and test datasets
@@ -18,10 +19,13 @@ class MinecraftAutoregKStepsBaseDataset(Dataset):
         seed: int = 101,
         tokenizer=None,
         padding: str = "longest",
-        task_type: str = "binary_classification"    # Binary classification or Next Token Prediction
+        task_type: str = "binary_classification",    # Binary classification or Next Token Prediction
+        example_format: str = "text"                 # Text or Tags  
     ):
         assert task_type in ["binary_classification", "next_token_prediction"], "Task type should be either 'binary_classification' or 'next_token_prediction'"
+        assert example_format in ["text", "tags"], "Example format should be either 'text' or 'tags'"
         self.task_type = task_type
+        self.example_format = example_format
         self.num_steps = num_steps - 1  # Since the first step is the target (depth = 0)
         self.seed = seed
         self.max_num_distractors = max_num_distractors
@@ -297,6 +301,32 @@ class MinecraftAutoregKStepsBaseDataset(Dataset):
                 can_derive = False
             derivable_facts = derivable_facts + list(set(new_facts) - set(derivable_facts))
         return derivable_facts[len(base_facts):]
+    
+    def _get_chain_of_thought_for_recipe_with_antecedents(self, recipe: dict):
+        """Get the sequence of derivable facts for a recipe including the antecedents that are used to derive the facts."""
+
+        base_facts = recipe["facts"]
+        rules = recipe["rules"]
+        derivable_facts = [{"antedecents": [], "fact": fact} for fact in base_facts]
+        can_derive = True
+
+        while can_derive:
+            new_facts = []
+            new_antecedents = []
+            for rule in rules:
+                if all(antecedent in [fact["fact"] for fact in derivable_facts] for antecedent in rule[0]):
+                    new_facts.append(rule[1])
+                    new_antecedents.append(rule[0])
+            # If new facts are already derivable, stop
+            if all(fact in [fact["fact"] for fact in derivable_facts] for fact in new_facts):
+                can_derive = False
+            for antecedents, fact in zip(new_antecedents, new_facts):
+                # If the fact is already derivable, skip
+                if fact in [fact["fact"] for fact in derivable_facts]:
+                    continue
+                derivable_facts.append({"antecedents": antecedents, "fact": fact})
+
+        return derivable_facts[len(base_facts):]
 
     def _generate_base_dataset(self):
         """Generate the base dataset.
@@ -415,8 +445,15 @@ class MinecraftAutoregKStepsBaseDataset(Dataset):
             labels = torch.tensor(1).long()
         else:
             labels = torch.tensor(0).long()
-        cot_states = self._get_chain_of_thought_for_recipe(recipe)
-        item = self._stringify_recipe(recipe, cot_states)
+
+        cot_states = self._get_chain_of_thought_for_recipe_with_antecedents(recipe)
+
+        if self.example_format == "tags":
+            item = stringify_recipe_with_tags(recipe, self.task_type, cot_states)
+        elif self.example_format == "text":
+            item = stringify_recipe_with_text(recipe, self.task_type, cot_states)
+        else:
+            raise Exception("Example format not supported. Supported example formats: text, tags")
         if not self.tokenizer:
             return Exception("Tokenizer not provided.")
         encoding = self.tokenizer(item, truncation=True, padding=self.padding)
@@ -444,7 +481,8 @@ class MinecraftAutoregKStepsNVarsDataset(MinecraftAutoregKStepsBaseDataset):
         seed: int = 101,
         tokenizer=None,
         padding: str = "longest",
-        task_type: str = "next_token_prediction"    # Binary classification or Next Token Prediction
+        task_type: str = "next_token_prediction",    # Binary classification or Next Token Prediction
+        example_format: str = "text"                 # Text or Tags
     ):
         assert (
             num_vars_range[0] <= num_vars_range[1]
@@ -458,7 +496,8 @@ class MinecraftAutoregKStepsNVarsDataset(MinecraftAutoregKStepsBaseDataset):
             seed=seed,
             tokenizer=tokenizer,
             padding=padding,
-            task_type=task_type
+            task_type=task_type,
+            example_format=example_format
         )
         self.num_vars_histogram = [k["num_vars"] for k in self.dataset]
         self.num_vars_histogram = {

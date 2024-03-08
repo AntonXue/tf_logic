@@ -51,6 +51,11 @@ class MinecraftExperimentsArguments:
 
     """ Dataset details """
 
+    example_format: Optional[str] = field(
+        default = "text",
+        metadata = {"help": "The representation of the dataset. Can be one of {'text', 'tags'}."}
+    )
+
     num_steps: Optional[int] = field(
         default = 3,
         metadata = {"help": "The number of steps; used for autoreg_ksteps."}
@@ -116,6 +121,7 @@ def minecraftexp_args_to_wandb_run_name(args: MinecraftExperimentsArguments):
     if args.syn_exp_name == "one_shot_str":
         # MinecraftBC: Binary Classification
         return f"MinecraftBC__{model_str}__" + \
+            f"_ef{args.example_format}" + \
             f"ns{args.num_steps}" + \
             f"_nv{args.min_num_vars}-{args.max_num_vars}" + \
             f"_tbs{args.train_batch_size}_ebs{args.eval_batch_size}" + \
@@ -124,6 +130,7 @@ def minecraftexp_args_to_wandb_run_name(args: MinecraftExperimentsArguments):
     elif args.syn_exp_name == "autoreg_ksteps":
         # MinecraftNTP: Next Token Prediction
         return f"MinecraftNTP_{model_str}__" + \
+            f"_ef{args.example_format}" + \
             f"_ns{args.num_steps}" + \
             f"_nv{args.min_num_vars}-{args.max_num_vars}" + \
             f"_tbs{args.train_batch_size}_ebs{args.eval_batch_size}" + \
@@ -132,6 +139,7 @@ def minecraftexp_args_to_wandb_run_name(args: MinecraftExperimentsArguments):
     elif args.syn_exp_name == "seq2seq":
         # MinecraftSeq2Seq: Seq2Seq
         return f"MinecraftSeq2Seq_{model_str}__" + \
+            f"_ef{args.example_format}" + \
             f"_ns{args.num_steps}" + \
             f"_nv{args.min_num_vars}-{args.max_num_vars}" + \
             f"_tbs{args.train_batch_size}_ebs{args.eval_batch_size}" + \
@@ -208,11 +216,12 @@ def make_trainer_for_synthetic(
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
 
-    new_tokens = ["[RULES_START]", "[RULES_END]", "[FACTS_START]", "[FACTS_END]", "[STATES_START]", "[STATES_END]"]
-    new_tokens += ["->"]
-    new_tokens += ["+"]
-    new_tokens = set(new_tokens) - set(tokenizer.vocab.keys())
-    tokenizer.add_tokens(list(new_tokens))
+    if args.example_format == "tags":
+        new_tokens = ["[RULES_START]", "[RULES_END]", "[FACTS_START]", "[FACTS_END]", "[STATES_START]", "[STATES_END]"]
+        new_tokens += ["->"]
+        new_tokens += ["+"]
+        new_tokens = set(new_tokens) - set(tokenizer.vocab.keys())
+        tokenizer.add_tokens(list(new_tokens))
     tokenizer.pad_token = tokenizer.eos_token
 
     def tokenize_function(item):
@@ -263,7 +272,9 @@ def make_trainer_for_synthetic(
             num_steps=args.num_steps,
             num_vars_range=(args.min_num_vars, args.max_num_vars),
             dataset_len=args.train_len + args.eval_len,
-            tokenizer=tokenizer)
+            tokenizer=tokenizer,
+            task_type="binary_classification",
+            example_format=args.example_format)
         
         train_len, eval_len = args.train_len, args.eval_len
         if len(big_dataset) < args.train_len + args.eval_len:
@@ -308,7 +319,8 @@ def make_trainer_for_synthetic(
             run_name = minecraftexp_args_to_wandb_run_name(args),
             logging_steps = args.logging_steps,
             warmup_ratio = 0.10,
-            save_strategy = "no")
+            save_strategy = "no",
+            save_safetensors = False)
 
         return Trainer(
             tfl_model,
@@ -327,7 +339,9 @@ def make_trainer_for_synthetic(
             num_steps=args.num_steps,
             num_vars_range=(args.min_num_vars, args.max_num_vars),
             dataset_len=args.train_len + args.eval_len,
-            tokenizer=tokenizer)
+            tokenizer=tokenizer,
+            task_type="next_token_prediction",
+            example_format=args.example_format)
         
         train_len, eval_len = args.train_len, args.eval_len
         if len(big_dataset) < args.train_len + args.eval_len:
@@ -349,14 +363,15 @@ def make_trainer_for_synthetic(
 
         print("Created HF datasets")
 
-        # Add all space-separated tokens to the tokenizer
-        more_new_tokens = set(" ".join([train_dataset[i]['data'] for i in range(len(train_dataset))]).split())
-        more_new_tokens = more_new_tokens.union(set(" ".join([eval_dataset[i]['data'] for i in range(len(eval_dataset))]).split()))
-        # Remove , from the tokens
-        more_new_tokens = set([token.replace(",", "") for token in more_new_tokens])
-        more_new_tokens.add(",")
-        more_new_tokens = more_new_tokens - set(tokenizer.vocab.keys())
-        tokenizer.add_tokens(list(more_new_tokens))
+        if args.example_format == "tags":
+            # Add all space-separated tokens to the tokenizer
+            more_new_tokens = set(" ".join([train_dataset[i]['data'] for i in range(len(train_dataset))]).split())
+            more_new_tokens = more_new_tokens.union(set(" ".join([eval_dataset[i]['data'] for i in range(len(eval_dataset))]).split()))
+            # Remove , from the tokens
+            more_new_tokens = set([token.replace(",", "") for token in more_new_tokens])
+            more_new_tokens.add(",")
+            more_new_tokens = more_new_tokens - set(tokenizer.vocab.keys())
+            tokenizer.add_tokens(list(more_new_tokens))
 
         train_dataset = train_hf_dataset.map(tokenize_function, batched=True)
         eval_dataset = eval_hf_dataset.map(tokenize_function, batched=True)
@@ -380,7 +395,8 @@ def make_trainer_for_synthetic(
             run_name = minecraftexp_args_to_wandb_run_name(args),
             logging_steps = args.logging_steps,
             warmup_ratio = 0.10,
-            save_strategy = "no")
+            save_strategy = "no",
+            save_safetensors = False)
         
         def preprocess_logits_for_metrics(logits, labels):
             if isinstance(logits, tuple):
@@ -406,7 +422,9 @@ def make_trainer_for_synthetic(
             num_steps=args.num_steps,
             num_vars_range=(args.min_num_vars, args.max_num_vars),
             dataset_len=args.train_len + args.eval_len,
-            tokenizer=tokenizer)
+            tokenizer=tokenizer,
+            task_type="next_token_prediction",
+            example_format=args.example_format)
         
         train_len, eval_len = args.train_len, args.eval_len
         if len(big_dataset) < args.train_len + args.eval_len:
@@ -454,6 +472,7 @@ def make_trainer_for_synthetic(
             logging_steps = args.logging_steps,
             warmup_ratio = 0.10,
             save_strategy = "no",
+            save_safetensors = False,
             predict_with_generate=True)
         
         return Seq2SeqTrainer(
