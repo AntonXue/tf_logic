@@ -87,7 +87,7 @@ def load_arks_model_and_dataset(
 
 
 def load_mytfs_model_and_dataset(
-    embed_dim: int,
+    # embed_dim: int,
     num_vars: int,
     attention_style: str,
     do_layer_norm: bool,
@@ -105,6 +105,8 @@ def load_mytfs_model_and_dataset(
     overwrite: bool = False
 ):
 
+    embed_dim = 2 * num_vars + 1
+
     model = MyTfSuccTaskModel(
         num_vars = num_vars,
         embed_dim = embed_dim,
@@ -115,7 +117,7 @@ def load_mytfs_model_and_dataset(
         use_nn_linear_bias = False,
     )
 
-    artifact_id = f"model-SynMyTfS_d{embed_dim}_L1_H1" + \
+    artifact_id = f"model-SynMyTfS_d{embed_dim}_LNone_HNone" + \
             f"_{attention_style}" + \
             ("_LN1" if do_layer_norm else "_LN0") + \
             f"__nv{num_vars}" + \

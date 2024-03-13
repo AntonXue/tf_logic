@@ -9,7 +9,7 @@ import json
 
 """ Our imports """
 from common import *    # Critical definitions and path inserts
-from models import AutoTaskModel, MyTfSuccTaskModel
+from models import *
 from my_datasets import *
 from utils.metrics import *
 from utils.model_loader_utils import load_checkpoint_from_wandb
@@ -253,9 +253,9 @@ def synexp_args_to_wandb_run_name(args: SyntheticExperimentsArguments):
             f"_ntr{args.train_len}_ntt{args.eval_len}_bsz{args.train_batch_size}" + \
             f"_seed{args.seed}"
 
-    elif args.syn_exp_name == "mytf_succ":
-        return f"SynMyTfS_d{args.embed_dim}_L{args.num_layers}_H{args.num_heads}" + \
-            f"_{args.attention_style}_LN{args.layer_norm_style}_" + \
+    elif args.syn_exp_name == "smalltf_succ":
+        embed_dim = 2 * args.num_vars + 1
+        return f"SynSmallTfS_d{embed_dim}" + \
             f"_nv{args.num_vars}" + \
             f"_nr{args.min_num_rules}-{args.max_num_rules}" + \
             f"_ap{args.min_ante_prob:.2f}-{args.max_ante_prob:.2f}" + \
@@ -289,7 +289,7 @@ def trainer_stats_for_wandb(
             "eval_qeds": num_eval_qeds.item()
         }
 
-    elif args.syn_exp_name in ["autoreg_ksteps", "mytf_succ"]:
+    elif args.syn_exp_name in ["autoreg_ksteps", "smalltf_succ"]:
         return {
             "train_len": len(trainer.train_dataset),
             "eval_len": len(trainer.eval_dataset),
@@ -375,8 +375,8 @@ def make_trainer_for_synthetic(
 
 
     elif args.syn_exp_name == "one_shot_str":
-        if args.model_name == "mytf":
-            raise ValueError(f"Model mytf is not supported for one_shot_str")
+        if args.model_name in["mytf", "smalltf"]:
+            raise ValueError(f"Model {args.model_name} is not supported for one_shot_str")
 
         # Get the tokenizer to create the dataset
         tokenizer = AutoTokenizer.from_pretrained(args.model_name)
@@ -499,8 +499,8 @@ def make_trainer_for_synthetic(
         )
 
 
-    elif args.syn_exp_name == "mytf_succ":
-        train_dataset = MyTfSuccTokensDataset(
+    elif args.syn_exp_name == "smalltf_succ":
+        train_dataset = SmallTfSuccTokensDataset(
             num_vars = args.num_vars,
             num_rules_range = (args.min_num_rules, args.max_num_rules),
             ante_prob_range = (args.min_ante_prob, args.max_ante_prob),
@@ -510,7 +510,7 @@ def make_trainer_for_synthetic(
             dataset_len = args.eval_len
         )
 
-        eval_dataset = MyTfSuccTokensDataset(
+        eval_dataset = SmallTfSuccTokensDataset(
             num_vars = args.num_vars,
             num_rules_range = (args.min_num_rules, args.max_num_rules),
             ante_prob_range = (args.min_ante_prob, args.max_ante_prob),
@@ -520,14 +520,8 @@ def make_trainer_for_synthetic(
             dataset_len = args.eval_len
         )
 
-        tfl_model = MyTfSuccTaskModel(
+        tfl_model = SmallTfSuccTaskModel(
             num_vars = args.num_vars,
-            embed_dim = args.embed_dim,
-            num_layers = args.num_layers,
-            num_heads = args.num_heads,
-            do_layer_norm = (args.layer_norm_style == 1),
-            attention_style = args.attention_style,
-            use_nn_linear_bias = False,
         )
 
         training_args = TrainingArguments(
@@ -540,7 +534,7 @@ def make_trainer_for_synthetic(
             report_to = report_to,
             run_name = synexp_args_to_wandb_run_name(args),
             logging_steps = args.logging_steps,
-            learning_rate = 5e-4,
+            learning_rate = 5e-3,
             warmup_ratio = 0.10,
             save_strategy = "epoch",
             save_total_limit = 2
@@ -551,7 +545,7 @@ def make_trainer_for_synthetic(
             training_args,
             train_dataset = train_dataset,
             eval_dataset = eval_dataset,
-            compute_metrics = mytf_succ_metrics
+            compute_metrics = smalltf_succ_metrics
         )
 
     else:

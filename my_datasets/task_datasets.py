@@ -235,7 +235,7 @@ class AutoregKStepsTokensDataset(Dataset):
         }
 
 
-class MyTfSuccTokensDataset(Dataset):
+class SmallTfSuccTokensDataset(Dataset):
     """ [rules] [prev_states] """
     def __init__(
         self,
