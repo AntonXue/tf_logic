@@ -1,3 +1,4 @@
+import math
 import torch
 from torch.utils.data import Dataset
 
@@ -232,44 +233,6 @@ class AutoregKStepsTokensDataset(Dataset):
         return {
             "tokens": all_tokens,
             "labels": succs
-        }
-
-
-class SmallTfSuccTokensDataset(Dataset):
-    """ [rules] [prev_states] """
-    def __init__(
-        self,
-        num_vars: int,
-        num_rules_range: tuple[int, int],
-        ante_prob_range: tuple[float, float],
-        conseq_prob_range: tuple[float, float],
-        chain_len_range: tuple[int, int],
-        num_prevs_range: tuple[int, int],
-        dataset_len: int,
-        do_padding: bool = True,
-    ):
-        self.num_vars = num_vars
-        self.inner_dataset = AutoregKStepsTokensDataset(
-            num_vars = num_vars,
-            num_rules_range = num_rules_range,
-            ante_prob_range = ante_prob_range,
-            conseq_prob_range = conseq_prob_range,
-            chain_len_range = chain_len_range,
-            num_prevs_range = num_prevs_range,
-            num_steps = 1,
-            dataset_len = dataset_len,
-            do_padding = do_padding
-        )
-
-    def __len__(self):
-        return len(self.inner_dataset)
-
-    def __getitem__(self, idx):
-        ret = self.inner_dataset[idx]
-        tokens, labels = ret["tokens"], ret["labels"]
-        return {
-            "tokens": tokens,
-            "labels": labels.view(self.num_vars)
         }
 
 

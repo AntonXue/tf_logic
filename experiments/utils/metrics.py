@@ -22,7 +22,7 @@ def one_shot_metrics(eval_preds):
         return {"Accuracy": acc, "AvgOnes": avg_ones}
 
 
-def smalltf_succ_metrics(eval_preds):
+def small_succ_metrics(eval_preds):
     if isinstance(eval_preds.predictions, tuple):
         logits = eval_preds.predictions[0]
     else:

@@ -20,9 +20,8 @@ class MyTfConfig:
         ffwd_dim: Optional[int] = None,
         num_heads: Optional[int] = None,
         num_layers: Optional[int] = None,
-        attention_style: Optional[str] = None,
-        do_layer_norm: Optional[bool] = None, num_labels: Optional[int] = None,
-        use_nn_linear_bias: Optional[bool] = True,
+        do_layer_norm: Optional[bool] = None,
+        num_labels: Optional[int] = None,
         problem_type: Optional[str] = None,
         use_positional_encoding: Optional[bool] = None,
         max_seq_len: Optional[int] = None,
@@ -32,11 +31,9 @@ class MyTfConfig:
         self.ffwd_dim = default(ffwd_dim, 4 * self.embed_dim)
         self.num_heads = default(num_heads, 4)
         self.num_layers = default(num_layers, 8)
-        self.attention_style = default(attention_style, "softmax")
         self.do_layer_norm = default(do_layer_norm, True)
-        self.use_nn_linear_bias = default(use_nn_linear_bias, True)
         self.num_labels = default(num_labels, None)
-        self.problem_type = default(problem_type, None)
+        self.problem_type = default(problem_type, "multi_label_classification")
         self.use_positional_encoding = default(use_positional_encoding, False)
         self.max_seq_len = default(max_seq_len, 1024) if self.use_positional_encoding else None
 
@@ -59,31 +56,16 @@ class MySelfAttention(nn.Module):
     def __init__(self, config: MyTfConfig):
         super().__init__()
         self.embed_dim = embed_dim = config.embed_dim
-        self.use_bias = use_bias = config.use_nn_linear_bias
-        self.Wq = nn.Linear(embed_dim, embed_dim, bias=use_bias)
-        self.Wk = nn.Linear(embed_dim, embed_dim, bias=use_bias)
-        self.Wv = nn.Linear(embed_dim, embed_dim, bias=use_bias)
-
-        assert config.attention_style in ["linear", "softmax"]
-        self.attention_style = config.attention_style
+        self.Wq = nn.Linear(embed_dim, embed_dim)
+        self.Wk = nn.Linear(embed_dim, embed_dim)
+        self.Wv = nn.Linear(embed_dim, embed_dim)
 
     def forward(self, x: torch.FloatTensor):
         """ x: (batch_size, seq_len, embed_dim) """
         N, L, d = x.shape
         Q, K, V = self.Wq(x), self.Wk(x), self.Wv(x)
-        wts = torch.bmm(Q, K.transpose(1,2)) / (d**0.5) # (N,L,L)
-
-        if self.attention_style == "linear":
-            pass
-
-        elif self.attention_style == "softmax":
-            mask = torch.triu(torch.ones(L,L), diagonal=1).to(x.device)
-            mask = mask.view(1,L,L).repeat(N,1,1) * -999 # Super-diag has -infty
-            wts = F.softmax(wts + mask, dim=2)
-
-        else:
-            raise ValueError(f"Unknown attention_style {self.attention_style}")
-
+        mask = torch.triu(torch.ones(L,L), diagonal=1).view(1,L,L).repeat(N,1,1).to(x.device) * -999
+        wts = F.softmax((torch.bmm(Q, K.transpose(1,2)) / (d**0.5)) + mask, dim=2) # (N,L,L)
         out = torch.bmm(wts, V)
         return out, wts
 
@@ -94,9 +76,8 @@ class MyAFBlock(nn.Module):
         super().__init__()
         # Norm layers
         if config.do_layer_norm:
-            self.norm1 = nn.LayerNorm(config.embed_dim, elementwise_affine=False)
-            self.norm2 = nn.Identity()
-            # self.norm2 = nn.LayerNorm(config.embed_dim, elementwise_affine=False)
+            self.norm1 = nn.LayerNorm(config.embed_dim)
+            self.norm2 = nn.LayerNorm(config.embed_dim)
         else:
             self.norm1 = nn.Identity()
             self.norm2 = nn.Identity()
@@ -107,9 +88,9 @@ class MyAFBlock(nn.Module):
 
         # Feedforward block construction
         self.ffwd = nn.Sequential(
-            nn.Linear(config.embed_dim, config.ffwd_dim, bias=config.use_nn_linear_bias),
+            nn.Linear(config.embed_dim, config.ffwd_dim),
             nn.ReLU(),
-            nn.Linear(config.ffwd_dim, config.embed_dim, bias=config.use_nn_linear_bias)
+            nn.Linear(config.ffwd_dim, config.embed_dim)
         )
 
     def forward(self, x: torch.FloatTensor):
@@ -198,8 +179,8 @@ class MyTfSeqClsModel(SeqClsModel):
 
         self.config = config
         self.mytf = MyTfModel(config)
-        self.embed_fn = nn.Linear(config.input_dim, config.embed_dim, bias=config.use_nn_linear_bias)
-        self.cls_head = nn.Linear(config.embed_dim, config.num_labels, bias=config.use_nn_linear_bias)
+        self.embed_fn = nn.Linear(config.input_dim, config.embed_dim)
+        self.cls_head = nn.Linear(config.embed_dim, config.num_labels)
 
     @property
     def model_name(self):

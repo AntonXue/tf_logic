@@ -5,6 +5,7 @@ from .common import *
 from .seqcls_models import *
 from .task_models import *
 from .attack_models import *
+from .small_models import *
 
 
 class AutoSeqClsModel:

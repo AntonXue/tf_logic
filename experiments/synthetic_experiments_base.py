@@ -253,17 +253,6 @@ def synexp_args_to_wandb_run_name(args: SyntheticExperimentsArguments):
             f"_ntr{args.train_len}_ntt{args.eval_len}_bsz{args.train_batch_size}" + \
             f"_seed{args.seed}"
 
-    elif args.syn_exp_name == "smalltf_succ":
-        embed_dim = 2 * args.num_vars + 1
-        return f"SynSmallTfS_d{embed_dim}" + \
-            f"_nv{args.num_vars}" + \
-            f"_nr{args.min_num_rules}-{args.max_num_rules}" + \
-            f"_ap{args.min_ante_prob:.2f}-{args.max_ante_prob:.2f}" + \
-            f"_bp{args.min_conseq_prob:.2f}-{args.max_conseq_prob:.2f}" + \
-            f"_cl{args.min_chain_len}-{args.max_chain_len}" + \
-            f"_ntr{args.train_len}_ntt{args.eval_len}_bsz{args.train_batch_size}" + \
-            f"_seed{args.seed}"
-
     else:
         raise ValueError(f"Unrecognized syn_exp_name {args.syn_exp_name}")
 
@@ -289,7 +278,7 @@ def trainer_stats_for_wandb(
             "eval_qeds": num_eval_qeds.item()
         }
 
-    elif args.syn_exp_name in ["autoreg_ksteps", "smalltf_succ"]:
+    elif args.syn_exp_name in ["autoreg_ksteps"]:
         return {
             "train_len": len(trainer.train_dataset),
             "eval_len": len(trainer.eval_dataset),
@@ -375,7 +364,7 @@ def make_trainer_for_synthetic(
 
 
     elif args.syn_exp_name == "one_shot_str":
-        if args.model_name in["mytf", "smalltf"]:
+        if args.model_name in["mytf"]:
             raise ValueError(f"Model {args.model_name} is not supported for one_shot_str")
 
         # Get the tokenizer to create the dataset
@@ -496,56 +485,6 @@ def make_trainer_for_synthetic(
             train_dataset = train_dataset,
             eval_dataset = eval_dataset,
             compute_metrics = autoreg_ksteps_metrics
-        )
-
-
-    elif args.syn_exp_name == "smalltf_succ":
-        train_dataset = SmallTfSuccTokensDataset(
-            num_vars = args.num_vars,
-            num_rules_range = (args.min_num_rules, args.max_num_rules),
-            ante_prob_range = (args.min_ante_prob, args.max_ante_prob),
-            conseq_prob_range = (args.min_conseq_prob, args.max_conseq_prob),
-            chain_len_range = (args.min_chain_len, args.max_chain_len),
-            num_prevs_range = (1, args.min_chain_len),
-            dataset_len = args.eval_len
-        )
-
-        eval_dataset = SmallTfSuccTokensDataset(
-            num_vars = args.num_vars,
-            num_rules_range = (args.min_num_rules, args.max_num_rules),
-            ante_prob_range = (args.min_ante_prob, args.max_ante_prob),
-            conseq_prob_range = (args.min_conseq_prob, args.max_conseq_prob),
-            chain_len_range = (args.min_chain_len, args.max_chain_len),
-            num_prevs_range = (1, args.min_chain_len),
-            dataset_len = args.eval_len
-        )
-
-        tfl_model = SmallTfSuccTaskModel(
-            num_vars = args.num_vars,
-        )
-
-        training_args = TrainingArguments(
-            str(Path(args.output_dir, synexp_args_to_wandb_run_name(args))),
-            num_train_epochs = args.num_epochs,
-            per_device_train_batch_size = args.train_batch_size,
-            per_device_eval_batch_size = args.eval_batch_size,
-            auto_find_batch_size = args.auto_find_batch_size,
-            evaluation_strategy = "epoch",
-            report_to = report_to,
-            run_name = synexp_args_to_wandb_run_name(args),
-            logging_steps = args.logging_steps,
-            learning_rate = 5e-3,
-            warmup_ratio = 0.10,
-            save_strategy = "epoch",
-            save_total_limit = 2
-        )
-
-        return Trainer(
-            tfl_model,
-            training_args,
-            train_dataset = train_dataset,
-            eval_dataset = eval_dataset,
-            compute_metrics = smalltf_succ_metrics
         )
 
     else:
