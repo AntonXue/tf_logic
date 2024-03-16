@@ -43,7 +43,7 @@ class SmallGpt2(nn.Module):
 
     @property
     def desc_str(self):
-        return f"gpt2_n{self.num_vars}_d{self.embed_dim}_{self.loss_fn}"
+        return f"gpt2_{self.loss_fn}_n{self.num_vars}_d{self.embed_dim}"
 
     def forward(self, tokens: torch.LongTensor, labels: Optional[torch.LongTensor] = None):
         x = self.embed_fn(tokens.float())
@@ -84,7 +84,7 @@ class SmallTfA(nn.Module):
 
     @property
     def desc_str(self):
-        return f"tfa_n{self.num_vars}_d{self.embed_dim}_{self.loss_fn}"
+        return f"tfa_{self.loss_fn}_n{self.num_vars}_d{self.embed_dim}"
 
     def forward(self, tokens: torch.LongTensor, labels: Optional[torch.LongTensor] = None):
         N, L, _ = tokens.shape
@@ -131,7 +131,7 @@ class SmallTfB(nn.Module):
 
     @property
     def desc_str(self):
-        return f"tfb_n{self.num_vars}_d{self.embed_dim}_{self.loss_fn}"
+        return f"tfb_{self.loss_fn}_n{self.num_vars}_d{self.embed_dim}"
 
     def forward(self, tokens: torch.LongTensor, labels: Optional[torch.LongTensor] = None):
         N, L, _ = tokens.shape
@@ -166,45 +166,49 @@ class SmallTfC(nn.Module):
     def __init__(
         self,
         num_vars: int,
-        attn_fn: str = "sigmoid",
-        use_residual: bool = True,
-        loss_fn: str = "bce"
+        attn_fn: str = "relu",
+        use_bias: bool = True,
+        loss_fn: str = "bce",
+        init_ones: bool = True,
     ):
         super().__init__()
         self.num_vars = num_vars
         self.embed_dim = embed_dim = 2 * num_vars + 1
         self.Wa = nn.Linear(embed_dim, embed_dim, bias=False)
-        self.Wb = nn.Linear(embed_dim, num_vars, bias=False)
-        self.use_residual = use_residual
+        self.Wb = nn.Linear(embed_dim, num_vars, bias=use_bias)
+        self.use_bias = use_bias
         self.loss_fn = loss_fn
         
         self.attn_fn_str = attn_fn
-        if attn_fn == "sigmoid":
-            self.attn_fn = F.sigmoid
-        elif attn_fn == "relu":
+        if attn_fn == "relu":
             self.attn_fn = F.relu
+        elif attn_fn == "sigmoid":
+            self.attn_fn = F.sigmoid
+        elif attn_fn == "softplus":
+            self.attn_fn = F.softplus
         else:
             raise ValueError(f"Unrecognized attn_fn {attn_fn}")
 
+        self.init_ones = init_ones
+        if init_ones:
+            self.Wa.weight.data.fill_(1)
+            self.Wb.weight.data.fill_(1)
+
     @property
     def desc_str(self):
-        if self.use_residual:
-            return f"tfc_{self.attn_fn_str}_R1_n{self.num_vars}_d{self.embed_dim}_{self.loss_fn}"
-        else:
-            return f"tfc_{self.attn_fn_str}_R0_n{self.num_vars}_d{self.embed_dim}_{self.loss_fn}"
+        bstr = "B1" if self.use_bias else "B0"
+        iostr = "Init1" if self.init_ones else "InitR"
+        return f"tfc_{self.attn_fn_str}_{bstr}_{self.loss_fn}_n{self.num_vars}_d{self.embed_dim}_Init{iostr}"
 
     def forward(self, tokens: torch.LongTensor, labels: Optional[torch.LongTensor] = None):
         N, L, _ = tokens.shape
         device = tokens.device
 
         x = torch.cat([torch.ones(N,L,1).to(device), tokens], dim=2).float()
-
-        wts = F.sigmoid(torch.bmm(self.Wa(x), x.transpose(1,2)))
+        wts = self.attn_fn(torch.bmm(self.Wa(x), x.transpose(1,2)))
         a = torch.bmm(wts, x)
-        if self.use_residual:
-            y = self.Wb(x + a)
-        else:
-            y = self.Wb(a)
+        y = self.Wb(a)
+
         logits = y[:,-1]
         
         loss = None

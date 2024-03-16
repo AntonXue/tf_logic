@@ -15,27 +15,25 @@ from utils.metrics import *
 from utils.model_loader_utils import load_checkpoint_from_wandb
 from transformers import Trainer, TrainingArguments
 
-seed = 111
+seed = 121
 torch.manual_seed(seed)
 
 n = 32
 num_epochs = 64
-batch_size = 2048
+batch_size = int(2**8)
 output_dir = str(Path(DUMP_DIR, "small_experiments"))
-dataset_len = int(2**18)
+dataset_len = int(2**17)
 
-models = [
-    SmallGpt2(n, 4*n, loss_fn="bce"),
-    SmallGpt2(n, 4*n, loss_fn="margin"),
-    SmallTfA(n, 4*n, loss_fn="bce"),
-    SmallTfA(n, 4*n, loss_fn="margin"),
-    SmallTfB(n, loss_fn="bce"),
+models = [SmallTfC(n, attn_fn=a, use_bias=b, loss_fn=l, init_ones=i1) \
+    for a in ["relu", "sigmoid", "softplus"] \
+    for b in [True] \
+    for l in ["margin"] \
+    for i1 in [True, False]
+] + [
+    # SmallTfA(n, 1 + 2*n, loss_fn="bce"),
+    SmallTfA(n, 1 + 2*n, loss_fn="margin"),
+    # SmallTfB(n, loss_fn="bce"),
     SmallTfB(n, loss_fn="margin"),
-] \
-+ [SmallTfC(n, attn_fn=a, use_residual=r, loss_fn=l) \
-    for a in ["sigmoid", "relu"] \
-    for r in [True, False] \
-    for l in ["bce", "margin"]
 ]
 
 
@@ -51,7 +49,7 @@ for (di, dataset) in enumerate(datasets):
     for (mi, model) in enumerate(models):
         print(f"Starting iteration {di*len(models) + mi + 1}/{total_iters}")
 
-        desc_str = f"SmallSucc_{model.desc_str}_{dataset.desc_str}_seed{seed}"
+        desc_str = f"SMS_{model.desc_str}_{dataset.desc_str}_seed{seed}"
 
         training_args = TrainingArguments(
             str(Path(output_dir, desc_str)),
@@ -63,7 +61,7 @@ for (di, dataset) in enumerate(datasets):
             report_to = "wandb",
             run_name = desc_str,
             logging_steps = 16,
-            learning_rate = 5e-4,
+            learning_rate = 1e-3,
             warmup_ratio = 0.10,
             save_strategy = "epoch",
             save_total_limit = 2
