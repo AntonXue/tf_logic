@@ -21,11 +21,24 @@ class MarginLoss(nn.Module):
         super().__init__()
         self.delta = delta
 
-    def forward(self, pred, labels):
+    def forward(self, logits, labels):
         labels = 2 * labels - 1
-        loss = F.relu(1 - pred.float() * labels.float()).mean()
+        loss = F.relu(self.delta - logits.float() * labels.float()).sum(dim=1).mean()
         return loss
 
+class RegCatLoss(nn.Module):
+    def __init__(self, rho: float = None):
+        super().__init__()
+        self.rho = rho
+
+    def forward(self, logits, labels):
+        labels = 2 * labels - 1
+        loss = -(logits.float() * labels.float()).sum(dim=1).mean()
+
+        _, n = logits.shape
+        rho = 0.5 if self.rho is None else rho
+        reg = rho * (torch.norm(logits, p=2, dim=1) ** 2).mean()
+        return loss + reg
 
 class SmallGpt2(nn.Module):
     def __init__(self, num_vars: int, embed_dim: int, loss_fn: str = "bce"):
@@ -84,7 +97,7 @@ class SmallTfA(nn.Module):
 
     @property
     def desc_str(self):
-        return f"tfa_{self.loss_fn}_n{self.num_vars}_d{self.embed_dim}"
+        return f"tfa_n{self.num_vars}_d{self.embed_dim}_{self.loss_fn}"
 
     def forward(self, tokens: torch.LongTensor, labels: Optional[torch.LongTensor] = None):
         N, L, _ = tokens.shape
@@ -104,6 +117,8 @@ class SmallTfA(nn.Module):
                 loss = nn.BCEWithLogitsLoss()(logits, labels.float())
             elif self.loss_fn == "margin":
                 loss = MarginLoss()(logits, labels)
+            elif self.loss_fn == "regcat":
+                loss = RegCatLoss()(logits, labels)
             else:
                 raise ValueError(f"Unrecognized loss_fn {self.loss_fn}")
 
@@ -131,7 +146,7 @@ class SmallTfB(nn.Module):
 
     @property
     def desc_str(self):
-        return f"tfb_{self.loss_fn}_n{self.num_vars}_d{self.embed_dim}"
+        return f"tfb_n{self.num_vars}_{self.loss_fn}"
 
     def forward(self, tokens: torch.LongTensor, labels: Optional[torch.LongTensor] = None):
         N, L, _ = tokens.shape
@@ -152,6 +167,8 @@ class SmallTfB(nn.Module):
                 loss = nn.BCEWithLogitsLoss()(logits, labels.float())
             elif self.loss_fn == "margin":
                 loss = MarginLoss()(logits, labels)
+            elif self.loss_fn == "regcat":
+                loss = RegCatLoss()(logits, labels)
             else:
                 raise ValueError(f"Unrecognized loss_fn {self.loss_fn}")
 
@@ -167,16 +184,14 @@ class SmallTfC(nn.Module):
         self,
         num_vars: int,
         attn_fn: str = "relu",
-        use_bias: bool = True,
         loss_fn: str = "bce",
-        init_ones: bool = True,
+        init_value: Optional[float] = None,
     ):
         super().__init__()
         self.num_vars = num_vars
         self.embed_dim = embed_dim = 2 * num_vars + 1
         self.Wa = nn.Linear(embed_dim, embed_dim, bias=False)
-        self.Wb = nn.Linear(embed_dim, num_vars, bias=use_bias)
-        self.use_bias = use_bias
+        self.Wb = nn.Linear(embed_dim, num_vars, bias=True)
         self.loss_fn = loss_fn
         
         self.attn_fn_str = attn_fn
@@ -189,16 +204,20 @@ class SmallTfC(nn.Module):
         else:
             raise ValueError(f"Unrecognized attn_fn {attn_fn}")
 
-        self.init_ones = init_ones
-        if init_ones:
-            self.Wa.weight.data.fill_(1)
-            self.Wb.weight.data.fill_(1)
+        self.init_value = init_value
+        if init_value is not None:
+            self.Wa.weight.data.fill_(init_value)
+            if self.Wa.bias is not None:
+                self.Wa.bias.data.fill_(init_value)
+
+            self.Wb.weight.data.fill_(init_value)
+            if self.Wb.bias is not None:
+                self.Wb.bias.data.fill_(init_value)
 
     @property
     def desc_str(self):
-        bstr = "B1" if self.use_bias else "B0"
-        iostr = "Init1" if self.init_ones else "InitR"
-        return f"tfc_{self.attn_fn_str}_{bstr}_{self.loss_fn}_n{self.num_vars}_d{self.embed_dim}_Init{iostr}"
+        ivstr = "IvR" if self.init_value is None else f"Iv{self.init_value}"
+        return f"tfc_{self.attn_fn_str}_n{self.num_vars}_{self.loss_fn}_{ivstr}"
 
     def forward(self, tokens: torch.LongTensor, labels: Optional[torch.LongTensor] = None):
         N, L, _ = tokens.shape
@@ -217,6 +236,8 @@ class SmallTfC(nn.Module):
                 loss = nn.BCEWithLogitsLoss()(logits, labels.float())
             elif self.loss_fn == "margin":
                 loss = MarginLoss()(logits, labels)
+            elif self.loss_fn == "regcat":
+                loss = RegCatLoss()(logits, labels)
             else:
                 raise ValueError(f"Unrecognized loss_fn {self.loss_fn}")
 

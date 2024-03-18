@@ -15,27 +15,23 @@ from utils.metrics import *
 from utils.model_loader_utils import load_checkpoint_from_wandb
 from transformers import Trainer, TrainingArguments
 
-seed = 121
+seed = 616
 torch.manual_seed(seed)
 
-n = 32
+n = 16
 num_epochs = 64
-batch_size = int(2**8)
+batch_size = int(2**9)
 output_dir = str(Path(DUMP_DIR, "small_experiments"))
-dataset_len = int(2**17)
+dataset_len = int(2**16)
 
-models = [SmallTfC(n, attn_fn=a, use_bias=b, loss_fn=l, init_ones=i1) \
-    for a in ["relu", "sigmoid", "softplus"] \
-    for b in [True] \
-    for l in ["margin"] \
-    for i1 in [True, False]
-] + [
-    # SmallTfA(n, 1 + 2*n, loss_fn="bce"),
-    SmallTfA(n, 1 + 2*n, loss_fn="margin"),
-    # SmallTfB(n, loss_fn="bce"),
-    SmallTfB(n, loss_fn="margin"),
-]
-
+models = [SmallTfC(n, attn_fn=a, loss_fn=l, init_value=iv) \
+    for l in ["margin", "regcat"] \
+    for a in ["sigmoid"] \
+    for iv in [0, None]
+] \
+    + [SmallTfA(n, 1 + 2*n, loss_fn=l) for l in ["margin", "regcat"]] \
+    + [SmallTfB(n, loss_fn=l) for l in ["margin", "regcat"]] \
+    + []
 
 datasets = [
     SmallTfSuccTokensDataset(n, dataset_len),
@@ -47,6 +43,7 @@ total_iters = len(models) * len(datasets)
 
 for (di, dataset) in enumerate(datasets):
     for (mi, model) in enumerate(models):
+        torch.manual_seed(seed)
         print(f"Starting iteration {di*len(models) + mi + 1}/{total_iters}")
 
         desc_str = f"SMS_{model.desc_str}_{dataset.desc_str}_seed{seed}"
@@ -60,8 +57,8 @@ for (di, dataset) in enumerate(datasets):
             evaluation_strategy = "epoch",
             report_to = "wandb",
             run_name = desc_str,
-            logging_steps = 16,
-            learning_rate = 1e-3,
+            logging_steps = 32,
+            learning_rate = 1e-2,
             warmup_ratio = 0.10,
             save_strategy = "epoch",
             save_total_limit = 2

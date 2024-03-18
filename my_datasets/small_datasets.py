@@ -34,17 +34,17 @@ class SmallTfSuccTokensDataset(Dataset):
         all_as = (torch.rand(r, n) < self.ante_prob).long()
         all_bs = (torch.rand(r, n) < self.conseq_prob).long()
 
-        # Determine which antes to comprimse the starting state
-        hits = (torch.rand(r, 1) < 1/r).long()
-        state = (all_as * hits).sum(dim=0).clamp(0,1)
-
-        # Knowing the starting state lets us calculate what the successor is
-        succ = (state + (all_bs * hits).sum(dim=0)).clamp(0,1)
+        # Determine which antes to use in the current state
+        todo = (torch.rand(r, 1) < 1/r).long()
+        state = (all_as * todo).sum(dim=0).clamp(0,1)
 
         # Tokens is just the rules with the state concated on
         rules_tokens = torch.cat([all_as, all_bs], dim=1)
         state_token = torch.cat([torch.zeros(n), state])
         all_tokens = torch.cat([rules_tokens, state_token.view(1,2*n)], dim=0)
+
+        succ, _ = step_rules(all_tokens.unsqueeze(0), state.unsqueeze(0))
+        succ = succ.squeeze()
 
         return {
             "tokens": all_tokens,

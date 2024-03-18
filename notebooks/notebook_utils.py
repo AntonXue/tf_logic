@@ -12,6 +12,26 @@ from experiments import *
 
 NOTEBOOKS_DIR = str(Path(__file__).resolve().parent)
 
+WANDB_PROJECT = "transformer_friends/transformer_friends"
+
+
+def download_artifact(artifact_id, quiet=False, overwrite=False):
+    artifact_dir = Path(NOTEBOOKS_DIR, "artifacts", artifact_id)
+    if not artifact_dir.is_dir() or overwrite:
+        if not quiet:
+            print(f"Querying id: {artifact_id}")
+
+        api = wandb.Api()
+        artifact = api.artifact(str(Path(WANDB_PROJECT, artifact_id)), type="model")
+
+        if not quiet:
+            print(f"Downloading: {artifact}")
+
+        artifact_dir = artifact.download()
+    
+    artifact_file = Path(artifact_dir, "model.safetensors")
+    return artifact_file
+
 
 def load_arks_model_and_dataset(
     embed_dim: int,
@@ -27,9 +47,7 @@ def load_arks_model_and_dataset(
     batch_size: int = 1024,
     seed: int = 201,
     tag: str = "v0",
-    wandb_project: str = "transformer_friends/transformer_friends",
     quiet: bool = False,
-    overwrite: bool = False
 ):
     model = AutoTaskModel.from_kwargs(
         task_name = "autoreg_ksteps",
@@ -50,27 +68,13 @@ def load_arks_model_and_dataset(
             f"_cl{chain_len_range[0]}-{chain_len_range[1]}" + \
             f"_ntr{num_trains}_ntt{num_evals}_bsz{batch_size}_seed{seed}" + f":{tag}"
 
-    artifact_dir = Path(NOTEBOOKS_DIR, "artifacts", artifact_id)
-    if not artifact_dir.is_dir() or overwrite:
-        if not quiet:
-            print(f"Querying id: {artifact_id}")
-
-        api = wandb.Api()
-        artifact = api.artifact(str(Path(wandb_project, artifact_id)), type="model")
-
-        if not quiet:
-            print(f"Downloading: {artifact}")
-
-        artifact_dir = artifact.download()
-
-    artifact_file = Path(artifact_dir, "model.safetensors")
+    artifact_file = download_artifact(artifact_id)
 
     with safe_open(str(artifact_file), framework="pt", device="cpu") as f:
         tensors = {k: f.get_tensor(k) for k in f.keys()}
 
     model.load_state_dict(tensors)
     model.eval()
-    
     dataset = AutoregKStepsTokensDataset(
         num_vars = num_vars,
         num_rules_range = num_rules_range,
@@ -100,9 +104,7 @@ def load_mytfs_model_and_dataset(
     batch_size: int = 512,
     seed: int = 501,
     tag: str = "v0",
-    wandb_project: str = "transformer_friends/transformer_friends",
     quiet: bool = False,
-    overwrite: bool = False
 ):
 
     embed_dim = 2 * num_vars + 1
@@ -127,27 +129,12 @@ def load_mytfs_model_and_dataset(
             f"_cl{chain_len_range[0]}-{chain_len_range[1]}" + \
             f"_ntr{num_trains}_ntt{num_evals}_bsz{batch_size}_seed{seed}" + f":{tag}"
 
-    artifact_dir = Path(NOTEBOOKS_DIR, "artifacts", artifact_id)
-    if not artifact_dir.is_dir() or overwrite:
-        if not quiet:
-            print(f"Querying id: {artifact_id}")
-
-        api = wandb.Api()
-        artifact = api.artifact(str(Path(wandb_project, artifact_id)), type="model")
-
-        if not quiet:
-            print(f"Downloading: {artifact}")
-
-        artifact_dir = artifact.download()
-
-    artifact_file = Path(artifact_dir, "model.safetensors")
-
+    artifact_file = download_artifact(artifact_id)
     with safe_open(str(artifact_file), framework="pt", device="cpu") as f:
         tensors = {k: f.get_tensor(k) for k in f.keys()}
 
     model.load_state_dict(tensors)
     model.eval()
-
     dataset = MyTfSuccTokensDataset(
         num_vars = num_vars,
         num_rules_range = num_rules_range,
@@ -161,3 +148,45 @@ def load_mytfs_model_and_dataset(
     return model, dataset
 
 
+def load_small_simple_dataset(num_vars, dataset_len=1000):
+    return SmallTfSuccTokensDataset(num_vars, dataset_len=dataset_len)
+
+
+def load_tfa(n, d, loss_fn, seed, dataset="Dsimple"):
+    artifact_id = f"model-SMS_tfa_{loss_fn}_n{n}_d{d}_{dataset}_n{n}_ap0.5_bp0.5_seed{seed}:v0"
+    artifact_file = download_artifact(artifact_id)
+    with safe_open(str(artifact_file), framework="pt", device="cpu") as f:
+        tensors = {k: f.get_tensor(k) for k in f.keys()}
+
+    model = SmallTfA(n, d, loss_fn)
+    model.load_state_dict(tensors)
+    model.eval()
+    return model
+
+
+def load_tfb(n, loss_fn, seed, dataset="Dsimple"):
+    d = 2*n + 1
+    artifact_id = f"model-SMS_tfb_{loss_fn}_n{n}_d{d}_{dataset}_n{n}_ap0.5_bp0.5_seed{seed}:v0"
+    artifact_file = download_artifact(artifact_id)
+    with safe_open(str(artifact_file), framework="pt", device="cpu") as f:
+        tensors = {k: f.get_tensor(k) for k in f.keys()}
+
+    model = SmallTfB(n, loss_fn)
+    model.load_state_dict(tensors)
+    model.eval()
+    return model
+
+def load_tfc(n, attn_fn, loss_fn, seed, init_value=None, use_bias=True, dataset="Dsimple"):
+    d = 2*n+1
+    bstr = "B1" if use_bias else "B0"
+    ivstr = "IvR" if init_value is None else f"Iv{init_value}"
+    artifact_id = f"model-SMS_tfc_{attn_fn}_{bstr}_{loss_fn}" + \
+                f"_n{n}_d{d}_{ivstr}_{dataset}_n{n}_ap0.5_bp0.5_seed{seed}:v0"
+    artifact_file = download_artifact(artifact_id)
+    with safe_open(str(artifact_file), framework="pt", device="cpu") as f:
+        tensors = {k: f.get_tensor(k) for k in f.keys()}
+
+    model = SmallTfC(n, attn_fn, use_bias, loss_fn, init_value)
+    model.load_state_dict(tensors)
+    model.eval()
+    return model
