@@ -132,8 +132,17 @@ class MinecraftAutoregKStepsBaseDataset(Dataset):
         Returns:
             recipes: List of all recipes for an item (all ways to craft an item)
         """
+        # print(f"Item to craft: {item}")
+        # print(f"Items so far: {items_so_far}")
+        # print(f"Depth: {depth}")
+        # print("----" * 10)
         recipes = []
         for antecedents, consequents, _ in rules:
+            # If any antececent is in items so far, skip
+            if items_so_far is not None and any(
+                antecedent in items_so_far for antecedent in antecedents
+            ):
+                continue
             if item in consequents:
                 recipe = [(antecedents, item, depth)]
                 if items_so_far is None:
@@ -143,6 +152,7 @@ class MinecraftAutoregKStepsBaseDataset(Dataset):
                 antecedent_recipes = []
                 for antecedent in antecedents:
                     if antecedent in items_so_far:
+                        # print("Antecedent already in items so far: ", antecedent)
                         continue
                     all_recipes_for_antecedent = self._get_all_recipes_for_item(
                         antecedent, rules, items_so_far, depth + 1
@@ -201,8 +211,16 @@ class MinecraftAutoregKStepsBaseDataset(Dataset):
                 consequent = rule[1]
                 depth = rule[2]
                 for other_rule in recipe:
-                    if other_rule[1] in antecedents and other_rule[2] > depth:
+                    if other_rule[1] in antecedents and other_rule[2] <= depth:
+                        print("----" * 10)
+                        print("Found loop: ", rule, other_rule)
+                        print(f"Recipe before: {recipe}")
+                        print("----" * 10)
                         recipe.remove(other_rule)
+            # If the recipe doesn't have depth 0, remove it
+            # TODO: Move this to a higher level later
+            if not any(rule[2] == 0 for rule in recipe):
+                recipes.remove(recipe)
         return recipes
 
     def _get_components(self, recipe: list):
@@ -224,6 +242,11 @@ class MinecraftAutoregKStepsBaseDataset(Dataset):
             for antecedent in rule[0]
             if antecedent not in derivables
         ]
+        # print("Recipe: ", recipe)
+        # print(f"Rules: {rules}")
+        # print("Derivables: ", derivables)
+        # print(f"Facts: {facts}")
+        # print("----" * 10)
         target = [rule[1] for rule in recipe if rule[2] == 0][0]
 
         return {"rules": rules, "facts": facts, "target": target}
@@ -342,6 +365,9 @@ class MinecraftAutoregKStepsBaseDataset(Dataset):
         for item in all_items:
             all_recipes_for_item = self._get_all_recipes_for_item(item, rules)
             for recipe in all_recipes_for_item:
+                # print(f"Max depth: {max([rule[2] for rule in recipe])}")
+                # print(recipe)
+                # print("----" * 10)
                 # Check if depth < num_steps
                 if max([rule[2] for rule in recipe]) < self.num_steps:
                     continue
@@ -350,6 +376,8 @@ class MinecraftAutoregKStepsBaseDataset(Dataset):
                     recipe_with_num_steps = [
                         rule for rule in recipe if rule[2] <= self.num_steps
                     ]
+                    # print(f"Recipe with num steps: {recipe_with_num_steps}")
+                    # print("=======" * 10)
                 else:
                     recipe_with_num_steps = recipe
                 # Add the recipe to the list of all recipes
@@ -360,6 +388,10 @@ class MinecraftAutoregKStepsBaseDataset(Dataset):
         print("Number of unique recipes: ", len(all_recipes))
         all_recipes = self._remove_loops(all_recipes)
         print("Number of unique recipes after removing loops: ", len(all_recipes))
+
+        # for recipe in all_recipes:
+        #     print("Recipe: ", recipe)
+        #     print("----" * 10)
         return all_recipes
 
     def _generate_dataset_with_distractions(self):
@@ -371,6 +403,9 @@ class MinecraftAutoregKStepsBaseDataset(Dataset):
 
         dataset = []
         num_samples_per_recipe = self.dataset_len // len(self.dataset)
+        # TODO: Add support for num_samples_per_recipe < 2
+        if num_samples_per_recipe < 2:
+            raise Exception("Number of samples per recipe should be at least 2.")
         num_qed_samples = num_samples_per_recipe // 2
         for recipe in self.dataset:
             qed_samples = [
@@ -466,6 +501,8 @@ class MinecraftAutoregKStepsBaseDataset(Dataset):
             "recipe": recipe,
             "cot_states": cot_states,
             "num_vars": recipe["num_vars"] if "num_vars" in recipe else None,
+            "target": recipe["target"].replace("minecraft:", "").replace("_", " ") if self.example_format == "text"
+                    else recipe["target"].replace("minecraft:", "")
         }
 
 
@@ -478,6 +515,7 @@ class MinecraftAutoregKStepsNVarsDataset(MinecraftAutoregKStepsBaseDataset):
         num_vars_range: tuple[int, int],
         dataset_len: int,
         max_num_distractors: int = 2,  # Not used
+        max_num_distractors_triggerable: int = 99999,
         seed: int = 101,
         tokenizer=None,
         padding: str = "longest",
@@ -489,6 +527,7 @@ class MinecraftAutoregKStepsNVarsDataset(MinecraftAutoregKStepsBaseDataset):
         ), "Minimum number of variables should be less than or equal to maximum number of variables."
         self.min_num_vars = num_vars_range[0]
         self.max_num_vars = num_vars_range[1]
+        self.max_num_distractors_triggerable = max_num_distractors_triggerable
         super().__init__(
             num_steps=num_steps,
             dataset_len=dataset_len,
@@ -541,20 +580,23 @@ class MinecraftAutoregKStepsNVarsDataset(MinecraftAutoregKStepsBaseDataset):
             try_vars_in_recipe = vars_in_recipe.union(distractor_vars)
             if len(try_vars_in_recipe) > self.max_num_vars:
                 break
+            # If the distractor recipe adds no new variables, skip
+            if len(try_vars_in_recipe) == num_vars_in_recipe:
+                continue
             vars_in_recipe = try_vars_in_recipe
             num_vars_in_recipe = len(vars_in_recipe)
             distractor_components.append(self._get_components(distractor_recipe))
 
+        distractor_facts = set(antecedent for distractor in distractor_components for antecedent in distractor["rules"][0][0])
+        # Limit the number of distractors to the maximum number of distractors triggerable
+        distractor_facts = random.sample(distractor_facts, min(self.max_num_distractors_triggerable, len(distractor_facts)))
+
         if qed:
+            facts = set(recipe_components["facts"]).union(distractor_facts)
             return {
                 "rules": recipe_components["rules"]
                 + [distractor["rules"][0] for distractor in distractor_components],
-                "facts": recipe_components["facts"]
-                + [
-                    antecedent
-                    for distractor in distractor_components
-                    for antecedent in distractor["rules"][0][0]
-                ],
+                "facts": list(facts),
                 "target": recipe_components["target"],
                 "qed": True,
                 "num_vars": num_vars_in_recipe,
@@ -562,18 +604,15 @@ class MinecraftAutoregKStepsNVarsDataset(MinecraftAutoregKStepsBaseDataset):
             }
 
         # If not qed, choose a random subset of facts (cannot include all facts)
+        facts = random.sample(
+            recipe_components["facts"],
+            random.randint(0, len(recipe_components["facts"]) - 1),
+        ) + list(distractor_facts)
+        facts = set(facts)
         return {
             "rules": recipe_components["rules"]
             + [distractor["rules"][0] for distractor in distractor_components],
-            "facts": random.sample(
-                recipe_components["facts"],
-                random.randint(0, len(recipe_components["facts"]) - 1),
-            )
-            + [
-                antecedent
-                for distractor in distractor_components
-                for antecedent in distractor["rules"][0][0]
-            ],
+            "facts": list(facts),
             "target": recipe_components["target"],
             "qed": False,
             "num_vars": num_vars_in_recipe,

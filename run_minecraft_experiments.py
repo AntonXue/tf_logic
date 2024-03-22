@@ -34,7 +34,7 @@ def get_gpu_tracker() -> dict:
         # If the CUDA_VISIBLE_DEVICES environment variable is not set, use all GPUs
         import torch
         gpu_list = [int(x) for x in range(torch.cuda.device_count())]
-    gpu_list = [0]
+    # gpu_list = [0, 1]
     return {gpu: None for gpu in gpu_list}
 
 

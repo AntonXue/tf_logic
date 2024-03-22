@@ -1,6 +1,7 @@
 """
 Dataset utils.
 """
+import random
 
 def stringify_recipe_with_tags(
         recipe: dict,
@@ -19,6 +20,8 @@ def stringify_recipe_with_tags(
         cot_states_start_tag: str = "[STATES_START]",
         cot_states_end_tag: str = "[STATES_END]",
         cot_states_separator: str = " , ",
+        include_antecedents_in_cot_states: bool = True,
+        shuffle: bool = True
     ):
         """Convert the components of a recipe to a string representation with tags.
 
@@ -39,10 +42,15 @@ def stringify_recipe_with_tags(
             cot_states_start_tag (str, optional): The start tag for the COT states. Defaults to "[STATES_START]".
             cot_states_end_tag (str, optional): The end tag for the COT states. Defaults to "[STATES_END]".
             cot_states_separator (str, optional): The separator for the COT states. Defaults to " , ".
+            include_antecedents_in_cot_states (bool, optional): Whether to include the antecedents in the COT states. Defaults to True.
+            shuffle (bool, optional): Whether to shuffle the facts and rules. Defaults to True.
 
         Returns:
             str: String representation of the recipe (<rules_start_tag> <rules> <rules_end_tag> <facts_start_tag> <facts> <facts_end_tag> <target_start_tag> <target> <target_end_tag>)
         """
+        if shuffle:
+            random.shuffle(recipe["rules"])
+            random.shuffle(recipe["facts"])
 
         rules = rules_separator.join(
             [
@@ -56,6 +64,13 @@ def stringify_recipe_with_tags(
             final_str = f"{rule_start_tag} {rules} {rule_end_tag} {fact_start_tag} {facts} {fact_end_tag} {target_start_tag} {target} {target_end_tag}"
         elif task_type == "next_token_prediction":
             states = cot_states_separator.join([state["fact"] for state in cot_states])
+            if include_antecedents_in_cot_states:
+                 states = cot_states_separator.join(
+                      [
+                           f"{rules_ante_separator.join(state['antecedents'])} {rules_ante_conseq_separator} {state['fact']}"
+                            for state in cot_states
+                      ]
+                 )
             final_str = f"{rule_start_tag} {rules} {rule_end_tag} {fact_start_tag} {facts} {fact_end_tag} {cot_states_start_tag} {states} {cot_states_end_tag}"
         else:
             raise Exception("Task type not supported. Supported task types: binary_classification, next_token_prediction")
@@ -64,7 +79,8 @@ def stringify_recipe_with_tags(
 def stringify_recipe_with_text(
         recipe: dict,
         task_type: str,
-        cot_states: list
+        cot_states: list,
+        shuffle: bool = True
 ):
     """Convert the components of a recipe to a string representation with text.
     The text representation is as follows:
@@ -75,10 +91,14 @@ def stringify_recipe_with_text(
         recipe (dict): The components of the recipe.
         task_type (str): The type of task. Supported task types: binary_classification, next_token_prediction
         cot_states (list): The list of COT states with each item being a dict with antecedents and fact.
+        shuffle (bool, optional): Whether to shuffle the facts and rules. Defaults to True.
 
     Returns:
         str: String representation of the recipe
     """
+    if shuffle:
+        random.shuffle(recipe["rules"])
+        random.shuffle(recipe["facts"])
 
     rules = " ".join(
         [
@@ -99,7 +119,9 @@ def stringify_recipe_with_text(
                 for state in cot_states
             ]
         )
-        final_str = f"{rules}\n{facts}\n{states}".replace("_", " ")
+        # final_str = f"{rules}\n{facts}\n{states}".replace("_", " ")
+        final_str = f"""Here are some crafting recipes: \n{rules}\nHere are some items I have: \n{facts}\nBased on the items I have and the crafting recipes, I can create the following items: \n{states}\nI cannot create any other items."""
+        final_str = final_str.replace("_", " ")
     else:
         raise Exception("Task type not supported. Supported task types: binary_classification, next_token_prediction")
     return final_str.replace("minecraft:", "")
