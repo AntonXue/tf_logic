@@ -36,7 +36,7 @@ class RegCatLoss(nn.Module):
         loss = -(logits.float() * labels.float()).sum(dim=1).mean()
 
         _, n = logits.shape
-        rho = 0.5 if self.rho is None else rho
+        rho = (1 / (2*n)) if self.rho is None else rho
         reg = rho * (torch.norm(logits, p=2, dim=1) ** 2).mean()
         return loss + reg
 
@@ -201,6 +201,8 @@ class SmallTfC(nn.Module):
             self.attn_fn = F.sigmoid
         elif attn_fn == "softplus":
             self.attn_fn = F.softplus
+        elif attn_fn == "softmax":
+            self.attn_fn = lambda x: F.softmax(x, dim=-1)
         else:
             raise ValueError(f"Unrecognized attn_fn {attn_fn}")
 
@@ -245,5 +247,73 @@ class SmallTfC(nn.Module):
             loss = loss,
             logits = logits,
         )
+
+
+
+class SmallTfD(nn.Module):
+    def __init__(
+        self,
+        num_vars: int,
+        attn_fn: str = "relu",
+        loss_fn: str = "bce",
+        init_value: Optional[float] = None,
+    ):
+        super().__init__()
+        self.num_vars = num_vars
+        self.embed_dim = embed_dim = 2 * num_vars + 1
+        
+        self.Wa = nn.Linear(embed_dim, embed_dim, bias=False)
+        self.c = nn.Parameter(torch.randn(()))
+
+        self.loss_fn = loss_fn
+        
+        self.attn_fn_str = attn_fn
+        if attn_fn == "relu":
+            self.attn_fn = F.relu
+        elif attn_fn == "sigmoid":
+            self.attn_fn = F.sigmoid
+        elif attn_fn == "softplus":
+            self.attn_fn = F.softplus
+        elif attn_fn == "softmax":
+            self.attn_fn = lambda x: F.softmax(x, dim=-1)
+        else:
+            raise ValueError(f"Unrecognized attn_fn {attn_fn}")
+
+        self.init_value = init_value
+        if init_value is not None:
+            self.Wa.weight.data.fill_(init_value)
+            self.c.data.fill_(init_value)
+
+    @property
+    def desc_str(self):
+        ivstr = "IvR" if self.init_value is None else f"Iv{self.init_value}"
+        return f"tfd_{self.attn_fn_str}_n{self.num_vars}_{self.loss_fn}_{ivstr}"
+
+    def forward(self, tokens: torch.LongTensor, labels: Optional[torch.LongTensor] = None):
+        N, L, _ = tokens.shape
+        device = tokens.device
+
+        x = torch.cat([torch.ones(N,L,1).to(device), tokens], dim=2).float()
+        wts = self.attn_fn(torch.bmm(self.Wa(x), x.transpose(1,2)))
+        a = torch.bmm(wts, x)
+        y = a[:,:,-self.num_vars:] + self.c
+        logits = y[:,-1]
+
+        loss = None
+        if labels is not None:
+            if self.loss_fn == "bce":
+                loss = nn.BCEWithLogitsLoss()(logits, labels.float())
+            elif self.loss_fn == "margin":
+                loss = MarginLoss()(logits, labels)
+            elif self.loss_fn == "regcat":
+                loss = RegCatLoss()(logits, labels)
+            else:
+                raise ValueError(f"Unrecognized loss_fn {self.loss_fn}")
+
+        return SmallSuccOutput(
+            loss = loss,
+            logits = logits,
+        )
+
 
 

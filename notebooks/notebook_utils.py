@@ -153,7 +153,7 @@ def load_small_simple_dataset(num_vars, dataset_len=1000):
 
 
 def load_tfa(n, d, loss_fn, seed, dataset="Dsimple"):
-    artifact_id = f"model-SMS_tfa_{loss_fn}_n{n}_d{d}_{dataset}_n{n}_ap0.5_bp0.5_seed{seed}:v0"
+    artifact_id = f"model-SMS_tfa_n{n}_d{d}_{loss_fn}_{dataset}_n{n}_ap0.5_bp0.5_seed{seed}:v0"
     artifact_file = download_artifact(artifact_id)
     with safe_open(str(artifact_file), framework="pt", device="cpu") as f:
         tensors = {k: f.get_tensor(k) for k in f.keys()}
@@ -165,8 +165,7 @@ def load_tfa(n, d, loss_fn, seed, dataset="Dsimple"):
 
 
 def load_tfb(n, loss_fn, seed, dataset="Dsimple"):
-    d = 2*n + 1
-    artifact_id = f"model-SMS_tfb_{loss_fn}_n{n}_d{d}_{dataset}_n{n}_ap0.5_bp0.5_seed{seed}:v0"
+    artifact_id = f"model-SMS_tfb_n{n}_{loss_fn}_{dataset}_n{n}_ap0.5_bp0.5_seed{seed}:v0"
     artifact_file = download_artifact(artifact_id)
     with safe_open(str(artifact_file), framework="pt", device="cpu") as f:
         tensors = {k: f.get_tensor(k) for k in f.keys()}
@@ -176,17 +175,15 @@ def load_tfb(n, loss_fn, seed, dataset="Dsimple"):
     model.eval()
     return model
 
-def load_tfc(n, attn_fn, loss_fn, seed, init_value=None, use_bias=True, dataset="Dsimple"):
-    d = 2*n+1
-    bstr = "B1" if use_bias else "B0"
+def load_tfc(n, attn_fn, loss_fn, seed, init_value=None, dataset="Dsimple"):
     ivstr = "IvR" if init_value is None else f"Iv{init_value}"
-    artifact_id = f"model-SMS_tfc_{attn_fn}_{bstr}_{loss_fn}" + \
-                f"_n{n}_d{d}_{ivstr}_{dataset}_n{n}_ap0.5_bp0.5_seed{seed}:v0"
+    artifact_id = f"model-SMS_tfc_{attn_fn}_n{n}_{loss_fn}_{ivstr}" + \
+                f"_{dataset}_n{n}_ap0.5_bp0.5_seed{seed}:v0"
     artifact_file = download_artifact(artifact_id)
     with safe_open(str(artifact_file), framework="pt", device="cpu") as f:
         tensors = {k: f.get_tensor(k) for k in f.keys()}
 
-    model = SmallTfC(n, attn_fn, use_bias, loss_fn, init_value)
+    model = SmallTfC(n, attn_fn, loss_fn, init_value)
     model.load_state_dict(tensors)
     model.eval()
     return model

@@ -15,23 +15,30 @@ from utils.metrics import *
 from utils.model_loader_utils import load_checkpoint_from_wandb
 from transformers import Trainer, TrainingArguments
 
-seed = 616
+seed = 618
 torch.manual_seed(seed)
 
 n = 16
-num_epochs = 64
+num_epochs = 128
 batch_size = int(2**9)
 output_dir = str(Path(DUMP_DIR, "small_experiments"))
 dataset_len = int(2**16)
 
-models = [SmallTfC(n, attn_fn=a, loss_fn=l, init_value=iv) \
-    for l in ["margin", "regcat"] \
-    for a in ["sigmoid"] \
-    for iv in [0, None]
-] \
-    + [SmallTfA(n, 1 + 2*n, loss_fn=l) for l in ["margin", "regcat"]] \
-    + [SmallTfB(n, loss_fn=l) for l in ["margin", "regcat"]] \
-    + []
+models = \
+    [
+        SmallTfD(n, attn_fn=a, loss_fn=l, init_value=iv) \
+            for l in ["margin"] \
+            for a in ["sigmoid"] \
+            for iv in [0, None]
+    ] + \
+    [
+        SmallTfC(n, attn_fn=a, loss_fn=l, init_value=iv) \
+            for l in ["margin"] \
+            for a in ["softmax"] \
+            for iv in [0, None]
+    ]
+    # + [SmallTfA(n, 1 + 2*n, loss_fn=l) for l in ["margin", "regcat"]] \
+    # + [SmallTfB(n, loss_fn=l) for l in ["margin", "regcat"]] \
 
 datasets = [
     SmallTfSuccTokensDataset(n, dataset_len),
