@@ -65,7 +65,7 @@ for (di, dataset) in enumerate(datasets):
             report_to = "wandb",
             run_name = desc_str,
             logging_steps = 32,
-            learning_rate = 1e-2,
+            learning_rate = 5e-3,
             warmup_ratio = 0.10,
             save_strategy = "epoch",
             save_total_limit = 2

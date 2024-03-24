@@ -183,6 +183,11 @@ class SyntheticExperimentsArguments:
 
     """ Training details """
 
+    learning_rate: Optional[float] = field(
+        default = 1e-4,
+        metadata = {"help": "Learning rate."}
+    )
+
     train_batch_size: Optional[int] = field(
         default = 8,
         metadata = {"help": "The train batch size."}
@@ -209,7 +214,7 @@ class SyntheticExperimentsArguments:
     )
 
     logging_steps: int = field(
-        default = 10,
+        default = 32,
         metadata = {"help": "How often the HF's Trainer logs."}
     )
 
@@ -229,7 +234,8 @@ def synexp_args_to_wandb_run_name(args: SyntheticExperimentsArguments):
             f"_ap{args.min_ante_prob:.2f}-{args.max_ante_prob:.2f}" + \
             f"_bp{args.min_conseq_prob:.2f}-{args.max_conseq_prob:.2f}" + \
             f"_cl{args.min_chain_len}-{args.max_chain_len}" + \
-            f"_ntr{args.train_len}_ntt{args.eval_len}_bsz{args.train_batch_size}" + \
+            f"_ntr{args.train_len}_ntt{args.eval_len}_bsz{args.train_batch_size}_" + \
+            f"_lr{args.learning_rate:.5f}" + \
             f"_seed{args.seed}"
 
     elif args.syn_exp_name == "one_shot_str":
@@ -240,6 +246,7 @@ def synexp_args_to_wandb_run_name(args: SyntheticExperimentsArguments):
             f"_bp{args.min_conseq_prob:.2f}-{args.max_conseq_prob:.2f}" + \
             f"_cl{args.min_chain_len}-{args.max_chain_len}" + \
             f"_ntr{args.train_len}_ntt{args.eval_len}_bsz{args.train_batch_size}" + \
+            f"_lr{args.learning_rate:.5f}" + \
             f"_seed{args.seed}"
 
     elif args.syn_exp_name == "autoreg_ksteps":
@@ -251,6 +258,7 @@ def synexp_args_to_wandb_run_name(args: SyntheticExperimentsArguments):
             f"_bp{args.min_conseq_prob:.2f}-{args.max_conseq_prob:.2f}" + \
             f"_cl{args.min_chain_len}-{args.max_chain_len}" + \
             f"_ntr{args.train_len}_ntt{args.eval_len}_bsz{args.train_batch_size}" + \
+            f"_lr{args.learning_rate:.5f}" + \
             f"_seed{args.seed}"
 
     else:
@@ -348,6 +356,7 @@ def make_trainer_for_synthetic(
             auto_find_batch_size = args.auto_find_batch_size,
             evaluation_strategy = "epoch",
             report_to = report_to,
+            learning_rate = args.learning_rate,
             run_name = synexp_args_to_wandb_run_name(args),
             logging_steps = args.logging_steps,
             warmup_ratio = 0.10,
@@ -412,6 +421,7 @@ def make_trainer_for_synthetic(
             auto_find_batch_size = args.auto_find_batch_size,
             evaluation_strategy = "epoch",
             report_to = report_to,
+            learning_rate = args.learning_rate,
             run_name = synexp_args_to_wandb_run_name(args),
             logging_steps = args.logging_steps,
             warmup_ratio = 0.10,
@@ -473,7 +483,7 @@ def make_trainer_for_synthetic(
             report_to = report_to,
             run_name = synexp_args_to_wandb_run_name(args),
             logging_steps = args.logging_steps,
-            learning_rate = 5e-4,
+            learning_rate = args.learning_rate,
             warmup_ratio = 0.10,
             save_strategy = "epoch",
             save_total_limit = 2
