@@ -1,8 +1,8 @@
 [{
     "model_name": ["mytf"],
     "syn_exp_name": ["autoreg_ksteps"],
-    "seed": [1001,1002,1003],
-    "num_steps": [1,2,3],
+    "seed": [1101],
+    "num_steps": [1],
     "min_chain_len": [4],
     "max_chain_len": [5],
     "embed_dim": [16, 32, 48, 64, 80, 96, 112, 128],
@@ -19,7 +19,7 @@
     "eval_len": [32768],
     "num_epochs": [8],
     "train_batch_size": [64],
-    "eval_batch_size": [512],
+    "eval_batch_size": [128],
     "learning_rate": [0.0005]
 }]
 

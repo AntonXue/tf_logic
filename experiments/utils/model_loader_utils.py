@@ -162,6 +162,7 @@ def load_stats_from_wandb(
     ante_prob_range: tuple[float, float] = (0.3, 0.5),
     conseq_prob_range: tuple[float, float] = (0.2, 0.3),
     state_prob_range: tuple[float, float] = (0.5, 0.5),
+    learning_rate: Optional[float] = None,
     train_len: int = 32768,
     eval_len: int = 4096,
     wandb_project: str = "transformer_friends/transformer_friends",
@@ -174,6 +175,7 @@ def load_stats_from_wandb(
     exp_type: str = None, # Set this to "attack" if you want to load attack results
     attack_params: dict = None # Set this to the attack params if you want to load attack results
 ):
+    print(f"LOAD STATS FROM WANDB CALLED, {syn_exp_name}")
     if syn_exp_name == "next_state":
         run_name = f"SynNS_{model_name}_d{embed_dim}_L{num_layers}_H{num_heads}" + \
             f"__nv{num_vars}_nr{num_rules_range[0]}-{num_rules_range[1]}" + \
@@ -196,6 +198,9 @@ def load_stats_from_wandb(
 
     if include_train_batch_size_in_run_name:
         run_name += f"_bsz{train_batch_size}"
+
+    if learning_rate is not None:
+        run_name += f"_lr{learning_rate:.5f}"
 
     if include_seed_in_run_name:
         run_name += f"_seed{seed}"

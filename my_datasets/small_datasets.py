@@ -17,7 +17,7 @@ class SmallTfSuccTokensDataset(Dataset):
         conseq_prob: float = 0.5
     ):
         self.num_vars = num_vars
-        self.num_rules = (2 * num_vars) if num_rules is None else num_rules
+        self.num_rules = (1 * num_vars) if num_rules is None else num_rules
         self.ante_prob = ante_prob
         self.conseq_prob = conseq_prob
         self.dataset_len = dataset_len

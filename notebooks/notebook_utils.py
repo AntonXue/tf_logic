@@ -44,6 +44,7 @@ def load_arks_model_and_dataset(
     chain_len_range: tuple[int, int] = (4, 7),
     num_trains: int = 65536,
     num_evals: int = 32768,
+    learning_rate: Optional[float] = None,
     batch_size: int = 1024,
     seed: int = 201,
     tag: str = "v0",
@@ -66,7 +67,10 @@ def load_arks_model_and_dataset(
             f"_ap{ante_prob_range[0]:.2f}-{ante_prob_range[1]:.2f}" + \
             f"_bp{conseq_prob_range[0]:.2f}-{conseq_prob_range[1]:.2f}" + \
             f"_cl{chain_len_range[0]}-{chain_len_range[1]}" + \
-            f"_ntr{num_trains}_ntt{num_evals}_bsz{batch_size}_seed{seed}" + f":{tag}"
+            f"_ntr{num_trains}_ntt{num_evals}" + \
+            f"_bsz{batch_size}" + \
+            ("" if learning_rate is None else f"_lr{learning_rate:.5f}") + \
+            f"_seed{seed}" + f":{tag}"
 
     artifact_file = download_artifact(artifact_id)
 
@@ -152,6 +156,33 @@ def load_small_simple_dataset(num_vars, dataset_len=1000):
     return SmallTfSuccTokensDataset(num_vars, dataset_len=dataset_len)
 
 
+def load_sms_gpt2(n, d, loss_fn, lr, seed, dataset="Dsimple"):
+    artifact_id = f"model-SMS_gpt2_n{n}_d{d}_{loss_fn}" + \
+                f"_{dataset}_n{n}_ap0.5_bp0.5_lr{lr:.5f}_seed{seed}:v0"
+    artifact_file = download_artifact(artifact_id)
+    with safe_open(str(artifact_file), framework="pt", device="cpu") as f:
+        tensors = {k: f.get_tensor(k) for k in f.keys()}
+
+    model = SmallGpt2(n, d, loss_fn)
+    model.load_state_dict(tensors)
+    model.eval()
+    return model
+
+
+def load_sms_gpt2a(n, loss_fn, lr, seed, dataset="Dsimple"):
+    artifact_id = f"model-SMS_gpt2a_n{n}_{loss_fn}" + \
+                f"_{dataset}_n{n}_ap0.5_bp0.5_lr{lr:.5f}_seed{seed}:v0"
+    artifact_file = download_artifact(artifact_id)
+    with safe_open(str(artifact_file), framework="pt", device="cpu") as f:
+        tensors = {k: f.get_tensor(k) for k in f.keys()}
+
+    model = SmallGpt2A(n, loss_fn)
+    model.load_state_dict(tensors)
+    model.eval()
+    return model
+
+
+
 def load_tfa(n, d, loss_fn, seed, dataset="Dsimple"):
     artifact_id = f"model-SMS_tfa_n{n}_d{d}_{loss_fn}_{dataset}_n{n}_ap0.5_bp0.5_seed{seed}:v0"
     artifact_file = download_artifact(artifact_id)
@@ -175,15 +206,16 @@ def load_tfb(n, loss_fn, seed, dataset="Dsimple"):
     model.eval()
     return model
 
-def load_tfc(n, attn_fn, loss_fn, seed, init_value=None, dataset="Dsimple"):
+def load_tfc(n, attn_fn, attn_bias, loss_fn, seed, init_value=None, lr=1e-3, dataset="Dsimple"):
+    abstr = "AB1" if attn_bias else "AB0"
     ivstr = "IvR" if init_value is None else f"Iv{init_value}"
-    artifact_id = f"model-SMS_tfc_{attn_fn}_n{n}_{loss_fn}_{ivstr}" + \
-                f"_{dataset}_n{n}_ap0.5_bp0.5_seed{seed}:v0"
+    artifact_id = f"model-SMS_tfc_{attn_fn}_{abstr}_n{n}_{loss_fn}_{ivstr}" + \
+                f"_{dataset}_n{n}_ap0.5_bp0.5_lr{lr:.5f}_seed{seed}:v0"
     artifact_file = download_artifact(artifact_id)
     with safe_open(str(artifact_file), framework="pt", device="cpu") as f:
         tensors = {k: f.get_tensor(k) for k in f.keys()}
 
-    model = SmallTfC(n, attn_fn, loss_fn, init_value)
+    model = SmallTfC(n, attn_fn, use_attn_bias=attn_bias, loss_fn=loss_fn, init_value=init_value)
     model.load_state_dict(tensors)
     model.eval()
     return model
