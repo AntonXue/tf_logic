@@ -60,8 +60,10 @@ def load_next_state_model_from_wandb(
     task_name: str = "next_state",
     num_steps: int = 3,
     chain_len_range: tuple[int, int] = (2, 5),
-    seed: int = 101,
-    include_seed_in_run_name: bool = True
+    seed: int = 201,
+    include_seed_in_run_name: bool = True,
+    include_train_batch_size_in_run_name: bool = True,
+    bsz: int = 1024
 ):
 
     if task_name == "next_state":
@@ -86,7 +88,7 @@ def load_next_state_model_from_wandb(
             task_name = "autoreg_ksteps",
             num_vars = num_vars,
             model_name = model_name,
-            input_dim = 1 + 2 * num_vars,
+            input_dim = 2 * num_vars,
             embed_dim = embed_dim,
             num_layers = num_layers,
             num_heads = num_heads,
@@ -97,10 +99,12 @@ def load_next_state_model_from_wandb(
             f"_ap{ante_prob_range[0]:.2f}-{ante_prob_range[1]:.2f}" + \
             f"_bp{conseq_prob_range[0]:.2f}-{conseq_prob_range[1]:.2f}" + \
             f"_cl{chain_len_range[0]}-{chain_len_range[1]}" + \
-            f"_ntr{train_len}_ntt{eval_len}"
-        
+            f"_ntr{train_len}_ntt{eval_len}"    
     else:
         raise Exception(f"Unknown Task: {task_name}")
+
+    if include_train_batch_size_in_run_name:
+        artifact_id += f"_bsz{bsz}"
 
     if include_seed_in_run_name:
         artifact_id += f"_seed{seed}"
