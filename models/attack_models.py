@@ -106,7 +106,9 @@ class ForceOutputWithAppendedAttackSeqClsTokensWrapper(nn.Module):
         seqcls_model: SeqClsModel,
         num_attack_tokens: int,
         base_attack_model_name: str = "gpt2",
-        rho: float = 1e-3
+        rho: float = 1e-3,
+        clamp: bool = False,
+        repeat_tokens: bool = False # If true, the attack model generates one token which is repeated num_attack_tokens times
     ):
         super().__init__()
         seqcls_model = copy.deepcopy(seqcls_model)
@@ -118,15 +120,18 @@ class ForceOutputWithAppendedAttackSeqClsTokensWrapper(nn.Module):
         self.input_dim = input_dim = seqcls_model.input_dim
         self.num_labels = num_labels = seqcls_model.num_labels
         self.num_attack_tokens = num_attack_tokens
+        self.clamp = clamp
+        self.repeat_tokens = repeat_tokens
 
         if base_attack_model_name == "gpt2":
             self.embed_dim = embed_dim = 768
+            atk_num_labels = self.num_attack_tokens * self.input_dim if not self.repeat_tokens else self.input_dim
             self.attack_model = AutoSeqClsModel.from_kwargs(
                 model_name="gpt2",
                 num_layers = 12,
                 num_heads = 12,
                 embed_dim = 768,
-                num_labels=self.num_attack_tokens * self.input_dim,
+                num_labels= atk_num_labels,
                 input_dim = self.embed_dim
             )
         else:
@@ -166,7 +171,16 @@ class ForceOutputWithAppendedAttackSeqClsTokensWrapper(nn.Module):
         ], dim=1)    # (batch_size, seq_len+1, embed_dim)
 
         z = self.attack_model(atk_model_input).logits
-        atk_tokens = z.view(-1, self.num_attack_tokens, self.input_dim)
+
+        expected_num_attack_tokens = self.num_attack_tokens if not self.repeat_tokens else 1
+        atk_tokens = z.view(-1, expected_num_attack_tokens, self.input_dim)
+
+        if self.clamp:
+            atk_tokens = torch.clamp(atk_tokens, 0, 1)
+
+        if self.repeat_tokens:
+            atk_tokens = atk_tokens[:,0].unsqueeze(1).repeat(1, self.num_attack_tokens, 1)
+
         pred = self.seqcls_model(torch.cat([tokens, atk_tokens], dim=1)).logits
 
         norm_loss = self.rho * self.norm_loss_fn(torch.zeros_like(atk_tokens), atk_tokens)

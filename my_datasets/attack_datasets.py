@@ -108,7 +108,8 @@ class AutoregKStepsTokensAttackDataset(Dataset):
             num_steps=num_steps,
             dataset_len=dataset_len,
             do_padding=do_padding,
-            num_fillers=num_fillers
+            num_prevs_range=(1, chain_len_range[0])
+            # num_fillers=num_fillers
         )
         self.num_vars = num_vars
 

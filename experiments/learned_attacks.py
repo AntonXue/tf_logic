@@ -30,6 +30,8 @@ def synexp_args_to_wandb_run_name(param_instance):
             + f"_nr{param_instance['min_num_rules']}-{param_instance['max_num_rules']}"
             + f"_seed{param_instance['seed']}"
             + f"_atk-{param_instance['base_attack_model_name']}_nat{param_instance['num_attack_tokens']}"
+            + f"_clamp{param_instance['clamp']}"
+            + f"_rt{param_instance['repeat_tokens']}"
             + f"_atkntr{param_instance['attack_train_len']}_atkntt{param_instance['attack_eval_len']}"
         )
 
@@ -88,6 +90,11 @@ if __name__ == "__main__":
             param_instance = {}
             for i, param in enumerate(param_tuple):
                 param_instance[list(param_dict.keys())[i]] = param
+
+            param_instance["repeat_tokens"] = False if "repeat_tokens" not in param_instance else (param_instance["repeat_tokens"] == 1)
+            param_instance["clamp"] = True if "clamp" not in param_instance else (param_instance["clamp"] == 1)
+            param_instance["rho"] = 0.001 if "rho" not in param_instance else param_instance["rho"]
+            param_instance["base_attack_model_name"] = "gpt2" if "base_attack_model_name" not in param_instance else param_instance["base_attack_model_name"]
 
             print("Reasoner with params: ", param_instance)
             torch.manual_seed(param_instance["seed"])
@@ -153,13 +160,17 @@ if __name__ == "__main__":
                 ),
                 include_seed_in_run_name=True,
                 seed=param_instance["seed"],
+                bsz=param_instance["train_batch_size"],
+                include_train_batch_size_in_run_name=True,
             )
 
             attacker_model = ForceOutputWithAppendedAttackSeqClsTokensWrapper(
                 seqcls_model=reasoner_model,
                 num_attack_tokens=param_instance["num_attack_tokens"],
-                base_attack_model_name=param_instance["base_attack_model_name"] if "base_attack_model_name" in param_instance else "gpt2",
-                rho=param_instance["rho"] if "rho" in param_instance else 0.001,
+                base_attack_model_name=param_instance["base_attack_model_name"],
+                rho=param_instance["rho"],
+                clamp=param_instance["clamp"],
+                repeat_tokens=param_instance["repeat_tokens"],
             )
 
             run_attack(attacker_model, reasoner_model, train_dataset, eval_dataset, param_instance, args.output_dir)
