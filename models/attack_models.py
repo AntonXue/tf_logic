@@ -182,6 +182,7 @@ class ForceOutputWithAppendedAttackSeqClsTokensWrapper(nn.Module):
             atk_tokens = atk_tokens[:,0].unsqueeze(1).repeat(1, self.num_attack_tokens, 1)
 
         pred = self.seqcls_model(torch.cat([tokens, atk_tokens], dim=1)).logits
+        pred = pred[:, -1, :].unsqueeze(1)
 
         norm_loss = self.rho * self.norm_loss_fn(torch.zeros_like(atk_tokens), atk_tokens)
         pred_loss = self.pred_loss_fn(pred, labels.float())
