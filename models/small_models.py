@@ -23,7 +23,7 @@ class MarginLoss(nn.Module):
 
     def forward(self, logits, labels):
         labels = 2 * labels - 1
-        loss = F.relu(self.delta - logits.float() * labels.float()).sum(dim=1).mean()
+        loss = F.relu(self.delta - logits.float() * labels.float()).mean(dim=1).mean()
         return loss
 
 class RegCatLoss(nn.Module):
@@ -33,7 +33,7 @@ class RegCatLoss(nn.Module):
 
     def forward(self, logits, labels):
         labels = 2 * labels - 1
-        loss = -(logits.float() * labels.float()).sum(dim=1).mean()
+        loss = -(logits.float() * labels.float()).mean(dim=1).mean()
 
         _, n = logits.shape
         rho = (1 / (2*n)) if self.rho is None else rho

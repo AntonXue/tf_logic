@@ -219,3 +219,16 @@ def load_tfc(n, attn_fn, attn_bias, loss_fn, seed, init_value=None, lr=1e-3, dat
     model.load_state_dict(tensors)
     model.eval()
     return model
+
+def load_tfe(n, iv, seed, lr=1e-3, dataset="Dsimple"):
+    ivstr = "IVR" if iv is None else f"IV{init_value}"
+    artifact_id = f"model-SMS_tfe_n{n}_{ivstr}" + \
+                f"_{dataset}_n{n}_ap0.5_bp0.5_lr{lr:.5f}_seed{seed}:v0"
+    artifact_file = download_artifact(artifact_id)
+    with safe_open(str(artifact_file), framework="pt", device="cpu") as f:
+        tensors = {k: f.get_tensor(k) for k in f.keys()}
+
+    model = SmallTfE(n, init_value=iv)
+    model.load_state_dict(tensors)
+    model.eval()
+    return model

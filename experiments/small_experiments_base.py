@@ -15,13 +15,13 @@ from utils.metrics import *
 from utils.model_loader_utils import load_checkpoint_from_wandb
 from transformers import Trainer, TrainingArguments
 
-seed = 1411
+seed = 1433
 torch.manual_seed(seed)
 output_dir = str(Path(DUMP_DIR, "small_experiments"))
 
 num_epochs = 16
 batch_size = int(2**7)
-dataset_len = int(2**18)
+dataset_len = int(2**19)
 lr = 1e-3
 
 
@@ -67,7 +67,7 @@ for i, (model, dataset) in enumerate(model_datasets):
         str(Path(output_dir, desc_str)),
         num_train_epochs = num_epochs,
         per_device_train_batch_size = batch_size,
-        per_device_eval_batch_size = batch_size,
+        per_device_eval_batch_size = 4 * batch_size,
         auto_find_batch_size = True,
         evaluation_strategy = "epoch",
         report_to = "wandb",
