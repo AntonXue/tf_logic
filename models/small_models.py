@@ -385,51 +385,32 @@ class SmallTfE(nn.Module):
     def __init__(
         self,
         num_vars: int,
-        embed_dim: int,
-        use_learned_embed: bool = False,
-        use_attn_bias: bool = False,
-        init_value: Optional[float] = None,
+        init_value: Optional[float] = None
     ):
         super().__init__()
         self.num_vars = num_vars
-        self.embed_dim = embed_dim
+        self.embed_dim = embed_dim = 2 * num_vars
 
-        self.use_learned_embed = use_learned_embed
-        if use_learned_embed:
-            self.embed_fn = nn.Linear(2*num_vars, embed_dim)
-        elif embed_dim == 2 * num_vars:
-            self.embed_fn = lambda x: x.float()
-        elif embed_dim == 2*num_vars + 1:
-            self.embed_fn = lambda x: \
-                torch.cat([torch.ones(x.size(0), x.size(1), 1).to(x.device), x], dim=2)
-        else:
-            raise ValueError(f"Bad combination of n{num_vars} and d{embed_dim}")
-
-        self.use_attn_bias = use_attn_bias
-        self.Wa = nn.Linear(embed_dim, embed_dim, bias=use_attn_bias)
+        self.Wa = nn.Linear(embed_dim, embed_dim, bias=True)
         self.Wb = nn.Linear(embed_dim, num_vars, bias=True)
 
         self.init_value = init_value
         if init_value is not None:
             self.Wa.weight.data.fill_(init_value)
-            if self.Wa.bias is not None:
-                self.Wa.bias.data.fill_(init_value)
-
+            self.Wa.bias.data.fill_(init_value)
             self.Wb.weight.data.fill_(init_value)
             self.Wb.bias.data.fill_(init_value)
 
     @property
     def desc_str(self):
-        lestr = "LE1" if self.use_learned_embed else "LE0"
-        abstr = "AB1" if self.use_attn_bias else "AB0"
         ivstr = "IVR" if self.init_value is None else f"IV{self.init_value}"
-        return f"tfe_n{self.num_vars}_d{self.embed_dim}_{lestr}_{abstr}_{ivstr}"
+        return f"tfe_n{self.num_vars}_{ivstr}"
 
     def forward(self, tokens: torch.LongTensor, labels: Optional[torch.LongTensor] = None):
         N, L, _ = tokens.shape
         device = tokens.device
 
-        x = self.embed_fn(tokens.float())
+        x = tokens.float()
         wts = F.softmax(torch.bmm(self.Wa(x), x.transpose(1,2)), dim=-1)
         a = torch.bmm(wts, x)
         y = self.Wb(a)
@@ -443,6 +424,5 @@ class SmallTfE(nn.Module):
             loss = loss,
             logits = logits,
         )
-
 
 
