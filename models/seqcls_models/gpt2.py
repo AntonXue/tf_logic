@@ -9,17 +9,16 @@ from ..common import *
 
 @dataclass
 class MyGPT2Config:
-    input_dim: Optional[int] = None
-    num_vars: Optional[int] = None
-    embed_dim: Optional[int] = None
+    input_dim: int
+    num_vars: int
+    embed_dim: int
     ffwd_dim: Optional[int] = None
-    num_heads: Optional[int] = 1
-    num_layers: Optional[int] = 1
+    num_heads: int = 1
+    num_layers: int = 1
     problem_type: str = "multi_label_classification"
-    max_seq_len: Optional[int] = 1024
     use_positional_embedding: bool = False
-    use_pretrained: Optional[bool] = False # This will override everything except num_vars
-    pad_token_id: Optional[int] = -1 # Maybe change to something smarter
+    use_pretrained: bool = False # This will override everything except num_vars
+    pad_token_id: int = -1 # Maybe change to something smarter
 
 
 class MyGPT2SeqClsModel(SeqClsModel):
@@ -44,9 +43,13 @@ class MyGPT2SeqClsModel(SeqClsModel):
                 n_layer = config.num_layers,
                 num_labels = config.num_vars,
                 problem_type = config.problem_type,
-                max_position_embeddings = config.max_seq_len,
                 pad_token_id = config.pad_token_id
             ))
+
+            # Disable positional embedding
+            if not self.config.use_positional_embedding:
+                self.gpt2s.transformer.wpe.requires_grad_(False)
+                self.gpt2s.transformer.wpe.weight.fill_(0)
 
         self.model_config = self.gpt2s.config
 

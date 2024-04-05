@@ -58,6 +58,8 @@ def get_flags_str(param_dict, param_tuple) -> str:
         if key == "nd_pairs":
             n, d = param[0], param[1]
             param_str += f"--num_vars {n} --embed_dim {d} "
+        elif key == "batch_size":
+            param_str += f"--train_batch_size {param} --eval_batch_size {param} "
         else:
             param_str += f"--{key} {param} "
 
@@ -131,7 +133,7 @@ if __name__ == "__main__":
                 proc_gpu = get_free_gpu(gpu_tracker)
 
             print("Using GPU {}".format(proc_gpu))
-            command = "CUDA_VISIBLE_DEVICES={} python3 experiments/synthetic_experiments_base.py {}".format(
+            command = "CUDA_VISIBLE_DEVICES={} python3 experiments/autoreg_experiments_base.py {}".format(
                 proc_gpu, param_str
             )
             print("Running command: {}".format(command))

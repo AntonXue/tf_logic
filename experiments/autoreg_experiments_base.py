@@ -261,7 +261,7 @@ def set_wandb_run_id(args: AutoregExperimentsArguments):
     os.environ["WANDB_RUN_ID"] = run_id
 
 
-def make_trainer_for_synthetic(
+def make_trainer_for_autoreg(
     args: AutoregExperimentsArguments,
     report_to: str = "wandb"
 ):
@@ -341,7 +341,7 @@ if __name__ == "__main__":
 
     torch.manual_seed(args.seed)
 
-    trainer = make_trainer_for_synthetic(args)
+    trainer = make_trainer_for_autoreg(args)
 
     set_wandb_run_id(args)
     
