@@ -152,18 +152,13 @@ class AutoregExperimentsArguments:
         metadata = {"help": "Learning rate."}
     )
 
-    train_batch_size: Optional[int] = field(
+    batch_size: Optional[int] = field(
         default = 64,
         metadata = {"help": "The train batch size."}
     )
 
-    eval_batch_size: Optional[int] = field(
-        default = 64,
-        metadata = {"help": "The eval (i.e., validation) batch size."}
-    )
-
     auto_find_batch_size: Optional[bool] = field(
-        default = True,
+        default = False,
         metadata = {"help": "Automatically scale batch size if it encounters out-of-memory."}
     )
 
@@ -178,7 +173,7 @@ class AutoregExperimentsArguments:
     )
 
     logging_steps: int = field(
-        default = 32,
+        default = 64,
         metadata = {"help": "How often the HF's Trainer logs."}
     )
 
@@ -192,14 +187,14 @@ def synexp_args_to_wandb_run_name(args: AutoregExperimentsArguments):
                 (f"_H{args.num_heads}" if args.num_heads is not None else "")
 
     if args.syn_exp_name == "autoreg_ksteps":
-        return f"SynAR_{model_str}_" + \
+        return f"SynSAR_{model_str}_" + \
             f"_nv{args.num_vars}" + \
             f"_ns{args.num_steps}" + \
             f"_nr{args.min_num_rules}-{args.max_num_rules}" + \
             f"_ap{args.min_ante_prob:.2f}-{args.max_ante_prob:.2f}" + \
             f"_bp{args.min_conseq_prob:.2f}-{args.max_conseq_prob:.2f}" + \
             f"_cl{args.min_chain_len}-{args.max_chain_len}" + \
-            f"_ntr{args.train_len}_ntt{args.eval_len}_bsz{args.train_batch_size}" + \
+            f"_ntr{args.train_len}_ntt{args.eval_len}_bsz{args.batch_size}" + \
             f"_lr{args.learning_rate:.5f}" + \
             f"_seed{args.seed}"
 
@@ -307,8 +302,8 @@ def make_trainer_for_autoreg(
         training_args = TrainingArguments(
             str(Path(args.output_dir, synexp_args_to_wandb_run_name(args))),
             num_train_epochs = args.num_epochs,
-            per_device_train_batch_size = args.train_batch_size,
-            per_device_eval_batch_size = args.eval_batch_size,
+            per_device_train_batch_size = args.batch_size,
+            per_device_eval_batch_size = args.batch_size,
             auto_find_batch_size = args.auto_find_batch_size,
             evaluation_strategy = "epoch",
             report_to = report_to,

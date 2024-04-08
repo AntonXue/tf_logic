@@ -1,0 +1,12 @@
+[{
+    "model_name": ["smalltf"],
+    "syn_exp_name": ["smalltf_succ"],
+    "seed": [558],
+    "num_vars": [16, 32],
+    "train_len": [262144],
+    "eval_len": [65536],
+    "num_epochs": [32],
+    "train_batch_size": [2048],
+    "eval_batch_size": [2048]
+}]
+

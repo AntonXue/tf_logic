@@ -59,7 +59,7 @@ def get_flags_str(param_dict, param_tuple) -> str:
             n, d = param[0], param[1]
             param_str += f"--num_vars {n} --embed_dim {d} "
         elif key == "batch_size":
-            param_str += f"--train_batch_size {param} --eval_batch_size {param} "
+            param_str += f"--batch_size {param} "
         else:
             param_str += f"--{key} {param} "
 

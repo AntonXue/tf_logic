@@ -20,15 +20,11 @@ def download_artifact(artifact_id, quiet=False, overwrite=False):
     if not artifact_dir.is_dir() or overwrite:
         if not quiet:
             print(f"Querying id: {artifact_id}")
-
         api = wandb.Api()
         artifact = api.artifact(str(Path(WANDB_PROJECT, artifact_id)), type="model")
-
         if not quiet:
             print(f"Downloading: {artifact}")
-
         artifact_dir = artifact.download()
-    
     artifact_file = Path(artifact_dir, "model.safetensors")
     return artifact_file
 
@@ -39,26 +35,30 @@ def load_arks_model_and_dataset(
     num_steps: int,
     model_name: str = "gpt2",
     num_rules_range: tuple[int, int] = (32, 64),
-    ante_prob_range: tuple[float, float] = (0.2, 0.3),
-    conseq_prob_range: tuple[float, float] = (0.2, 0.3),
+    ante_prob_range: tuple[float, float] = (0.25, 0.25),
+    conseq_prob_range: tuple[float, float] = (0.25, 0.25),
     chain_len_range: tuple[int, int] = (4, 7),
-    num_trains: int = 65536,
-    num_evals: int = 32768,
-    learning_rate: Optional[float] = None,
-    batch_size: int = 1024,
-    seed: int = 201,
+    num_trains: int = 131072,
+    num_evals: int = 65536,
+    learning_rate: float = 5e-4,
+    batch_size: int = 64,
+    seed: int = 401,
     tag: str = "v0",
     quiet: bool = False,
 ):
-    model = AutoTaskModel.from_kwargs(
-        task_name = "autoreg_ksteps",
-        num_vars = num_vars,
-        model_name = model_name,
+    seqcls_model = MyGPT2SeqClsModel(MyGPT2Config(
         input_dim = 2 * num_vars,
+        num_vars = num_vars,
         embed_dim = embed_dim,
-        num_layers = 1,
         num_heads = 1,
-        num_steps = num_steps
+        num_layers = 1,
+        use_positional_embedding = False
+    ))
+
+    model = AutoregKStepsTaskModel(
+        seqcls_model = seqcls_model,
+        num_steps = num_steps,
+        train_supervision_mode = "all"
     )
 
     artifact_id = f"model-SynAR_{model_name}_d{embed_dim}_L1_H1" + \
@@ -69,8 +69,8 @@ def load_arks_model_and_dataset(
             f"_cl{chain_len_range[0]}-{chain_len_range[1]}" + \
             f"_ntr{num_trains}_ntt{num_evals}" + \
             f"_bsz{batch_size}" + \
-            ("" if learning_rate is None else f"_lr{learning_rate:.5f}") + \
-            f"_seed{seed}" + f":{tag}"
+            f"_lr{learning_rate:.5f}" + \
+            f"_seed{seed}:{tag}"
 
     artifact_file = download_artifact(artifact_id)
 
@@ -103,8 +103,8 @@ def load_mytfs_model_and_dataset(
     ante_prob_range: tuple[float, float] = (0.2, 0.3),
     conseq_prob_range: tuple[float, float] = (0.2, 0.3),
     chain_len_range: tuple[int, int] = (4, 7),
-    num_trains: int = 65536,
-    num_evals: int = 32768,
+    num_trains: int = 131072,
+    num_evals: int = 65536,
     batch_size: int = 512,
     seed: int = 501,
     tag: str = "v0",
