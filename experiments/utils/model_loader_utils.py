@@ -14,6 +14,7 @@ from experiments import *
 
 DUMP_DIR = str(Path(BASE_DIR, "_dump"))
 
+
 def download_artifact(
     artifact_id: str,
     artifact_dir: str,
@@ -40,6 +41,7 @@ def download_artifact(
             artifact_dir = None
     return artifact_dir
 
+
 def load_next_state_model_from_wandb(
     model_name: str,
     embed_dim: int,
@@ -53,7 +55,6 @@ def load_next_state_model_from_wandb(
     state_prob_range: tuple[float, float] = (0.5, 0.5),
     train_len: int = 32768,
     eval_len: int = 4096,
-    tag: str = "v0",
     wandb_project: str = "transformer_friends/transformer_friends",
     quiet: bool = False,
     overwrite: bool = False,
@@ -104,14 +105,16 @@ def load_next_state_model_from_wandb(
 
     if include_seed_in_run_name:
         artifact_id += f"_seed{seed}"
-    artifact_id += f":{tag}"
+    artifact_id += f":v0"
 
     artifact_dir = Path(DUMP_DIR, "artifacts", artifact_id)
-    artifact_dir = download_artifact(artifact_id=artifact_id, 
-                                     artifact_dir=artifact_dir,
-                                     wandb_project=wandb_project,
-                                     quiet=quiet,
-                                     overwrite=overwrite)
+    artifact_dir = download_artifact(
+        artifact_id = artifact_id, 
+        artifact_dir = artifact_dir,
+        wandb_project = wandb_project,
+        quiet = quiet,
+        overwrite = overwrite
+    )
 
     tensors = None
     if "model.safetensors" in os.listdir(artifact_dir):
@@ -130,8 +133,8 @@ def load_next_state_model_from_wandb(
     return model
 
 def load_checkpoint_from_wandb(
-        experiment_out_dir: str,
-        experiment_id: str
+    experiment_out_dir: str,
+    experiment_id: str
 ):
     if os.path.isdir(experiment_out_dir):
         # First try fetching checkpoint from local logs
@@ -148,6 +151,7 @@ def load_checkpoint_from_wandb(
     artifact_dir = Path(DUMP_DIR, "artifacts", checkpoint_id)
     checkpoint = download_artifact(artifact_id=checkpoint_id, artifact_dir=artifact_dir, raise_exception_if_not_found=False)
     return checkpoint
+
 
 def load_stats_from_wandb(
     model_name: str,
@@ -224,3 +228,80 @@ def load_stats_from_wandb(
             raise Exception(f"Multiple runs found for run_name: {run_name}")
     run = runs[0]
     return run.summary
+
+
+
+def load_model_and_dataset_from_big_grid(
+    embed_dim: int,
+    num_vars: int,
+    num_steps: int,
+    dataset_len: int,
+    model_name: str = "gpt2",
+    num_rules_range: tuple[int, int] = (32, 64),
+    ante_prob_range: tuple[float, float] = (0.25, 0.25),
+    conseq_prob_range: tuple[float, float] = (0.25, 0.25),
+    chain_len_range: tuple[int, int] = (3, 5),
+    num_trains: int = 131072,
+    num_evals: int = 16384,
+    learning_rate: float = 1e-3,
+    batch_size: int = 256,
+    seed: int = 601,
+    quiet: bool = False,
+    wandb_project: str = "transformer_friends/transformer_friends",
+    overwrite: bool = True,
+):
+    seqcls_model = MyGPT2SeqClsModel(MyGPT2Config(
+        input_dim = 2 * num_vars,
+        num_vars = num_vars,
+        embed_dim = embed_dim,
+        num_heads = 1,
+        num_layers = 1,
+        use_positional_embedding = False
+    ))
+
+    model = AutoregKStepsTaskModel(
+        seqcls_model = seqcls_model,
+        num_steps = num_steps,
+        train_supervision_mode = "all"
+    )
+
+    artifact_id = f"model-SynSAR_{model_name}_d{embed_dim}_L1_H1" + \
+            f"__nv{num_vars}_ns{num_steps}" + \
+            f"_nr{num_rules_range[0]}-{num_rules_range[1]}" + \
+            f"_ap{ante_prob_range[0]:.2f}-{ante_prob_range[1]:.2f}" + \
+            f"_bp{conseq_prob_range[0]:.2f}-{conseq_prob_range[1]:.2f}" + \
+            f"_cl{chain_len_range[0]}-{chain_len_range[1]}" + \
+            f"_ntr{num_trains}_ntt{num_evals}" + \
+            f"_bsz{batch_size}" + \
+            f"_lr{learning_rate:.5f}" + \
+            f"_seed{seed}:v0"
+
+    artifact_dir = Path(DUMP_DIR, "artifacts", artifact_id)
+    artifact_dir = download_artifact(
+        artifact_id = artifact_id, 
+        artifact_dir = artifact_dir,
+        wandb_project = wandb_project,
+        quiet = quiet,
+        overwrite = overwrite
+    )
+
+    artifact_file = Path(artifact_dir, "model.safetensors")
+    with safe_open(str(artifact_file), framework="pt", device="cpu") as f:
+        tensors = {k: f.get_tensor(k) for k in f.keys()}
+
+    model.load_state_dict(tensors)
+    model.eval()
+    dataset = AutoregKStepsTokensDataset(
+        num_vars = num_vars,
+        num_rules_range = num_rules_range,
+        ante_prob_range = ante_prob_range,
+        conseq_prob_range = conseq_prob_range,
+        chain_len_range = chain_len_range,
+        num_prevs_range = (1, chain_len_range[0]),
+        num_steps = num_steps,
+        dataset_len = dataset_len,
+    )
+
+    return model, dataset
+
+

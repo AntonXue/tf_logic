@@ -1,7 +1,7 @@
 [{
     "model_name": ["gpt2"],
     "syn_exp_name": ["autoreg_ksteps"],
-    "seed": [501],
+    "seed": [601],
     "num_steps": [1],
     "min_chain_len": [3],
     "max_chain_len": [5],
@@ -17,8 +17,8 @@
     "max_conseq_prob": [0.25],
     "train_len": [131072],
     "eval_len": [16384],
-    "num_epochs": [16],
-    "batch_size": [64],
-    "learning_rate": [0.0005]
+    "num_epochs": [32],
+    "batch_size": [256],
+    "learning_rate": [0.001]
 }]
 
