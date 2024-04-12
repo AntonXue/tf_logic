@@ -1,11 +1,10 @@
 from dataclasses import dataclass
-from typing import Optional, Union
+from typing import Optional
 import torch
-import transformers
-
 from transformers import GPT2Config, GPT2ForSequenceClassification
-
+from transformers.utils import ModelOutput
 from ..common import *
+
 
 @dataclass
 class MyGPT2Config:
@@ -17,8 +16,17 @@ class MyGPT2Config:
     num_layers: int = 1
     problem_type: str = "multi_label_classification"
     use_positional_embedding: bool = False
-    use_pretrained: bool = False # This will override everything except num_vars
+    max_seq_len: int = 1024 # We need this even if we don't have positional encoding
+    use_pretrained: bool = False # This overrides embed_dim, num_layers, num_heads, and ffwd_dim
     pad_token_id: int = -1 # Maybe change to something smarter
+
+
+@dataclass
+class MyGPT2Output(ModelOutput):
+    loss: Optional[float] = None,
+    logits: Optional[float] = None
+    hidden_states: Optional[float] = None
+    attentions: Optional[float] = None
 
 
 class MyGPT2SeqClsModel(SeqClsModel):
@@ -29,7 +37,6 @@ class MyGPT2SeqClsModel(SeqClsModel):
         if config.use_pretrained:
             self.gpt2s = GPT2ForSequenceClassification.from_pretrained(
                 "gpt2",
-                ignore_mismatched_size = True,
                 num_labels = config.num_vars,
                 problem_type = config.problem_type,
                 pad_token_id = config.pad_token_id,
@@ -42,6 +49,7 @@ class MyGPT2SeqClsModel(SeqClsModel):
                 n_head = config.num_heads,
                 n_layer = config.num_layers,
                 num_labels = config.num_vars,
+                n_positions = config.max_seq_len,
                 problem_type = config.problem_type,
                 pad_token_id = config.pad_token_id
             ))
@@ -85,37 +93,26 @@ class MyGPT2SeqClsModel(SeqClsModel):
         **kwargs
     ):
         """
-            x:         (batch_size, seq_len, input_dim)
+            x: (batch_size, seq_len, input_dim)
             input_ids: (batch_size, seq_len)
         """
         assert not (x is None and input_ids is None)
         assert not (x is not None and input_ids is not None)
 
-        # Use inputs_embeds
+        if self.config.problem_type == "multi_label_classification" and labels is not None:
+            labels = labels.float()
+
         if input_ids is None:
             x = self.embed_fn(x)
-
-            if self.config.problem_type == "multi_label_classification" and labels is not None:
-                labels = labels.float()
-
-            out = self.gpt2s(
-                inputs_embeds = x,
-                attention_mask = attention_mask,
-                labels = labels,
-                **kwargs
-            )
-
-            return out
-
-        # Use input_ids
+            out = self.gpt2s(inputs_embeds=x, attention_mask=attention_mask, labels=labels, **kwargs)
         else:
-            out = self.model(
-                input_ids = input_ids,
-                attention_mask = attention_mask,
-                labels = labels,
-                **kwargs
-            )
+            out = self.gpt2s(input_ids=x, attention_mask=attention_mask, labels=labels, **kwargs)
 
-            return out
-            
+        return MyGPT2Output(
+            loss = out.loss,
+            logits = out.logits,
+            hidden_states = out.hidden_states,
+            attentions = out.attentions
+        )
+
 

@@ -1,10 +1,7 @@
 """
 Script for running experiments/autoreg_experiments_base.py with multiple sets of parameters.
 
-Usage:
-    python3 run_autoreg_experiments.py --config_file <path_to_config_file>
-
-TODO: Add support for logging status of experiments to a file.
+    python3 run_learned_attacks.py --config_file <path_to_config_file>
 """
 
 import argparse
@@ -131,7 +128,7 @@ if __name__ == "__main__":
                 proc_gpu = get_free_gpu(gpu_tracker)
 
             print("Using GPU {}".format(proc_gpu))
-            command = "CUDA_VISIBLE_DEVICES={} python3 experiments/autoreg_experiments_base.py {}".format(
+            command = "CUDA_VISIBLE_DEVICES={} python3 experiments/learned_attacks_base.py {}".format(
                 proc_gpu, param_str
             )
             print("Running command: {}".format(command))

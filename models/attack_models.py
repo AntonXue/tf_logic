@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from models.__init__ import AutoSeqClsModel
 import torch
 import torch.nn as nn
-from transformers import AutoModel
 from transformers.utils import ModelOutput
+from transformers import GPT2Model
 
 from .common import *
 # from models import AutoTaskModel, AutoSeqClsModel
@@ -13,172 +13,91 @@ from .common import *
 
 """ Different attacker models """
 
-
 @dataclass
-class ForceOutputWithAppendedAttackTokensOutput(ModelOutput):
+class AttackerModelOutput(ModelOutput):
     loss: Optional[torch.FloatTensor] = None
     logits: Optional[torch.FloatTensor] = None
-    norm_loss: Optional[torch.FloatTensor] = None
-    pred_loss: Optional[torch.FloatTensor] = None
     attack_tokens: Optional[torch.FloatTensor] = None
-    pred: Optional[torch.FloatTensor] = None
+    bin_attack_tokens: Optional[torch.LongTensor] = None
 
 
-class ForceOutputWithAppendedAttackTokensWrapper(nn.Module):
+class AttackWrapperModel(nn.Module):
     def __init__(
         self,
-        seqcls_model: SeqClsModel,
+        reasoner_model: SeqClsModel,
         num_attack_tokens: int,
-        base_attack_model_name: str = "gpt2",
-        rho: float = 1e-3
+        token_range: str = "unbounded",
     ):
         super().__init__()
-        seqcls_model = copy.deepcopy(seqcls_model)
-        for p in seqcls_model.parameters():
-            p.requires_grad = False
-
-        seqcls_model.eval()
-        self.seqcls_model = seqcls_model
-        self.input_dim = input_dim = seqcls_model.input_dim
-        self.num_labels = num_labels = seqcls_model.num_labels
+        assert token_range in ["unbounded", "clamped"]
+        self.token_range = token_range
         self.num_attack_tokens = num_attack_tokens
 
-        if base_attack_model_name == "gpt2":
-            gpt2 = AutoModel.from_pretrained("gpt2")
-            self.attack_model = gpt2
-            self.embed_dim = embed_dim = gpt2.embed_dim
-        else:
-            self.embed_dim = embed_dim = 2048
-            self.attack_model = nn.Sequential(
-                nn.Linear(input_dim, embed_dim),
-                nn.ReLU(),
-                nn.Linear(embed_dim, embed_dim)
-            )
+        # Set up the reasoner model
+        reasoner_model = copy.deepcopy(reasoner_model)
+        for p in reasoner_model.parameters():
+            p.requires_grad = False
+        reasoner_model.eval()
+        self.reasoner_model = reasoner_model
 
-        self.tokens_embed_fn = nn.Linear(input_dim, embed_dim)
-        self.target_embed_fn = nn.Linear(num_labels, embed_dim)
-        self.attack_cls_head = nn.Linear(embed_dim, input_dim)
+        self.num_vars = reasoner_model.num_labels
+        self.attacker_model = GPT2Model.from_pretrained("gpt2")
+        self.embed_dim = self.attacker_model.embed_dim
 
-        self.rho = rho
-        self.norm_loss_fn = nn.MSELoss(reduction="sum")
-        self.pred_loss_fn = nn.BCEWithLogitsLoss(reduction="sum")
+        self.tokens_embed_fn = nn.Linear(2 * self.num_vars, self.embed_dim)
+        self.labels_embed_fn = nn.Linear(self.num_vars, self.embed_dim)
+        self.cls_head = nn.Linear(self.embed_dim, 2 * self.num_vars)
+
 
     def train(self, mode=True):
         """ We don't want the seqcls_model under attack to be in training mode """
-        self.seqcls_model.eval()
-        self.attack_model.train(mode=mode)
+        self.reasoner_model.eval()
+        self.attacker_model.train(mode=mode)
 
     def forward(
         self,
         tokens: torch.LongTensor,
-        labels: torch.LongTensor,
+        labels: torch.LongTensor,   # The adversarial target
     ):
-        """ tokens: (batch_size, seq_len, input_dim)
-            target: (batch_size, num_labels)
-        """
-        assert tokens.size(1) > self.num_attack_tokens
 
-        atk_model_input = torch.cat([
-            self.tokens_embed_fn(tokens.float()).view(-1, tokens.size(1), self.embed_dim),
-            self.target_embed_fn(labels.float()).view(-1, 1, self.embed_dim)
-        ], dim=1)    # (batch_size, seq_len+1, embed_dim)
+        N, L, _ = tokens.shape
+        tokens, labels = tokens.float(), labels.float()
 
-        z = self.attack_model(inputs_embeds=atk_model_input).last_hidden_state
-        atk_tokens = self.attack_cls_head(z)[:,:self.num_attack_tokens]
-        pred = self.seqcls_model(torch.cat([tokens, atk_tokens], dim=1)).logits
-
-        norm_loss = self.rho * self.norm_loss_fn(torch.zeros_like(atk_tokens), atk_tokens)
-        pred_loss = self.pred_loss_fn(pred, labels.float())
-
-        return ForceOutputWithAppendedAttackTokensOutput(
-            # loss = norm_loss + pred_loss,
-            loss = pred_loss,
-            logits = pred,
-            norm_loss = norm_loss,
-            pred_loss = pred_loss,
-            attack_tokens = atk_tokens,
-            pred = pred
+        # Query the attacker model
+        atk_inputs_embeds = torch.cat([
+                self.tokens_embed_fn(tokens).view(N,L,-1),
+                self.labels_embed_fn(labels).view(N,1,-1),
+            ], dim=1
         )
-    
-class ForceOutputWithAppendedAttackSeqClsTokensWrapper(nn.Module):
-    def __init__(
-        self,
-        seqcls_model: SeqClsModel,
-        num_attack_tokens: int,
-        base_attack_model_name: str = "gpt2",
-        rho: float = 1e-3
-    ):
-        super().__init__()
-        seqcls_model = copy.deepcopy(seqcls_model)
-        for p in seqcls_model.parameters():
-            p.requires_grad = False
 
-        seqcls_model.eval()
-        self.seqcls_model = seqcls_model
-        self.input_dim = input_dim = seqcls_model.input_dim
-        self.num_labels = num_labels = seqcls_model.num_labels
-        self.num_attack_tokens = num_attack_tokens
+        atk_hidden_state = self.attacker_model(inputs_embeds=atk_inputs_embeds).last_hidden_state
+        atk_logits = self.cls_head(atk_hidden_state)[:,:self.num_attack_tokens]
 
-        if base_attack_model_name == "gpt2":
-            self.embed_dim = embed_dim = 768
-            self.attack_model = AutoSeqClsModel.from_kwargs(
-                model_name="gpt2",
-                num_layers = 12,
-                num_heads = 12,
-                embed_dim = 768,
-                num_labels=self.num_attack_tokens * self.input_dim,
-                input_dim = self.embed_dim
-            )
+        # Depending on the token mode, clamp if necessary and binarize accordingly
+        if self.token_range == "clamped":
+            atk_tokens = (atk_logits*0.5 + 0.5).clamp(0,1)
+            bin_atk_tokens = (atk_tokens > 0.5).long()
         else:
-            self.embed_dim = embed_dim = 2048
-            self.attack_model = nn.Sequential(
-                nn.Linear(input_dim, embed_dim),
-                nn.ReLU(),
-                nn.Linear(embed_dim, embed_dim)
-            )
+            atk_tokens = atk_logits
+            bin_atk_tokens = (atk_tokens > 0.0).long()
 
-        self.tokens_embed_fn = nn.Linear(input_dim, embed_dim)
-        self.target_embed_fn = nn.Linear(num_labels, embed_dim)
-        self.attack_cls_head = nn.Linear(embed_dim, input_dim)
+        # Adversarial (and its binary version) to the reasoner model and query it
+        adv_inputs = torch.cat([tokens, atk_tokens], dim=1)
+        res_out = self.reasoner_model(adv_inputs)
+        res_logits = res_out.logits[:,0] # The first item of the autoreg sequence
 
-        self.rho = rho
-        self.norm_loss_fn = nn.MSELoss(reduction="sum")
-        self.pred_loss_fn = nn.BCEWithLogitsLoss(reduction="sum")
+        with torch.no_grad():
+            # Don't apply grad here because binarization as we wrote is not differentiable
+            bin_adv_inputs = torch.cat([tokens, bin_atk_tokens], dim=1)
+            bin_res_out = self.reasoner_model(bin_adv_inputs)
+            bin_res_logits = bin_res_out.logits[:,0]
 
-    def train(self, mode=True):
-        """ We don't want the seqcls_model under attack to be in training mode """
-        self.seqcls_model.eval()
-        self.attack_model.train(mode=mode)
-
-    def forward(
-        self,
-        tokens: torch.LongTensor,
-        labels: torch.LongTensor,
-    ):
-        """ tokens: (batch_size, seq_len, input_dim)
-            target: (batch_size, num_labels)
-        """
-        assert tokens.size(1) > self.num_attack_tokens
-
-        atk_model_input = torch.cat([
-            self.tokens_embed_fn(tokens.float()).view(-1, tokens.size(1), self.embed_dim),
-            self.target_embed_fn(labels.float()).view(-1, 1, self.embed_dim)
-        ], dim=1)    # (batch_size, seq_len+1, embed_dim)
-
-        z = self.attack_model(atk_model_input).logits
-        atk_tokens = z.view(-1, self.num_attack_tokens, self.input_dim)
-        pred = self.seqcls_model(torch.cat([tokens, atk_tokens], dim=1)).logits
-
-        norm_loss = self.rho * self.norm_loss_fn(torch.zeros_like(atk_tokens), atk_tokens)
-        pred_loss = self.pred_loss_fn(pred, labels.float())
-
-        return ForceOutputWithAppendedAttackTokensOutput(
-            loss = pred_loss,
-            logits = pred,
-            norm_loss = norm_loss,
-            pred_loss = pred_loss,
+        loss = nn.BCEWithLogitsLoss()(res_logits, labels.float())
+        return AttackerModelOutput(
+            loss = loss,
+            logits = torch.stack([res_logits, bin_res_logits], dim=1), # (N,2,n),
             attack_tokens = atk_tokens,
-            pred = pred
+            bin_attack_tokens = bin_atk_tokens
         )
 
 

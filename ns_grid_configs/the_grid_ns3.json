@@ -1,6 +1,4 @@
 [{
-    "model_name": ["gpt2"],
-    "syn_exp_name": ["autoreg_ksteps"],
     "seed": [601],
     "num_steps": [3],
     "min_chain_len": [3],

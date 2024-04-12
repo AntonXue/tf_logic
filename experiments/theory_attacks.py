@@ -49,6 +49,7 @@ class TheoryAttackExperimentsArguments:
     )
 
 
+@torch.no_grad()
 def run_big_token_attack(args):
     config = Namespace(**json.load(open(args.config_file)))
     assert config.num_samples % args.batch_size == 0
@@ -83,6 +84,8 @@ def run_big_token_attack(args):
 
                 for batch in pbar:
                     batch_tokens = batch["tokens"].to(args.device)
+                    # Slice out the first rule to make the length correct
+                    batch_tokens = batch_tokens[:,1:]
                     tgt_state = (torch.rand(args.batch_size, n) < 0.5).long().to(args.device)
                     tgt_scaled = tgt_state - kappa * (1 - tgt_state)
 
@@ -96,7 +99,7 @@ def run_big_token_attack(args):
                     elems_acc = acc_elem_hits / num_dones
                     states_acc = acc_state_hits / num_dones
 
-                    desc_str = f"n {n}, d {d}, log(k) {kappa_power:.2f}: "
+                    desc_str = f"n {n}, d {d}, log(k) {kappa_power:.3f}: "
                     desc_str += f"N {num_dones}, elems {elems_acc:.3f}, states {states_acc:.3f}"
                     pbar.set_description(desc_str)
 
@@ -117,6 +120,7 @@ def run_big_token_attack(args):
             print(f"Done with: trseed {train_seed}, n {n}, d {d}")
 
 
+@torch.no_grad()
 def run_repeat_token_attack(args):
     config = Namespace(**json.load(open(args.config_file)))
     assert config.num_samples % args.batch_size == 0
@@ -125,7 +129,7 @@ def run_repeat_token_attack(args):
     print(f"Will save to: {saveto_file}")
 
     df = pd.DataFrame(columns=[
-        "train_seed", "num_vars", "embed_dim", "num_repeats", "elems_acc", "states_acc"
+        "train_seed", "num_vars", "embed_dim", "elems_acc", "states_acc"
     ])
 
     df_idx = 0
@@ -139,12 +143,16 @@ def run_repeat_token_attack(args):
                 num_steps = 3, # TODO: change
                 seed = train_seed,
                 dataset_len = config.num_samples,
+                max_test_seq_len = 2**16,
             )
+
+            # We need to make the context length very big
 
             model.eval().to(args.device)
             dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
 
-            for num_repeats in config.num_repeats:
+            for repeat_power in config.repeat_powers:
+                num_repeats = 2 ** repeat_power
                 num_dones, acc_elem_hits, acc_state_hits = 0, 0, 0
                 pbar = tqdm(dataloader)
 
@@ -170,7 +178,7 @@ def run_repeat_token_attack(args):
                     "train_seed": train_seed,
                     "num_vars": n,
                     "embed_dim": d,
-                    "num_repeats": num_repeats,
+                    "repeat_power": int(repeat_power),
                     "elems_acc": elems_acc.item(),
                     "states_acc": states_acc.item(),
                 }, index=[df_idx])
@@ -188,9 +196,9 @@ if __name__ == "__main__":
     args = parser.parse_args_into_dataclasses()[0]
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
-    if args.attack_name == "big_token_attack":
+    if args.attack_name == "big_token":
         run_big_token_attack(args)
-    elif args.attack_name == "repeat_token_attack":
+    elif args.attack_name == "repeat_token":
         run_repeat_token_attack(args)
 
 
