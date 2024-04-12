@@ -164,6 +164,5 @@ cython_debug/
 *.swp
 _dump/
 plots/
-configs/
 logs/
 
