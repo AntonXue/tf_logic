@@ -43,102 +43,6 @@ def download_artifact(
             artifact_dir = None
     return artifact_dir
 
-<<<<<<< HEAD
-=======
-def load_next_state_model_from_wandb(
-    model_name: str,
-    embed_dim: int,
-    num_layers: int,
-    num_heads: int,
-    num_vars: int,
-    num_rules_range: tuple[int, int] = (16, 64),
-    num_states_range: tuple[int, int] = (8, 32),
-    ante_prob_range: tuple[float, float] = (0.3, 0.5),
-    conseq_prob_range: tuple[float, float] = (0.2, 0.3),
-    state_prob_range: tuple[float, float] = (0.5, 0.5),
-    train_len: int = 32768,
-    eval_len: int = 4096,
-    tag: str = "v0",
-    wandb_project: str = "transformer_friends/transformer_friends",
-    quiet: bool = False,
-    overwrite: bool = False,
-    task_name: str = "next_state",
-    num_steps: int = 3,
-    chain_len_range: tuple[int, int] = (2, 5),
-    seed: int = 201,
-    include_seed_in_run_name: bool = True,
-    include_train_batch_size_in_run_name: bool = True,
-    bsz: int = 1024
-):
-
-    if task_name == "next_state":
-        model = AutoTaskModel.from_kwargs(
-            task_name = "next_state",
-            num_vars = num_vars,
-            model_name = model_name,
-            input_dim = 1 + 2 * num_vars,
-            embed_dim = embed_dim,
-            num_layers = num_layers,
-            num_heads = num_heads)
-        artifact_id = f"model-SynNS_{model_name}_d{embed_dim}_L{num_layers}_H{num_heads}" + \
-            f"__nv{num_vars}_nr{num_rules_range[0]}-{num_rules_range[1]}" + \
-            f"_ns{num_states_range[0]}-{num_states_range[1]}" + \
-            f"_ap{ante_prob_range[0]:.2f}-{ante_prob_range[1]:.2f}" + \
-            f"_bp{conseq_prob_range[0]:.2f}-{conseq_prob_range[1]:.2f}" + \
-            f"_sp{state_prob_range[0]:.2f}-{state_prob_range[1]:.2f}" + \
-            f"_ntr{train_len}_ntt{eval_len}"
-    
-    elif task_name == "autoreg_ksteps":
-        model = AutoTaskModel.from_kwargs(
-            task_name = "autoreg_ksteps",
-            num_vars = num_vars,
-            model_name = model_name,
-            input_dim = 2 * num_vars,
-            embed_dim = embed_dim,
-            num_layers = num_layers,
-            num_heads = num_heads,
-            num_steps = num_steps)
-        artifact_id = f"model-SynAR_{model_name}_d{embed_dim}_L{num_layers}_H{num_heads}" + \
-            f"__nv{num_vars}_ns{num_steps}" + \
-            f"_nr{num_rules_range[0]}-{num_rules_range[1]}" + \
-            f"_ap{ante_prob_range[0]:.2f}-{ante_prob_range[1]:.2f}" + \
-            f"_bp{conseq_prob_range[0]:.2f}-{conseq_prob_range[1]:.2f}" + \
-            f"_cl{chain_len_range[0]}-{chain_len_range[1]}" + \
-            f"_ntr{train_len}_ntt{eval_len}"    
-    else:
-        raise Exception(f"Unknown Task: {task_name}")
-
-    if include_train_batch_size_in_run_name:
-        artifact_id += f"_bsz{bsz}"
-
-    if include_seed_in_run_name:
-        artifact_id += f"_seed{seed}"
-    artifact_id += f":{tag}"
-
-    artifact_dir = Path(DUMP_DIR, "artifacts", artifact_id)
-    artifact_dir = download_artifact(artifact_id=artifact_id, 
-                                     artifact_dir=artifact_dir,
-                                     wandb_project=wandb_project,
-                                     quiet=quiet,
-                                     overwrite=overwrite)
-
-    tensors = None
-    if "model.safetensors" in os.listdir(artifact_dir):
-        artifact_file = Path(artifact_dir, "model.safetensors")
-
-        with safe_open(str(artifact_file), framework="pt", device="cpu") as f:
-            tensors = {k: f.get_tensor(k) for k in f.keys()}
-    elif "pytorch_model.bin" in os.listdir(artifact_dir):
-        artifact_file = Path(artifact_dir, "pytorch_model.bin")
-        tensors = torch.load(artifact_file)
-    else:
-        raise Exception(f"No model.safetensors or pytorch_model.bin found in {artifact_dir}")
-
-    model.load_state_dict(tensors)
-    model.eval()
-    return model
->>>>>>> main
-
 def load_checkpoint_from_wandb(
     experiment_out_dir: str,
     experiment_id: str
@@ -248,8 +152,8 @@ def load_model_and_dataset_from_big_grid(
     ante_prob_range: tuple[float, float] = (0.25, 0.25),
     conseq_prob_range: tuple[float, float] = (0.25, 0.25),
     chain_len_range: tuple[int, int] = (3, 5),
-    num_trains: int = 131072,
-    num_evals: int = 16384,
+    num_trains: int = 262144,
+    num_evals: int = 65536,
     learning_rate: float = 1e-3,
     batch_size: int = 256,
     seed: int = 601,

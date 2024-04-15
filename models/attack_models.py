@@ -1,14 +1,12 @@
 import copy
 from typing import Optional
 from dataclasses import dataclass
-from models.__init__ import AutoSeqClsModel
 import torch
 import torch.nn as nn
 from transformers.utils import ModelOutput
-from transformers import GPT2Model
+from transformers import GPT2Config, GPT2Model
 
 from .common import *
-# from models import AutoTaskModel, AutoSeqClsModel
 
 
 """ Different attacker models """
@@ -41,7 +39,8 @@ class AttackWrapperModel(nn.Module):
         self.reasoner_model = reasoner_model
 
         self.num_vars = reasoner_model.num_labels
-        self.attacker_model = GPT2Model.from_pretrained("gpt2")
+        # self.attacker_model = GPT2Model.from_pretrained("gpt2")
+        self.attacker_model = GPT2Model(GPT2Config())
         self.embed_dim = self.attacker_model.embed_dim
 
         self.tokens_embed_fn = nn.Linear(2 * self.num_vars, self.embed_dim)
@@ -59,7 +58,6 @@ class AttackWrapperModel(nn.Module):
         tokens: torch.LongTensor,
         labels: torch.LongTensor,   # The adversarial target
     ):
-
         N, L, _ = tokens.shape
         tokens, labels = tokens.float(), labels.float()
 
@@ -74,17 +72,18 @@ class AttackWrapperModel(nn.Module):
         atk_logits = self.cls_head(atk_hidden_state)[:,:self.num_attack_tokens]
 
         # Depending on the token mode, clamp if necessary and binarize accordingly
-        if self.token_range == "clamped":
-            atk_tokens = (atk_logits*0.5 + 0.5).clamp(0,1)
-            bin_atk_tokens = (atk_tokens > 0.5).long()
-        else:
+        if self.token_range == "unbounded":
             atk_tokens = atk_logits
             bin_atk_tokens = (atk_tokens > 0.0).long()
+        elif self.token_range == "clamped":
+            atk_tokens = (atk_logits*0.5 + 0.5).clamp(0,1)
+            bin_atk_tokens = (atk_tokens > 0.5).long()
 
         # Adversarial (and its binary version) to the reasoner model and query it
         adv_inputs = torch.cat([tokens, atk_tokens], dim=1)
         res_out = self.reasoner_model(adv_inputs)
-        res_logits = res_out.logits[:,0] # The first item of the autoreg sequence
+        # res_logits = res_out.logits[:,0] # The first item of the autoreg sequence
+        res_logits = res_out.logits[:,-1] # Try the last logit
 
         with torch.no_grad():
             # Don't apply grad here because binarization as we wrote is not differentiable
@@ -93,6 +92,7 @@ class AttackWrapperModel(nn.Module):
             bin_res_logits = bin_res_out.logits[:,0]
 
         loss = nn.BCEWithLogitsLoss()(res_logits, labels.float())
+        # loss += 1e-3 * nn.MSELoss()(atk_tokens, torch.zeros_like(atk_tokens))
         return AttackerModelOutput(
             loss = loss,
             logits = torch.stack([res_logits, bin_res_logits], dim=1), # (N,2,n),

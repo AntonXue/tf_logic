@@ -96,7 +96,7 @@ class LearnedAttackExperimentsArguments:
 
 def args_to_wandb_run_name(args):
     res_model_str = f"gpt2_d{args.embed_dim}_nv{args.num_vars}_rseed{args.reasoner_seed}"
-    return f"SynLAtk_natk{args.num_attack_tokens}" + \
+    return f"SynLAtk_{args.token_range}_natk{args.num_attack_tokens}" + \
         f"_{res_model_str}_" + \
         f"_ntr{args.train_len}_ntt{args.eval_len}" + \
         f"_bsz{args.batch_size}_lr{args.learning_rate:.5f}" + \
@@ -107,7 +107,7 @@ def load_reasoner_model_and_dataset(args):
     return load_model_and_dataset_from_big_grid(
         num_vars = args.num_vars,
         embed_dim = args.embed_dim,
-        num_steps = 3,
+        num_steps = 1,
         seed = args.reasoner_seed,
     )
 
@@ -122,7 +122,8 @@ def learned_attack_metrics(eval_preds):
     bin_acc = np.mean((bin_res_pred == labels).sum(axis=-1) == num_vars)
     return {
         "Acc": acc,
-        "BinAcc": bin_acc
+        "BinAcc": bin_acc,
+        "AvgOnes": np.mean(res_pred),
     }
 
 
