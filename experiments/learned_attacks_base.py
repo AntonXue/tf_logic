@@ -89,7 +89,7 @@ class LearnedAttackExperimentsArguments:
     )
 
     logging_steps: int = field(
-        default = 64,
+        default = 16,
         metadata = {"help": "How often the HF's Trainer logs."}
     )
 

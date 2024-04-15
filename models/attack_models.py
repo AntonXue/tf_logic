@@ -4,7 +4,8 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 from transformers.utils import ModelOutput
-from transformers import GPT2Config, GPT2Model
+# from transformers import GPT2Config, GPT2Model
+from transformers import GPT2ForSequenceClassification
 
 from .common import *
 
@@ -39,13 +40,17 @@ class AttackWrapperModel(nn.Module):
         self.reasoner_model = reasoner_model
 
         self.num_vars = reasoner_model.num_labels
-        # self.attacker_model = GPT2Model.from_pretrained("gpt2")
-        self.attacker_model = GPT2Model(GPT2Config())
-        self.embed_dim = self.attacker_model.embed_dim
+        self.token_dim = 2 * self.num_vars
+        self.attacker_model = GPT2ForSequenceClassification.from_pretrained(
+            "gpt2",
+            num_labels = num_attack_tokens * self.token_dim,
+            problem_type = "multi_label_classification",
+            pad_token_id = -1
+        )
+        self.embed_dim = self.attacker_model.transformer.embed_dim
 
-        self.tokens_embed_fn = nn.Linear(2 * self.num_vars, self.embed_dim)
-        self.labels_embed_fn = nn.Linear(self.num_vars, self.embed_dim)
-        self.cls_head = nn.Linear(self.embed_dim, 2 * self.num_vars)
+        self.tokens_embed_fn = nn.Linear(self.token_dim, self.embed_dim)
+        self.target_embed_fn = nn.Linear(self.num_vars, self.embed_dim)
 
 
     def train(self, mode=True):
@@ -64,12 +69,14 @@ class AttackWrapperModel(nn.Module):
         # Query the attacker model
         atk_inputs_embeds = torch.cat([
                 self.tokens_embed_fn(tokens).view(N,L,-1),
-                self.labels_embed_fn(labels).view(N,1,-1),
+                self.target_embed_fn(labels).view(N,1,-1),
             ], dim=1
         )
 
-        atk_hidden_state = self.attacker_model(inputs_embeds=atk_inputs_embeds).last_hidden_state
-        atk_logits = self.cls_head(atk_hidden_state)[:,:self.num_attack_tokens]
+        # z = self.attacker_model(inputs_embeds=atk_inputs_embeds).last_hidden_state
+        # atk_logits = self.cls_head(z)[:,:self.num_attack_tokens]
+        atk_logits = self.attacker_model(inputs_embeds=atk_inputs_embeds).logits
+        atk_logits = atk_logits.view(-1, self.num_attack_tokens, self.token_dim)
 
         # Depending on the token mode, clamp if necessary and binarize accordingly
         if self.token_range == "unbounded":
