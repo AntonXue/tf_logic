@@ -169,9 +169,7 @@ def synexp_args_to_wandb_run_name(args: AutoregExperimentsArguments):
         f"_nv{args.num_vars}" + \
         f"_ns{args.num_steps}" + \
         f"_nr{args.min_num_rules}-{args.max_num_rules}" + \
-        f"_ap{args.ante_prob:.2f}" + \
-        f"_bp{args.conseq_prob:.2f}" + \
-        f"_sp{args.state_prob:.2f}" + \
+        f"_ap{args.ante_prob:.3f}_bp{args.conseq_prob:.3f}_sp{args.state_prob:.3f}" + \
         f"_cl{args.min_chain_len}-{args.max_chain_len}" + \
         f"_ntr{args.train_len}_ntt{args.eval_len}_bsz{args.batch_size}" + \
         f"_lr{args.learning_rate:.5f}" + \
@@ -246,15 +244,16 @@ def make_trainer_for_autoreg(
         train_supervision_mode = "all"
     )
 
+    run_name = synexp_args_to_wandb_run_name(args)
     training_args = TrainingArguments(
-        str(Path(args.output_dir, synexp_args_to_wandb_run_name(args))),
+        str(Path(args.output_dir, run_name)),
         num_train_epochs = args.num_epochs,
         per_device_train_batch_size = args.batch_size,
         per_device_eval_batch_size = args.batch_size,
         auto_find_batch_size = args.auto_find_batch_size,
         evaluation_strategy = "epoch",
         report_to = report_to,
-        run_name = synexp_args_to_wandb_run_name(args),
+        run_name = run_name,
         logging_steps = args.logging_steps,
         learning_rate = args.learning_rate,
         warmup_ratio = 0.10,

@@ -5,7 +5,7 @@ from .utils.logic_utils import *
 from my_datasets.task_datasets import AutoregKStepsTokensDataset
 
 
-class AttackWrapperDataset(Dataset):
+class BadSuffixDataset(Dataset):
     """ Dataset for performing attacks on models trained with AutoregKSteps """
     def __init__(
         self,
@@ -61,21 +61,26 @@ class SuppressRuleDataset(Dataset):
         oks = (ante_oks * conseq_oks).long() # (L,), the length of the token sequence
 
         # Find the first acceptable index to delete. Otherwise pick the first one
-        ign_ind = 0 if (oks.sum() == 0) else oks.nonzero().view(-1)[0]
-        ign_rule = tokens[ign_ind]
+        supp_ind = 0 if (oks.sum() == 0) else oks.nonzero().view(-1)[0]
+        supp_rule = tokens[supp_ind]
 
         # Need to calculate the new label that's supposed to happen
-        spliced_tokens = torch.cat([tokens[:ign_ind], tokens[ign_ind+1:]], dim=0)
+        
+
+        spliced_tokens = torch.cat([tokens[:supp_ind], tokens[supp_ind+1:]], dim=0)
+
+
+
         alt_succ, _ = step_rules(spliced_tokens.unsqueeze(0), state.unsqueeze(0))
         orig_succ, _ = step_rules(tokens.unsqueeze(0), state.unsqueeze(0))
 
         return {
             "tokens": tokens,
+            "supp_rule": supp_rule,
+            "labels": alt_succ[0],
             "state": state,
             "original_succ": orig_succ[0],
-            "ignored_ind": ign_ind,
-            "ignored_rule": ign_rule,
-            "labels": alt_succ[0],
+            "supp_ind": supp_ind,
         }
 
 

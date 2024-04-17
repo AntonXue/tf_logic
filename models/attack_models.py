@@ -16,11 +16,10 @@ from .common import *
 class AttackerModelOutput(ModelOutput):
     loss: Optional[torch.FloatTensor] = None
     logits: Optional[torch.FloatTensor] = None
-    attack_tokens: Optional[torch.FloatTensor] = None
-    bin_attack_tokens: Optional[torch.LongTensor] = None
+    others: Optional[dict] = None
 
 
-class AttackWrapperModel(nn.Module):
+class BadSuffixWrapperModel(nn.Module):
     def __init__(
         self,
         reasoner_model: SeqClsModel,
@@ -105,8 +104,85 @@ class AttackWrapperModel(nn.Module):
         return AttackerModelOutput(
             loss = loss,
             logits = logits,
-            attack_tokens = atk_tokens,
-            bin_attack_tokens = bin_atk_tokens
+        )
+
+
+class SuppressRuleWrapperModel(nn.Module):
+    def __init__(
+        self,
+        reasoner_model: SeqClsModel,
+    ):
+        super().__init__()
+
+        # Set up the reasoner model
+        reasoner_model = copy.deepcopy(reasoner_model)
+        for p in reasoner_model.parameters():
+            p.requires_grad = False
+        reasoner_model.eval()
+        self.reasoner_model = reasoner_model
+
+        self.num_vars = reasoner_model.num_labels
+        self.token_dim = 2 * self.num_vars
+        self.attacker_model = GPT2ForSequenceClassification.from_pretrained(
+            "gpt2",
+            num_labels = self.token_dim,
+            problem_type = "multi_label_classification",
+            pad_token_id = -1
+        )
+        self.embed_dim = self.attacker_model.transformer.embed_dim
+        self.token_embed_fn = nn.Linear(self.token_dim, self.embed_dim)
+        self.rule_embed_fn = nn.Linear(self.token_dim, self.embed_dim)
+
+
+    def train(self, mode=True):
+        """ We don't want the seqcls_model under attack to be in training mode """
+        self.reasoner_model.eval()
+        self.attacker_model.train(mode=mode)
+
+
+    def forward(
+        self,
+        tokens: torch.LongTensor,
+        supp_rule: torch.LongTensor,
+        labels,
+        **kwargs
+    ):
+        N, L, _ = tokens.shape
+        tokens, supp_rule = tokens.float(), supp_rule.float()
+
+        # Query the attacker model
+        atk_inputs_embeds = torch.cat([
+                self.token_embed_fn(tokens).view(N,L,-1),
+                self.rule_embed_fn(supp_rule).view(N,1,-1)
+            ], dim=1
+        )
+
+        atk_logits = self.attacker_model(inputs_embeds=atk_inputs_embeds).logits
+
+        # Prepend the logits to the token sequence
+        adv_inputs = torch.cat([atk_logits.view(-1,1,self.token_dim), tokens], dim=1)
+        res_out = self.reasoner_model(adv_inputs)
+        res_logits = res_out.logits[:,0]    # The first item of the autoreg sequence
+
+        loss = None
+        if labels is not None:
+            loss = nn.BCEWithLogitsLoss()(res_logits, labels.float())
+
+        supp_ante, supp_conseq = supp_rule.chunk(2, dim=-1)
+        atk_ante, atk_conseq = atk_logits.chunk(2, dim=-1)
+
+        logits = torch.stack([
+                supp_ante,
+                supp_conseq,
+                atk_ante,
+                atk_conseq,
+                res_logits
+            ], dim=1
+        )
+
+        return AttackerModelOutput(
+            loss = loss,
+            logits = logits,
         )
 
 

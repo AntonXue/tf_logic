@@ -141,8 +141,96 @@ def load_stats_from_wandb(
     return run.summary
 
 
-
 def load_model_and_dataset_from_big_grid(
+    embed_dim: int,
+    num_vars: int,
+    num_steps: int,
+    dataset_len: Optional[int] = None,
+    model_name: str = "gpt2",
+    num_rules_range: tuple[int, int] = (32, 64),
+    ante_prob: float = 0.125,
+    conseq_prob: float = 0.125,
+    state_prob: float = 0.125,
+    chain_len_range: tuple[int, int] = (3, 5),
+    num_trains: int = 262144,
+    num_evals: int = 65536,
+    learning_rate: float = 1e-3,
+    batch_size: int = 256,
+    seed: int = 501,
+    quiet: bool = False,
+    wandb_project: str = "transformer_friends/transformer_friends",
+    overwrite: bool = True,
+    max_test_seq_len: int = 1024,
+):
+    seqcls_model = MyGPT2SeqClsModel(MyGPT2Config(
+        input_dim = 2 * num_vars,
+        num_vars = num_vars,
+        embed_dim = embed_dim,
+        num_heads = 1,
+        num_layers = 1,
+        use_positional_embedding = False,
+        max_seq_len = max_test_seq_len,
+    ))
+
+    model = AutoregKStepsTaskModel(
+        seqcls_model = seqcls_model,
+        num_steps = num_steps,
+        train_supervision_mode = "all"
+    )
+
+    artifact_id = f"model-SynSAR_{model_name}_d{embed_dim}_L1_H1" + \
+            f"__nv{num_vars}_ns{num_steps}" + \
+            f"_nr{num_rules_range[0]}-{num_rules_range[1]}" + \
+            f"_ap{ante_prob:.3f}_bp{conseq_prob:.3f}_sp{state_prob:.3f}" + \
+            f"_cl{chain_len_range[0]}-{chain_len_range[1]}" + \
+            f"_ntr{num_trains}_ntt{num_evals}" + \
+            f"_bsz{batch_size}" + \
+            f"_lr{learning_rate:.5f}" + \
+            f"_seed{seed}:v0"
+
+    artifact_dir = Path(DUMP_DIR, "artifacts", artifact_id)
+    artifact_dir = download_artifact(
+        artifact_id = artifact_id, 
+        artifact_dir = artifact_dir,
+        wandb_project = wandb_project,
+        quiet = quiet,
+        overwrite = overwrite
+    )
+
+    artifact_file = Path(artifact_dir, "model.safetensors")
+    with safe_open(str(artifact_file), framework="pt", device="cpu") as f:
+        tensors = {k: f.get_tensor(k) for k in f.keys()}
+
+    # Delete the positional embedding key
+    del tensors["seqcls_model.gpt2s.transformer.wpe.weight"]
+
+    model.load_state_dict(tensors, strict=False)
+
+    # Modify the wpe to be of the right sequence length
+    model.seqcls_model.gpt2s.transformer.wpe = nn.Embedding(max_test_seq_len, embed_dim)
+    model.seqcls_model.gpt2s.transformer.wpe.requires_grad_(False)
+    model.seqcls_model.gpt2s.transformer.wpe.weight.fill_(0)
+
+    model.eval()
+
+    dataset_len = num_trains if dataset_len is None else dataset_len
+    dataset = AutoregKStepsTokensDataset(
+        num_vars = num_vars,
+        num_rules_range = num_rules_range,
+        ante_prob = ante_prob,
+        conseq_prob = conseq_prob,
+        state_prob = state_prob,
+        chain_len_range = chain_len_range,
+        num_prevs_range = (1, chain_len_range[0]),
+        num_steps = num_steps,
+        dataset_len = dataset_len,
+    )
+
+    return model, dataset
+
+
+
+def old_load_model_and_dataset_from_big_grid(
     embed_dim: int,
     num_vars: int,
     num_steps: int,

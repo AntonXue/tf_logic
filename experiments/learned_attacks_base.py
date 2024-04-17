@@ -24,6 +24,11 @@ class LearnedAttackExperimentsArguments:
         metadata = {"help": "Output directory of synthetic experiments."}
     )
 
+    attack_name: Optional[str] = field(
+        default = None,
+        metadata = {"help": "The name of the attack."}
+    )
+
     """ Model details """
 
     num_vars: Optional[int] = field(
@@ -95,75 +100,88 @@ class LearnedAttackExperimentsArguments:
 
 
 def args_to_wandb_run_name(args):
-    res_model_str = f"gpt2_d{args.embed_dim}_nv{args.num_vars}_rseed{args.reasoner_seed}"
-    return f"SynLAtk_{args.token_range}_natk{args.num_attack_tokens}" + \
-        f"_{res_model_str}_" + \
-        f"_ntr{args.train_len}_ntt{args.eval_len}" + \
-        f"_bsz{args.batch_size}_lr{args.learning_rate:.5f}" + \
-        f"_aseed{args.attacker_seed}"
+    if args.attack_name == "bad_suffix":
+        res_model_str = f"gpt2_d{args.embed_dim}_nv{args.num_vars}_rseed{args.reasoner_seed}"
+        return f"SynLAtkBS_{args.token_range}_natk{args.num_attack_tokens}" + \
+            f"_{res_model_str}_" + \
+            f"_ntr{args.train_len}_ntt{args.eval_len}" + \
+            f"_bsz{args.batch_size}_lr{args.learning_rate:.5f}" + \
+            f"_aseed{args.attacker_seed}"
+
+    elif args.attack_name == "suppress_rule":
+        res_model_str = f"gpt2_d{args.embed_dim}_nv{args.num_vars}_rseed{args.reasoner_seed}"
+        return f"SynLAtkSR" + \
+            f"_{res_model_str}_" + \
+            f"_ntr{args.train_len}_ntt{args.eval_len}" + \
+            f"_bsz{args.batch_size}_lr{args.learning_rate:.5f}" + \
+            f"_aseed{args.attacker_seed}"
+
+    else:
+        raise ValueError(f"Unknown attack name {args.attack_name}")
 
 
 def load_reasoner_model_and_dataset(args):
     return load_model_and_dataset_from_big_grid(
         num_vars = args.num_vars,
         embed_dim = args.embed_dim,
-        num_steps = 1,
+        num_steps = 3,
         seed = args.reasoner_seed,
     )
 
-def learned_attack_metrics(eval_preds):
-    logits, labels = eval_preds
-    logits = logits[0] if isinstance(logits, tuple) else logits
-    assert logits.shape[1] >= 3 # Should be at least three terms
 
-    num_vars = labels.shape[-1]
+def make_bad_suffix_trainer(args):
 
-    # Non-binary stuff
-    res_logits = logits[:,-2]
-    res_pred = (res_logits > 0).astype(np.int64)
-    elems_acc = np.mean(res_pred == labels)
-    state_acc = np.mean((res_pred == labels).sum(axis=-1) == num_vars)
+    def bad_suffix_metrics(eval_preds):
+        logits, labels = eval_preds
+        logits = logits[0] if isinstance(logits, tuple) else logits
+        assert logits.shape[1] >= 3 # Should be at least three terms
 
-    # Binary stuff
-    bin_res_logits = logits[:,-1]
-    bin_res_pred = (bin_res_logits > 0).astype(np.int64)
-    bin_elems_acc = np.mean(bin_res_pred == labels)
-    bin_state_acc = np.mean((bin_res_pred == labels).sum(axis=-1) == num_vars)
+        num_vars = labels.shape[-1]
 
-    # Track the alignment of the attack logits (averaged scheme)
-    atk_logits = logits[:,:-3]
-    atk_pred = (atk_logits > 0).astype(np.int64)
-    atk_align = np.mean(atk_pred == labels.reshape(-1,1,num_vars))
-    atk_size = np.mean(np.absolute(atk_logits))
+        # Non-binary stuff
+        res_logits = logits[:,-2]
+        res_pred = (res_logits > 0).astype(np.int64)
+        elems_acc = np.mean(res_pred == labels)
+        state_acc = np.mean((res_pred == labels).sum(axis=-1) == num_vars)
 
-    return {
-        "ElemsAcc": elems_acc,
-        "StateAcc": state_acc,
-        "AvgOnes": np.mean(res_pred),
-        "BinElemsAcc": bin_elems_acc,
-        "BinStateAcc": bin_state_acc,
-        "BinAvgOnes": np.mean(bin_res_pred),
-        "AtkAlign": atk_align,
-        "AtkSize": atk_size
-    }
+        # Binary stuff
+        bin_res_logits = logits[:,-1]
+        bin_res_pred = (bin_res_logits > 0).astype(np.int64)
+        bin_elems_acc = np.mean(bin_res_pred == labels)
+        bin_state_acc = np.mean((bin_res_pred == labels).sum(axis=-1) == num_vars)
 
+        # Track the alignment of the attack logits (averaged scheme)
+        atk_logits = logits[:,:-2]
+        atk_pred = (atk_logits > 0).astype(np.int64)
+        atk_align = np.mean(atk_pred == labels.reshape(-1,1,num_vars))
+        atk_size = np.mean(np.absolute(atk_logits))
 
-def make_trainer(args):
+        return {
+            "ElemsAcc": elems_acc,
+            "StateAcc": state_acc,
+            "AvgOnes": np.mean(res_pred),
+            "BinElemsAcc": bin_elems_acc,
+            "BinStateAcc": bin_state_acc,
+            "BinAvgOnes": np.mean(bin_res_pred),
+            "AtkAlign": atk_align,
+            "AtkSize": atk_size
+        }
+
     reasoner_model, reasoner_dataset = load_reasoner_model_and_dataset(args)
 
-    atk_wrap_model = AttackWrapperModel(
+    atk_wrap_model = BadSuffixWrapperModel(
         reasoner_model = reasoner_model,
         num_attack_tokens = args.num_attack_tokens,
         token_range = args.token_range
     )
 
-    train_dataset = AttackWrapperDataset(
+    train_dataset = BadSuffixDataset(
         reasoner_dataset = reasoner_dataset,
         num_attack_tokens = args.num_attack_tokens,
         dataset_len = args.train_len
     )
 
-    eval_dataset = AttackWrapperDataset(
+    eval_dataset = BadSuffixDataset(
         reasoner_dataset = reasoner_dataset,
         num_attack_tokens = args.num_attack_tokens,
         dataset_len = args.eval_len
@@ -191,8 +209,74 @@ def make_trainer(args):
         training_args,
         train_dataset = train_dataset,
         eval_dataset = eval_dataset,
-        compute_metrics = learned_attack_metrics
+        compute_metrics = bad_suffix_metrics
     )
+
+
+def make_suppress_rule_trainer(args):
+
+    def suppress_rule_metrics(eval_preds):
+        logits, labels = eval_preds
+        logits = logits[0] if isinstance(logits, tuple) else logits
+        assert logits.shape[1] == 5
+        num_vars = labels.shape[-1]
+
+        supp_ante, supp_conseq = logits[:,0], logits[:,1]
+        atk_ante, atk_conseq = logits[:,2], logits[:,3]
+        res_logits = logits[:,4]
+
+        ante_align = np.mean((atk_ante > 0).astype(np.int64) == supp_ante)
+        conseq_align = np.mean((atk_conseq < 0).astype(np.int64) == supp_conseq)
+
+        pred = (res_logits > 0).astype(np.int64)
+        acc = np.mean(pred == labels)
+        return {
+            "Acc": acc,
+            "AnteAlign": ante_align,
+            "ConseqAlign": conseq_align,
+        }
+
+    reasoner_model, reasoner_dataset = load_reasoner_model_and_dataset(args)
+
+    atk_wrap_model = SuppressRuleWrapperModel(
+        reasoner_model = reasoner_model,
+    )
+
+    train_dataset = SuppressRuleDataset(
+        reasoner_dataset = reasoner_dataset,
+        dataset_len = args.train_len
+    )
+
+    eval_dataset = SuppressRuleDataset(
+        reasoner_dataset = reasoner_dataset,
+        dataset_len = args.eval_len
+    )
+
+    run_name = args_to_wandb_run_name(args)
+    training_args = TrainingArguments(
+        str(Path(args.output_dir, run_name)),
+        num_train_epochs = args.num_epochs,
+        per_device_train_batch_size = args.batch_size,
+        per_device_eval_batch_size = args.batch_size,
+        auto_find_batch_size = False,
+        evaluation_strategy = "epoch",
+        report_to = "wandb",
+        run_name = run_name,
+        logging_steps = args.logging_steps,
+        learning_rate = args.learning_rate,
+        warmup_ratio = 0.1,
+        save_strategy = "epoch",
+        save_total_limit = 2
+    )
+
+    return Trainer(
+        atk_wrap_model,
+        training_args,
+        train_dataset = train_dataset,
+        eval_dataset = eval_dataset,
+        compute_metrics = suppress_rule_metrics
+    )
+
 
 
 if __name__ == "__main__":
@@ -201,7 +285,15 @@ if __name__ == "__main__":
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
     torch.manual_seed(args.attacker_seed)
-    trainer = make_trainer(args)
+
+    if args.attack_name == "bad_suffix":
+        trainer = make_bad_suffix_trainer(args)
+
+    elif args.attack_name == "suppress_rule":
+        trainer = make_suppress_rule_trainer(args)
+
+    else:
+        raise ValueError(f"Unknown attack name {args.attack_name}")
     
     trainer.train()
     wandb.finish()
