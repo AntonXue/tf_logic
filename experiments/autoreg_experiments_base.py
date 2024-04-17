@@ -89,29 +89,14 @@ class AutoregExperimentsArguments:
         metadata = {"help": "The probability of a variable in the antecedent being true."}
     )
 
-    min_ante_prob: Optional[float] = field(
-        default = 0.25,
-        metadata = {"help": "The minimum probability of a variable in the antecedent being true."}
-    )
-
-    max_ante_prob: Optional[float] = field(
-        default = 0.25,
-        metadata = {"help": "The maximum probability of a variable in the antecedent being true."}
-    )
-
     conseq_prob: Optional[float] = field(
         default = None,
         metadata = {"help": "The probability of a variable in the consequent being true."}
     )
 
-    min_conseq_prob: Optional[float] = field(
-        default = 0.25,
-        metadata = {"help": "The minimum probability of a variable in the consequent being true."}
-    )
-
-    max_conseq_prob: Optional[float] = field(
-        default = 0.25,
-        metadata = {"help": "The maximum probability of a variable in the consequent being true."}
+    state_prob: Optional[float] = field(
+        default = None,
+        metadata = {"help": "The probability of a variable in the consequent being true."}
     )
 
     chain_len: Optional[int] = field(
@@ -184,8 +169,9 @@ def synexp_args_to_wandb_run_name(args: AutoregExperimentsArguments):
         f"_nv{args.num_vars}" + \
         f"_ns{args.num_steps}" + \
         f"_nr{args.min_num_rules}-{args.max_num_rules}" + \
-        f"_ap{args.min_ante_prob:.2f}-{args.max_ante_prob:.2f}" + \
-        f"_bp{args.min_conseq_prob:.2f}-{args.max_conseq_prob:.2f}" + \
+        f"_ap{args.ante_prob:.2f}" + \
+        f"_bp{args.conseq_prob:.2f}" + \
+        f"_sp{args.state_prob:.2f}" + \
         f"_cl{args.min_chain_len}-{args.max_chain_len}" + \
         f"_ntr{args.train_len}_ntt{args.eval_len}_bsz{args.batch_size}" + \
         f"_lr{args.learning_rate:.5f}" + \
@@ -193,27 +179,26 @@ def synexp_args_to_wandb_run_name(args: AutoregExperimentsArguments):
 
 
 def autoreg_ksteps_metrics(eval_preds):
-    if isinstance(eval_preds.predictions, tuple):
-        logits = eval_preds.predictions[0]
-    else:
-        logits = eval_preds.predictions
+    logits, labels = eval_preds
+    logits = logits[0] if isinstance(logits, tuple) else logits
+
+    num_vars = logits.shape[-1]
     preds = (logits > 0).astype(np.int64)
-    avg_ones = np.mean(preds)
 
     # Element-wise comparison of everything
-    elems_acc = np.mean(preds == eval_preds.label_ids)
-    states_acc = np.mean(np.mean(preds == eval_preds.label_ids, axis=2) > 1 - 1e-5)
+    elems_acc = np.mean(preds == labels)
+    states_acc = np.mean(np.sum(preds == labels, axis=-1) == num_vars)
 
     # Only do accuracy check on the final state
-    target_elems_acc = np.mean(preds[:,-1] == eval_preds.label_ids[:,-1])
-    target_states_acc = np.mean(np.mean(preds[:,-1] == eval_preds.label_ids[:,-1], axis=1) > 1 - 1e-5)
+    target_elems_acc = np.mean(preds[:,-1] == labels[:,-1])
+    target_states_acc = np.mean(np.sum(preds[:,-1] == labels[:,-1], axis=-1) == num_vars)
 
     return {
         "ElemsAcc": elems_acc,
         "StatesAcc": states_acc,
         "TargetElemsAcc": target_elems_acc,
         "TargetStatesAcc": target_states_acc,
-        "AvgOnes": avg_ones,
+        "AvgOnes": np.mean(preds),
     }
 
 
@@ -225,8 +210,9 @@ def make_trainer_for_autoreg(
     train_dataset = AutoregKStepsTokensDataset(
         num_vars = args.num_vars,
         num_rules_range = (args.min_num_rules, args.max_num_rules),
-        ante_prob_range = (args.min_ante_prob, args.max_ante_prob),
-        conseq_prob_range = (args.min_conseq_prob, args.max_conseq_prob),
+        ante_prob = args.ante_prob,
+        conseq_prob = args.conseq_prob,
+        state_prob = args.state_prob,
         chain_len_range = (args.min_chain_len, args.max_chain_len),
         num_prevs_range = (1, args.min_chain_len),
         num_steps = args.num_steps,
@@ -236,8 +222,9 @@ def make_trainer_for_autoreg(
     eval_dataset = AutoregKStepsTokensDataset(
         num_vars = args.num_vars,
         num_rules_range = (args.min_num_rules, args.max_num_rules),
-        ante_prob_range = (args.min_ante_prob, args.max_ante_prob),
-        conseq_prob_range = (args.min_conseq_prob, args.max_conseq_prob),
+        ante_prob = args.ante_prob,
+        conseq_prob = args.conseq_prob,
+        state_prob = args.state_prob,
         chain_len_range = (args.min_chain_len, args.max_chain_len),
         num_prevs_range = (1, args.min_chain_len),
         num_steps = args.num_steps,

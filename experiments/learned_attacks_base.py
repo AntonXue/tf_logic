@@ -114,16 +114,37 @@ def load_reasoner_model_and_dataset(args):
 def learned_attack_metrics(eval_preds):
     logits, labels = eval_preds
     logits = logits[0] if isinstance(logits, tuple) else logits
+    assert logits.shape[1] >= 3 # Should be at least three terms
+
     num_vars = labels.shape[-1]
-    res_logits, bin_res_logits = logits[:,0], logits[:,1]
+
+    # Non-binary stuff
+    res_logits = logits[:,-2]
     res_pred = (res_logits > 0).astype(np.int64)
-    bin_res_pred = (bin_res_logits > 1 - 1e-5).astype(np.int64)
-    acc = np.mean((res_pred == labels).sum(axis=-1) == num_vars)
-    bin_acc = np.mean((bin_res_pred == labels).sum(axis=-1) == num_vars)
+    elems_acc = np.mean(res_pred == labels)
+    state_acc = np.mean((res_pred == labels).sum(axis=-1) == num_vars)
+
+    # Binary stuff
+    bin_res_logits = logits[:,-1]
+    bin_res_pred = (bin_res_logits > 0).astype(np.int64)
+    bin_elems_acc = np.mean(bin_res_pred == labels)
+    bin_state_acc = np.mean((bin_res_pred == labels).sum(axis=-1) == num_vars)
+
+    # Track the alignment of the attack logits (averaged scheme)
+    atk_logits = logits[:,:-3]
+    atk_pred = (atk_logits > 0).astype(np.int64)
+    atk_align = np.mean(atk_pred == labels.reshape(-1,1,num_vars))
+    atk_size = np.mean(np.absolute(atk_logits))
+
     return {
-        "Acc": acc,
-        "BinAcc": bin_acc,
+        "ElemsAcc": elems_acc,
+        "StateAcc": state_acc,
         "AvgOnes": np.mean(res_pred),
+        "BinElemsAcc": bin_elems_acc,
+        "BinStateAcc": bin_state_acc,
+        "BinAvgOnes": np.mean(bin_res_pred),
+        "AtkAlign": atk_align,
+        "AtkSize": atk_size
     }
 
 

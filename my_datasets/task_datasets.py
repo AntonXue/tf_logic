@@ -155,8 +155,9 @@ class AutoregKStepsTokensDataset(Dataset):
         self,
         num_vars: int,
         num_rules_range: tuple[int, int],
-        ante_prob_range: tuple[float, float],
-        conseq_prob_range: tuple[float, float],
+        ante_prob: float,
+        conseq_prob: float,
+        state_prob: float,
         chain_len_range: tuple[int, int],
         num_prevs_range: tuple[int, int],
         num_steps: int,
@@ -165,10 +166,7 @@ class AutoregKStepsTokensDataset(Dataset):
     ):
         assert num_vars > 2
         assert num_rules_range[0] > 2 and num_rules_range[0] <= num_rules_range[1]
-        assert ante_prob_range[0] > 0.0 and ante_prob_range[1] < 1.0
-        assert ante_prob_range[0] <= ante_prob_range[1]
-        assert conseq_prob_range[0] > 0.0 and conseq_prob_range[1] < 1.0
-        assert conseq_prob_range[0] <= conseq_prob_range[1]
+
         assert chain_len_range[0] <= chain_len_range[1]
         assert num_rules_range[0] > chain_len_range[1] + 2
         assert num_prevs_range[0] >= 1
@@ -177,8 +175,9 @@ class AutoregKStepsTokensDataset(Dataset):
 
         self.num_vars = num_vars
         self.num_rules_range = num_rules_range
-        self.ante_prob_range = ante_prob_range
-        self.conseq_prob_range = conseq_prob_range
+        self.ante_prob = ante_prob
+        self.conseq_prob = conseq_prob
+        self.state_prob = state_prob
         self.chain_len_range = chain_len_range
         self.num_prevs_range = num_prevs_range
         self.num_steps = num_steps
@@ -193,17 +192,12 @@ class AutoregKStepsTokensDataset(Dataset):
     def get_random_rules(self):
         num_rules = torch.randint(self.num_rules_range[0], self.num_rules_range[1]+1, ())
         chain_len = torch.randint(self.chain_len_range[0], self.chain_len_range[1]+1, ())
-
-        min_ap, max_ap = self.ante_prob_range
-        min_bp, max_bp = self.conseq_prob_range
-        ap = (max_ap - min_ap) * torch.rand(()) + min_ap
-        bp = (max_bp - min_bp) * torch.rand(()) + min_bp
-
         return random_rules_with_chain(
             num_vars = self.num_vars,
             num_rules = num_rules,
-            ante_prob = ap,
-            conseq_prob = bp,
+            ante_prob = self.ante_prob,
+            conseq_prob = self.conseq_prob,
+            state_prob = self.state_prob,
             chain_len = chain_len,
             return_dict = True,
         )

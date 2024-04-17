@@ -10,8 +10,8 @@ def random_rules_with_chain(
     num_rules: int,
     ante_prob: float,
     conseq_prob: float,
+    state_prob: float,
     chain_len: int,
-    state_prob: Optional[float] = None,
     return_dict: bool = False
 ):
     """ Make one rule at a time (batch_size == 1) """
@@ -24,14 +24,12 @@ def random_rules_with_chain(
     other_bits = order[chain_len:n-1] # The other stuffs
     bad_bit = order[-1] # The bad bit we wanna be excluding
 
-    other_vec = torch.zeros(n)
+    other_vec = torch.zeros(n).long()
     other_vec[other_bits] = 1
 
-    init_state = torch.zeros(n)
-    if sp is not None:
-        init_state = (torch.rand(n) < sp)
-        init_state[chain_bits] = 0
-        init_state[bad_bit] = 0
+    init_state = (torch.rand(n) < sp).long()
+    init_state[chain_bits] = 0
+    init_state[bad_bit] = 0
     init_state = init_state
 
     # chain_bits, init_state, and other_vec are disjoint
@@ -117,10 +115,10 @@ def kstep_rules(rules: torch.LongTensor, state: torch.LongTensor, num_steps: int
 
 
 def prove_theorem(
-        rules: torch.LongTensor,
-        theorem: torch.LongTensor,
-        init_state: Optional[torch.LongTensor] = None
-    ):
+    rules: torch.LongTensor,
+    theorem: torch.LongTensor,
+    init_state: Optional[torch.LongTensor] = None
+):
     """ Run a proof and return a bunch of metadata """
     N, r, n2 = rules.shape
     _, n = theorem.shape

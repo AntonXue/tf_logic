@@ -1,0 +1,14 @@
+[{
+    "reasoner_seed": [602],
+    "attacker_seed": [701],
+    "nd_pairs": [
+        [32, 64]
+    ],
+    "num_attack_tokens": [3],
+    "token_range": ["clamped"],
+    "train_len": [4096],
+    "eval_len": [4096],
+    "batch_size": [64],
+    "num_epochs": [4],
+    "learning_rate": [0.0005]
+}]

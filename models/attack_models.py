@@ -43,7 +43,7 @@ class AttackWrapperModel(nn.Module):
         self.token_dim = 2 * self.num_vars
         self.attacker_model = GPT2ForSequenceClassification.from_pretrained(
             "gpt2",
-            num_labels = num_attack_tokens * self.token_dim,
+            num_labels = num_attack_tokens * self.num_vars,
             problem_type = "multi_label_classification",
             pad_token_id = -1
         )
@@ -73,24 +73,21 @@ class AttackWrapperModel(nn.Module):
             ], dim=1
         )
 
-        # z = self.attacker_model(inputs_embeds=atk_inputs_embeds).last_hidden_state
-        # atk_logits = self.cls_head(z)[:,:self.num_attack_tokens]
         atk_logits = self.attacker_model(inputs_embeds=atk_inputs_embeds).logits
-        atk_logits = atk_logits.view(-1, self.num_attack_tokens, self.token_dim)
+        atk_logits = atk_logits.view(-1, self.num_attack_tokens, self.num_vars)
 
         # Depending on the token mode, clamp if necessary and binarize accordingly
         if self.token_range == "unbounded":
-            atk_tokens = atk_logits
+            atk_tokens = torch.cat([torch.zeros_like(atk_logits), atk_logits], dim=-1)
             bin_atk_tokens = (atk_tokens > 0.0).long()
         elif self.token_range == "clamped":
-            atk_tokens = (atk_logits*0.5 + 0.5).clamp(0,1)
-            bin_atk_tokens = (atk_tokens > 0.5).long()
+            atk_tokens = torch.cat([torch.zeros_like(atk_logits), atk_logits], dim=-1).clamp(0,1)
+            bin_atk_tokens = (atk_tokens > 0.0).long()
 
         # Adversarial (and its binary version) to the reasoner model and query it
         adv_inputs = torch.cat([tokens, atk_tokens], dim=1)
         res_out = self.reasoner_model(adv_inputs)
-        # res_logits = res_out.logits[:,0] # The first item of the autoreg sequence
-        res_logits = res_out.logits[:,-1] # Try the last logit
+        res_logits = res_out.logits[:,0] # The first item of the autoreg sequence
 
         with torch.no_grad():
             # Don't apply grad here because binarization as we wrote is not differentiable
@@ -99,10 +96,15 @@ class AttackWrapperModel(nn.Module):
             bin_res_logits = bin_res_out.logits[:,0]
 
         loss = nn.BCEWithLogitsLoss()(res_logits, labels.float())
-        # loss += 1e-3 * nn.MSELoss()(atk_tokens, torch.zeros_like(atk_tokens))
+
+        logits = torch.cat([
+            atk_logits,
+            torch.stack([res_logits, bin_res_logits], dim=1)
+        ], dim=1) # (N,k+2,n)
+
         return AttackerModelOutput(
             loss = loss,
-            logits = torch.stack([res_logits, bin_res_logits], dim=1), # (N,2,n),
+            logits = logits,
             attack_tokens = atk_tokens,
             bin_attack_tokens = bin_atk_tokens
         )
