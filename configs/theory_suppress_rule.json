@@ -1,0 +1,7 @@
+{
+    "train_seeds": [501],
+    "nd_pairs": [
+        [64, 128]
+    ],
+    "num_samples": 16384
+}

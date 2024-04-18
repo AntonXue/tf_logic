@@ -1,0 +1,14 @@
+[{
+    "attack_name": ["suppress_rule"],
+    "reasoner_seed": [501],
+    "attacker_seed": [701],
+    "nd_pairs": [
+        [64, 128]
+    ],
+    "num_attack_tokens": [1],
+    "train_len": [16384],
+    "eval_len": [16384],
+    "batch_size": [64],
+    "num_epochs": [16],
+    "learning_rate": [0.0005]
+}]

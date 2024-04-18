@@ -218,12 +218,12 @@ def make_suppress_rule_trainer(args):
     def suppress_rule_metrics(eval_preds):
         logits, labels = eval_preds
         logits = logits[0] if isinstance(logits, tuple) else logits
-        assert logits.shape[1] == 5
+        assert logits.shape[1] >= 5
         num_vars = labels.shape[-1]
 
         supp_ante, supp_conseq = logits[:,0], logits[:,1]
         atk_ante, atk_conseq = logits[:,2], logits[:,3]
-        res_logits = logits[:,4]
+        res_logits = logits[:,4:]
 
         ante_align = np.mean((atk_ante > 0).astype(np.int64) == supp_ante)
         conseq_align = np.mean((atk_conseq < 0).astype(np.int64) == supp_conseq)

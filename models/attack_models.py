@@ -8,6 +8,7 @@ from transformers.utils import ModelOutput
 from transformers import GPT2ForSequenceClassification
 
 from .common import *
+from .task_models import AutoregKStepsTaskModel
 
 
 """ Different attacker models """
@@ -110,7 +111,7 @@ class BadSuffixWrapperModel(nn.Module):
 class SuppressRuleWrapperModel(nn.Module):
     def __init__(
         self,
-        reasoner_model: SeqClsModel,
+        reasoner_model: AutoregKStepsTaskModel,
     ):
         super().__init__()
 
@@ -162,7 +163,7 @@ class SuppressRuleWrapperModel(nn.Module):
         # Prepend the logits to the token sequence
         adv_inputs = torch.cat([atk_logits.view(-1,1,self.token_dim), tokens], dim=1)
         res_out = self.reasoner_model(adv_inputs)
-        res_logits = res_out.logits[:,0]    # The first item of the autoreg sequence
+        res_logits = res_out.logits #
 
         loss = None
         if labels is not None:
@@ -176,9 +177,10 @@ class SuppressRuleWrapperModel(nn.Module):
                 supp_conseq,
                 atk_ante,
                 atk_conseq,
-                res_logits
             ], dim=1
         )
+
+        logits = torch.cat([logits, res_logits], dim=1)
 
         return AttackerModelOutput(
             loss = loss,

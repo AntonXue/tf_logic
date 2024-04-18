@@ -1,7 +1,7 @@
 [{
 	"model_name": ["gpt2"],
     "seed": [501],
-    "num_steps": [3,2,1],
+    "num_steps": [2,1],
     "min_chain_len": [3],
     "max_chain_len": [5],
     "embed_dim": [128],
