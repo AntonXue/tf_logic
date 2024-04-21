@@ -59,6 +59,11 @@ class AutoregExperimentsArguments:
 
     """ Dataset details """
 
+    dataset_name: Optional[str] = field(
+        default = "autoregk",
+        metadata = {"help": "The name of the dataset used"}
+    )
+
     num_rules: Optional[int] = field(
         default = None,
         metadata = {"help": "The number of rules to use."}
@@ -165,15 +170,23 @@ def synexp_args_to_wandb_run_name(args: AutoregExperimentsArguments):
                 (f"_L{args.num_layers}" if args.num_layers is not None else "") + \
                 (f"_H{args.num_heads}" if args.num_heads is not None else "")
 
-    return f"SynSAR_{model_str}_" + \
-        f"_nv{args.num_vars}" + \
-        f"_ns{args.num_steps}" + \
-        f"_nr{args.min_num_rules}-{args.max_num_rules}" + \
-        f"_ap{args.ante_prob:.3f}_bp{args.conseq_prob:.3f}_sp{args.state_prob:.3f}" + \
-        f"_cl{args.min_chain_len}-{args.max_chain_len}" + \
-        f"_ntr{args.train_len}_ntt{args.eval_len}_bsz{args.batch_size}" + \
-        f"_lr{args.learning_rate:.5f}" + \
-        f"_seed{args.seed}"
+    if args.dataset_name == "autoregk":
+        dataset_str = f"nv{args.num_vars}" + \
+            f"_ns{args.num_steps}_nr{args.min_num_rules}-{args.max_num_rules}" + \
+            f"_ap{args.ante_prob:.3f}_bp{args.conseq_prob:.3f}_sp{args.state_prob:.3f}" + \
+            f"_cl{args.min_chain_len}-{args.max_chain_len}"
+
+    elif args.dataset_name == "diamond":
+        dataset_str = f"diamond_nv{args.num_vars}_nr{args.min_num_rules}-{args.max_num_rules}"
+
+    else:
+        raise ValueError(f"Unknown dataset_name {args.dataset_name}")
+
+    train_str = f"ntr{args.train_len}_ntt{args.eval_len}_bsz{args.batch_size}" + \
+            f"_lr{args.learning_rate:.5f}_seed{args.seed}"
+
+    return f"SynSAR_{model_str}__{dataset_str}_{train_str}"
+
 
 
 def autoreg_ksteps_metrics(eval_preds):
@@ -205,30 +218,8 @@ def make_trainer_for_autoreg(
     report_to: str = "wandb"
 ):
     """ Make a Hugging Face Trainer object """
-    train_dataset = AutoregKStepsTokensDataset(
-        num_vars = args.num_vars,
-        num_rules_range = (args.min_num_rules, args.max_num_rules),
-        ante_prob = args.ante_prob,
-        conseq_prob = args.conseq_prob,
-        state_prob = args.state_prob,
-        chain_len_range = (args.min_chain_len, args.max_chain_len),
-        num_prevs_range = (1, args.min_chain_len),
-        num_steps = args.num_steps,
-        dataset_len = args.train_len
-    )
 
-    eval_dataset = AutoregKStepsTokensDataset(
-        num_vars = args.num_vars,
-        num_rules_range = (args.min_num_rules, args.max_num_rules),
-        ante_prob = args.ante_prob,
-        conseq_prob = args.conseq_prob,
-        state_prob = args.state_prob,
-        chain_len_range = (args.min_chain_len, args.max_chain_len),
-        num_prevs_range = (1, args.min_chain_len),
-        num_steps = args.num_steps,
-        dataset_len = args.eval_len
-    )
-
+    # The same base seqcls_model is the same regardless
     seqcls_model = MyGPT2SeqClsModel(MyGPT2Config(
         input_dim = 2 * args.num_vars,
         num_vars = args.num_vars,
@@ -238,11 +229,58 @@ def make_trainer_for_autoreg(
         use_positional_embedding = False
     ))
 
-    task_model = AutoregKStepsTaskModel(
-        seqcls_model = seqcls_model,
-        num_steps = args.num_steps,
-        train_supervision_mode = "all"
-    )
+    if args.dataset_name == "autoregk":
+        train_dataset = AutoregKStepsTokensDataset(
+            num_vars = args.num_vars,
+            num_rules_range = (args.min_num_rules, args.max_num_rules),
+            ante_prob = args.ante_prob,
+            conseq_prob = args.conseq_prob,
+            state_prob = args.state_prob,
+            chain_len_range = (args.min_chain_len, args.max_chain_len),
+            num_prevs_range = (1, args.min_chain_len),
+            num_steps = args.num_steps,
+            dataset_len = args.train_len
+        )
+
+        eval_dataset = AutoregKStepsTokensDataset(
+            num_vars = args.num_vars,
+            num_rules_range = (args.min_num_rules, args.max_num_rules),
+            ante_prob = args.ante_prob,
+            conseq_prob = args.conseq_prob,
+            state_prob = args.state_prob,
+            chain_len_range = (args.min_chain_len, args.max_chain_len),
+            num_prevs_range = (1, args.min_chain_len),
+            num_steps = args.num_steps,
+            dataset_len = args.eval_len
+        )
+
+        task_model = AutoregKStepsTaskModel(
+            seqcls_model = seqcls_model,
+            num_steps = args.num_steps,
+            train_supervision_mode = "all"
+        )
+
+    elif args.dataset_name == "diamond":
+        train_dataset = DiamondRuleTokensDataset(
+            num_vars = args.num_vars,
+            num_rules_range = (args.min_num_rules, args.max_num_rules),
+            dataset_len = args.train_len
+        )
+
+        eval_dataset = DiamondRuleTokensDataset(
+            num_vars = args.num_vars,
+            num_rules_range = (args.min_num_rules, args.max_num_rules),
+            dataset_len = args.eval_len
+        )
+
+        task_model = AutoregKStepsTaskModel(
+            seqcls_model = seqcls_model,
+            num_steps = 2,
+            train_supervision_mode = "all"
+        )
+
+    else:
+        raise ValueError(f"Unknown dataset_name {args.dataset_name}")
 
     run_name = synexp_args_to_wandb_run_name(args)
     training_args = TrainingArguments(
