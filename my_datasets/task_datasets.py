@@ -233,101 +233,81 @@ class AutoregKStepsTokensDataset(Dataset):
         }
 
 
-
-class DiamondRuleTokensDataset(Dataset):
-    """
-    Inject a structure which has rules of form:
-        
-    Rules:
-        a -> b
-        a -> c
-        b,c -> d
-        (... others ...)
-
-    This can then be done in k=3 autoregressive steps starting from the state (a)
-    """
+class KStepsTokensDataset(Dataset):
+    """ [rules] [prev_states] """
     def __init__(
         self,
         num_vars: int,
         num_rules_range: tuple[int, int],
+        chain_len_range: tuple[int, int],
+        num_prevs_range: tuple[int, int],
+        num_steps: int,
         dataset_len: int,
-        hot_prob: Optional[float] = None,
-        do_padding: bool = True
+        exp_hots: float = 4.0,
+        do_padding: bool = True,
     ):
-        assert num_vars > 4
-        assert num_rules_range[0] <= num_rules_range[1]
-        assert num_rules_range[0] > 5
+        assert num_vars > 2
+        assert num_rules_range[0] > 2 and num_rules_range[0] <= num_rules_range[1]
+        assert chain_len_range[0] <= chain_len_range[1]
+        assert num_rules_range[0] > chain_len_range[1] + 2
+        assert num_prevs_range[0] >= 1
+        assert num_prevs_range[0] <= num_prevs_range[1]
+        assert num_prevs_range[1] + num_steps <= num_vars
 
         self.num_vars = num_vars
         self.num_rules_range = num_rules_range
+        self.ante_prob = exp_hots / num_vars
+        self.conseq_prob = exp_hots / num_vars
+        self.state_prob = exp_hots / num_vars
+        self.chain_len_range = chain_len_range
+        self.num_prevs_range = num_prevs_range
+        self.num_steps = num_steps
         self.dataset_len = dataset_len
-        self.hot_prob = (1.0 / num_vars) if hot_prob is None else hot_prob
+
+        self.max_seq_len = num_rules_range[1] + num_prevs_range[1]
         self.do_padding = do_padding
 
     def __len__(self):
         return self.dataset_len
 
-    def __getitem__(self, idx):
+    def get_random_rules(self):
         num_rules = torch.randint(self.num_rules_range[0], self.num_rules_range[1]+1, ())
+        chain_len = torch.randint(self.chain_len_range[0], self.chain_len_range[1]+1, ())
+        return random_rules_with_chain(
+            num_vars = self.num_vars,
+            num_rules = num_rules,
+            ante_prob = self.ante_prob,
+            conseq_prob = self.conseq_prob,
+            state_prob = self.state_prob,
+            chain_len = chain_len,
+            return_dict = True,
+        )
 
-        # The a,b,c,d bits for the rules. The e bit is used to blacklist rules.
-        abcde = torch.randperm(self.num_vars)[:5]
-        a, b, c, d, e = abcde
+    def __getitem__(self, idx):
+        num_vars = self.num_vars
+        rules_dict = self.get_random_rules()
+        rules, states = rules_dict["rules"], rules_dict["states"]
+        num_rules = rules.size(0)
 
-        diamond_antes = torch.zeros(3, self.num_vars)
-        diamond_conseqs = torch.zeros(3, self.num_vars)
+        # Generate the previous states
+        num_prevs = torch.randint(self.num_prevs_range[0], self.num_prevs_range[1]+1, ())
+        prevs = states[:num_prevs]
+        succs = states[num_prevs:num_prevs+self.num_steps]
 
-        # a -> b
-        diamond_antes[0,a] = 1
-        diamond_conseqs[0,b] = 1
-
-        # a -> c
-        diamond_antes[1,a] = 1
-        diamond_conseqs[1,c] = 1
-
-        # b, c -> d
-        diamond_antes[2,b] = 1
-        diamond_antes[2,c] = 1
-        diamond_conseqs[2,d] = 1
-
-        # Coalesce the diamond structure
-        diamond_rules = torch.cat([diamond_antes, diamond_conseqs], dim=1)
-
-        other_antes = torch.rand(num_rules-3, self.num_vars) < self.hot_prob
-        other_antes[:,e] = 1
-        other_conseqs = torch.rand(num_rules-3, self.num_vars) < self.hot_prob
-        other_rules = torch.cat([other_antes, other_conseqs], dim=-1).long()
-        rules = torch.cat([diamond_rules, other_rules], dim=0)
-
+        # Pad and shuffle the rules if necessary
         if self.do_padding:
-            pad_rules = torch.zeros(self.num_rules_range[1] - num_rules, 2 * self.num_vars)
-            rules = torch.cat([rules, pad_rules], dim=0)
+            pad_len = self.max_seq_len - num_rules - num_prevs
+            pad_rules = torch.zeros(pad_len, 2*num_vars)
+            rules = torch.cat([rules, torch.zeros(pad_len, 2*num_vars)], dim=0)
+            rules = rules[torch.randperm(rules.size(0))]
 
-        rules = rules[torch.randperm(rules.size(0))]    # Shuffle
-
-        init_state = torch.zeros(self.num_vars)
-        init_state[a] = 1
-        init_token = torch.cat([torch.zeros(self.num_vars), init_state])
-        tokens = torch.cat([rules, init_token.view(1,-1)], dim=0)
-
-        # We can predictably generate the subsequent states
-        labels = torch.zeros(2, self.num_vars)
-
-        # Step 1
-        labels[0,a] = 1
-        labels[0,b] = 1
-        labels[0,c] = 1
-        
-        # Step 2
-        labels[1,a] = 1
-        labels[1,b] = 1
-        labels[1,c] = 1
-        labels[1,d] = 1
+        # Prepare the output tokens
+        prev_tokens = torch.cat([torch.zeros(num_prevs, num_vars), prevs], dim=1)
+        all_tokens = torch.cat([rules, prev_tokens], dim=0)
 
         return {
-            "tokens": tokens.long(),
-            "labels": labels.long(),
-            "abcde": torch.stack([a,b,c,d,e]).long(),
+            "tokens": all_tokens,
+            "labels": succs
         }
 
 

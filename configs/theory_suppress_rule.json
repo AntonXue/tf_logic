@@ -1,7 +1,16 @@
 {
+    "attack_name": "suppress_rule",
     "train_seeds": [501],
     "nd_pairs": [
-        [64, 128]
+        [64, 128],
+        [56, 112],
+        [48, 96],
+        [40, 80],
+        [32, 64],
+        [24, 48],
+        [16, 32],
+        [8, 16]
     ],
-    "num_samples": 16384
+    "num_samples": 16384,
+    "batch_size": 128
 }

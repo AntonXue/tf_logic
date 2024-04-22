@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 from torch.utils.data import Dataset
 
 from .utils.logic_utils import *
@@ -35,49 +36,71 @@ class BadSuffixDataset(Dataset):
 
 
 class SuppressRuleDataset(Dataset):
+    """
+    This is a diamond-shaped dataset. We construct a dataset that has rules of form
+
+    Rules:
+        _ -> a
+        a -> b
+        a -> c
+        b,c -> d
+        ...
+
+    The goal for the attacker is to generate a token that suppresses the rule a->b
+    """
     def __init__(
         self,
-        reasoner_dataset: AutoregKStepsTokensDataset,
-        dataset_len: Optional[int] = None,
+        num_vars: int,
+        num_rules: int,
+        dataset_len: int,
+        hot_prob: Optional[float] = None
     ):
-        self.reasoner_dataset = reasoner_dataset
-        self.num_vars = reasoner_dataset.num_vars
-        self.num_steps = reasoner_dataset.num_steps
-        self.dataset_len = len(reasoner_dataset) if dataset_len is None else dataset_len
-        assert self.dataset_len <= len(reasoner_dataset)
+        assert num_vars > 4 and num_rules > 5
+        self.num_vars = num_vars
+        self.num_rules = num_rules
+        self.dataset_len = dataset_len
+        self.hot_prob = (1.0/num_vars) if hot_prob is None else hot_prob
 
     def __len__(self):
         return self.dataset_len
 
     def __getitem__(self, idx):
-        item = self.reasoner_dataset[idx]
-        tokens = item["tokens"]
+        n = self.num_vars
+        abcde = torch.randperm(n)[:5]
+        a, b, c, d, e = abcde
 
-        state = tokens[-1,self.num_vars:]
-        antes, conseqs = tokens.chunk(2, dim=1)
+        special_rules = torch.stack([
+            torch.cat([torch.zeros(n), F.one_hot(a,n)]), # _ -> a
+            torch.cat([F.one_hot(a,n), F.one_hot(b,n)]), # a -> b
+            torch.cat([F.one_hot(a,n), F.one_hot(c,n)]), # a -> c
+            torch.cat([F.one_hot(b,n) + F.one_hot(c,n), F.one_hot(d,n)]) # b,c -> d
+        ]).long()
 
-        # Find what to ignore
-        ante_oks = (antes <= state.view(1,-1)).sum(dim=1) == self.num_vars
-        conseq_oks = ((conseqs - state.view(1,-1)) > 0).sum(dim=1) > 0
-        oks = (ante_oks * conseq_oks).long() # (L,), the length of the token sequence
+        # Other rules
+        other_antes = torch.rand(self.num_rules-4, self.num_vars) < self.hot_prob
+        other_antes[:,e] = 1 # This guarantees that the other rules are never triggered
+        other_conseqs = torch.rand(self.num_rules-4, self.num_vars) < self.hot_prob
+        other_rules = torch.cat([other_antes, other_conseqs], dim=-1).long()
 
-        # WLOG, suppress the first rule
-        supp_ind = 0 if (oks.sum() == 0) else oks.nonzero().view(-1)[0]
-        supp_rule = tokens[supp_ind]
-        alt_rules = torch.cat([tokens[:supp_ind], tokens[supp_ind+1:]], dim=0)
+        # Gather all the rules
+        rules = torch.cat([special_rules, other_rules], dim=0)
+        rules = rules[torch.randperm(rules.size(0))]
 
-        s, alt_succs = state, []
-        for k in range(self.reasoner_dataset.num_steps):
-            s , _ = step_rules(alt_rules.unsqueeze(0), s.unsqueeze(0))
-            s = s[0]
-            alt_succs.append(s)
-        alt_succs = torch.stack(alt_succs)
+        # Append the initial state to the token sequence
+        tokens = torch.cat([rules, torch.zeros(1,2*n)], dim=0)
+
+        # Labels for a three-step process
+        labels = torch.stack([
+            F.one_hot(a,n),
+            F.one_hot(a,n) + F.one_hot(c,n),
+            F.one_hot(a,n) + F.one_hot(c,n),
+        ]).long()
 
         # Need to calculate the new label that's supposed to happen
         return {
             "tokens": tokens,
-            "supp_rule": supp_rule,
-            "labels": alt_succs,
+            "labels": labels,
+            "abcde": abcde
         }
 
 
