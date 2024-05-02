@@ -3,14 +3,14 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset
 
 from .utils.logic_utils import *
-from my_datasets.task_datasets import AutoregKStepsTokensDataset
+from my_datasets.task_datasets import *
 
 
 class BadSuffixDataset(Dataset):
     """ Dataset for performing attacks on models trained with AutoregKSteps """
     def __init__(
         self,
-        reasoner_dataset: AutoregKStepsTokensDataset,
+        reasoner_dataset: Dataset,
         num_attack_tokens: int,
         dataset_len: Optional[int] = None,
     ):

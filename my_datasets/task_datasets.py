@@ -149,7 +149,7 @@ class OneShotStringDataset(Dataset):
         }
 
 
-class AutoregKStepsTokensDataset(Dataset):
+class AutoregFixedProbTokensDataset(Dataset):
     """
     Randomized dataset for autoregressive stepping
     [rules] [prev_states]
@@ -233,17 +233,17 @@ class AutoregKStepsTokensDataset(Dataset):
         }
 
 
-class KStepsTokensDataset(Dataset):
+class AutoregScaledProbTokensDataset(Dataset):
     """ [rules] [prev_states] """
     def __init__(
         self,
         num_vars: int,
         num_rules_range: tuple[int, int],
+        exp_hots: float,
         chain_len_range: tuple[int, int],
         num_prevs_range: tuple[int, int],
         num_steps: int,
         dataset_len: int,
-        exp_hots: float = 4.0,
         do_padding: bool = True,
     ):
         assert num_vars > 2
