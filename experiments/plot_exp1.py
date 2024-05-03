@@ -146,6 +146,8 @@ if __name__ == "__main__":
                         attack_params=attack_params,
                     )
                 else:
+
+                    lr = param_mapping["learning_rate"] if "learning_rate" in param_mapping else None
                     stats = load_stats_from_wandb(
                         model_name=param_mapping["model_name"],
                         embed_dim=param_mapping["embed_dim"],
@@ -160,9 +162,11 @@ if __name__ == "__main__":
                         train_len = param_mapping["train_len"],
                         eval_len = param_mapping["eval_len"],
                         syn_exp_name=param_mapping["syn_exp_name"],
+                        learning_rate=lr,
                         seed=param_mapping["seed"],
                         train_batch_size=param_mapping["train_batch_size"],
                     )
+
                 # if stats['train/epoch'] < param_mapping["num_epochs"]:
                 #     metric_val = -1
                 # else:

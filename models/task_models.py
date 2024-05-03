@@ -5,6 +5,7 @@ import torch.nn as nn
 from transformers.utils import ModelOutput
 
 from .common import *
+from .seqcls_models.my_models import *
 
 """ We wrap some seqcls models to have properly named parameters in their forwrad function
     to conform to what comes out of the datasets.
@@ -19,6 +20,7 @@ class OneShotTaskOutput(ModelOutput):
     loss: Optional[torch.FloatTensor] = None
     logits: Optional[torch.FloatTensor] = None
     seqcls_output: Optional[ModelOutput] = None
+
 
 class OneShotTaskModel(SeqClsModel):
     def __init__(self, seqcls_model: SeqClsModel):

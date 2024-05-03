@@ -1,0 +1,25 @@
+[{
+    "model_name": ["mytf"],
+    "syn_exp_name": ["autoreg_ksteps"],
+    "seed": [1101],
+    "num_steps": [1],
+    "min_chain_len": [4],
+    "max_chain_len": [5],
+    "embed_dim": [16, 32, 48, 64, 80, 96, 112, 128],
+    "num_layers": [1],
+    "num_heads": [1],
+    "min_num_rules": [32],
+    "max_num_rules": [64],
+    "num_vars": [8, 16, 24, 32, 40, 48, 56, 64],
+    "min_ante_prob": [0.2],
+    "max_ante_prob": [0.4],
+    "min_conseq_prob": [0.2],
+    "max_conseq_prob": [0.4],
+    "train_len": [262144],
+    "eval_len": [32768],
+    "num_epochs": [8],
+    "train_batch_size": [64],
+    "eval_batch_size": [128],
+    "learning_rate": [0.0005]
+}]
+

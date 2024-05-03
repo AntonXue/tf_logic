@@ -9,7 +9,7 @@ import json
 
 """ Our imports """
 from common import *    # Critical definitions and path inserts
-from models import AutoTaskModel
+from models import *
 from my_datasets import *
 from utils.metrics import *
 from utils.model_loader_utils import load_checkpoint_from_wandb
@@ -51,9 +51,19 @@ class SyntheticExperimentsArguments:
         metadata = {"help": "The model's number of transformer layers."}
     )
 
-    num_heads : Optional[int] = field(
+    num_heads: Optional[int] = field(
         default = None,
         metadata = {"help": "The model's number of attention heads."}
+    )
+
+    layer_norm_style: Optional[int] = field(
+        default = 1,
+        metadata = {"help": "Whether to use layer norm for some tasks"}
+    )
+
+    attention_style: Optional[str] = field(
+        default = "softmax",
+        metadata = {"help": "Which attention style to use for some tasks"}
     )
 
     use_pretrained : Optional[bool] = field(
@@ -62,6 +72,7 @@ class SyntheticExperimentsArguments:
                     "Note that this restricts changes to the model " + \
                     "(default num_heads, num_layers, etc. will be used)."}
     )
+
 
     """ Dataset details """
 
@@ -172,6 +183,11 @@ class SyntheticExperimentsArguments:
 
     """ Training details """
 
+    learning_rate: Optional[float] = field(
+        default = 1e-4,
+        metadata = {"help": "Learning rate."}
+    )
+
     train_batch_size: Optional[int] = field(
         default = 8,
         metadata = {"help": "The train batch size."}
@@ -198,7 +214,7 @@ class SyntheticExperimentsArguments:
     )
 
     logging_steps: int = field(
-        default = 10,
+        default = 32,
         metadata = {"help": "How often the HF's Trainer logs."}
     )
 
@@ -212,34 +228,37 @@ def synexp_args_to_wandb_run_name(args: SyntheticExperimentsArguments):
                 (f"_H{args.num_heads}" if args.num_heads is not None else "")
 
     if args.syn_exp_name == "one_shot":
-        return f"SynOS_{model_str}__" + \
-            f"nv{args.num_vars}" + \
+        return f"SynOS_{model_str}_" + \
+            f"_nv{args.num_vars}" + \
             f"_nr{args.min_num_rules}-{args.max_num_rules}" + \
             f"_ap{args.min_ante_prob:.2f}-{args.max_ante_prob:.2f}" + \
             f"_bp{args.min_conseq_prob:.2f}-{args.max_conseq_prob:.2f}" + \
             f"_cl{args.min_chain_len}-{args.max_chain_len}" + \
-            f"_ntr{args.train_len}_ntt{args.eval_len}_bsz{args.train_batch_size}" + \
+            f"_ntr{args.train_len}_ntt{args.eval_len}_bsz{args.train_batch_size}_" + \
+            f"_lr{args.learning_rate:.5f}" + \
             f"_seed{args.seed}"
 
     elif args.syn_exp_name == "one_shot_str":
-        return f"SynOSstr__{model_str}__" + \
-            f"nv{args.num_vars}" + \
+        return f"SynOSstr_{model_str}_" + \
+            f"_nv{args.num_vars}" + \
             f"_nr{args.min_num_rules}-{args.max_num_rules}" + \
             f"_ap{args.min_ante_prob:.2f}-{args.max_ante_prob:.2f}" + \
             f"_bp{args.min_conseq_prob:.2f}-{args.max_conseq_prob:.2f}" + \
             f"_cl{args.min_chain_len}-{args.max_chain_len}" + \
             f"_ntr{args.train_len}_ntt{args.eval_len}_bsz{args.train_batch_size}" + \
+            f"_lr{args.learning_rate:.5f}" + \
             f"_seed{args.seed}"
 
     elif args.syn_exp_name == "autoreg_ksteps":
-        return f"SynAR_{model_str}__" + \
-            f"nv{args.num_vars}" + \
+        return f"SynAR_{model_str}_" + \
+            f"_nv{args.num_vars}" + \
             f"_ns{args.num_steps}" + \
             f"_nr{args.min_num_rules}-{args.max_num_rules}" + \
             f"_ap{args.min_ante_prob:.2f}-{args.max_ante_prob:.2f}" + \
             f"_bp{args.min_conseq_prob:.2f}-{args.max_conseq_prob:.2f}" + \
             f"_cl{args.min_chain_len}-{args.max_chain_len}" + \
             f"_ntr{args.train_len}_ntt{args.eval_len}_bsz{args.train_batch_size}" + \
+            f"_lr{args.learning_rate:.5f}" + \
             f"_seed{args.seed}"
 
     else:
@@ -313,7 +332,8 @@ def make_trainer_for_synthetic(
             ante_prob_range = (args.min_ante_prob, args.max_ante_prob),
             conseq_prob_range = (args.min_conseq_prob, args.max_conseq_prob),
             chain_len_range = (args.min_chain_len, args.max_chain_len),
-            dataset_len = args.train_len + args.eval_len)
+            dataset_len = args.train_len + args.eval_len
+        )
 
         train_dataset, eval_dataset = \
             torch.utils.data.random_split(big_dataset, [args.train_len, args.eval_len])
@@ -325,7 +345,8 @@ def make_trainer_for_synthetic(
             input_dim = big_dataset[0]["tokens"].size(-1),
             embed_dim = args.embed_dim,
             num_layers = args.num_layers,
-            num_heads = args.num_heads)
+            num_heads = args.num_heads
+        )
 
         training_args = TrainingArguments(
             args.output_dir,
@@ -335,22 +356,25 @@ def make_trainer_for_synthetic(
             auto_find_batch_size = args.auto_find_batch_size,
             evaluation_strategy = "epoch",
             report_to = report_to,
+            learning_rate = args.learning_rate,
             run_name = synexp_args_to_wandb_run_name(args),
             logging_steps = args.logging_steps,
             warmup_ratio = 0.10,
-            save_strategy = "no")
+            save_strategy = "no"
+        )
 
         return Trainer(
             tfl_model,
             training_args,
             train_dataset = train_dataset,
             eval_dataset = eval_dataset,
-            compute_metrics = one_shot_metrics)
+            compute_metrics = one_shot_metrics
+        )
 
 
     elif args.syn_exp_name == "one_shot_str":
-        if args.model_name == "mytf":
-            raise ValueError(f"Model mytf is not supported for one_shot_str")
+        if args.model_name in["mytf"]:
+            raise ValueError(f"Model {args.model_name} is not supported for one_shot_str")
 
         # Get the tokenizer to create the dataset
         tokenizer = AutoTokenizer.from_pretrained(args.model_name)
@@ -365,7 +389,8 @@ def make_trainer_for_synthetic(
             chain_len_range = (args.min_chain_len, args.max_chain_len),
             dataset_len = args.train_len + args.eval_len,
             tokenizer = tokenizer,
-            padding = "longest" if args.use_pretrained else "max_length")
+            padding = "longest" if args.use_pretrained else "max_length"
+        )
 
         train_dataset, eval_dataset = \
             torch.utils.data.random_split(big_dataset, [args.train_len, args.eval_len])
@@ -373,7 +398,8 @@ def make_trainer_for_synthetic(
         if args.use_pretrained:
             tfl_model = AutoTaskModel.from_pretrained(
                 task_name = args.syn_exp_name,
-                model_name = args.model_name)
+                model_name = args.model_name
+            )
             tfl_model.config.pad_token_id = tokenizer.pad_token_id
 
         else:
@@ -383,7 +409,8 @@ def make_trainer_for_synthetic(
                 model_name = args.model_name,
                 embed_dim = args.embed_dim,
                 num_layers = args.num_layers,
-                num_heads = args.num_heads)
+                num_heads = args.num_heads
+            )
             tfl_model.seqcls_model.model.config.pad_token_id = tokenizer.pad_token_id
 
         training_args = TrainingArguments(
@@ -394,10 +421,12 @@ def make_trainer_for_synthetic(
             auto_find_batch_size = args.auto_find_batch_size,
             evaluation_strategy = "epoch",
             report_to = report_to,
+            learning_rate = args.learning_rate,
             run_name = synexp_args_to_wandb_run_name(args),
             logging_steps = args.logging_steps,
             warmup_ratio = 0.10,
-            save_strategy = "no")
+            save_strategy = "no"
+        )
 
         return Trainer(
             tfl_model,
@@ -406,7 +435,8 @@ def make_trainer_for_synthetic(
             eval_dataset = eval_dataset,
             tokenizer = tokenizer,
             data_collator = data_collator,
-            compute_metrics = one_shot_metrics)
+            compute_metrics = one_shot_metrics
+        )
 
 
     elif args.syn_exp_name == "autoreg_ksteps":
@@ -418,7 +448,8 @@ def make_trainer_for_synthetic(
             chain_len_range = (args.min_chain_len, args.max_chain_len),
             num_prevs_range = (1, args.min_chain_len),
             num_steps = args.num_steps,
-            dataset_len = args.train_len)
+            dataset_len = args.train_len
+        )
 
         eval_dataset = AutoregKStepsTokensDataset(
             num_vars = args.num_vars,
@@ -428,7 +459,8 @@ def make_trainer_for_synthetic(
             chain_len_range = (args.min_chain_len, args.max_chain_len),
             num_prevs_range = (1, args.min_chain_len),
             num_steps = args.num_steps,
-            dataset_len = args.eval_len)
+            dataset_len = args.eval_len
+        )
 
         tfl_model = AutoTaskModel.from_kwargs(
             task_name = args.syn_exp_name,
@@ -451,17 +483,19 @@ def make_trainer_for_synthetic(
             report_to = report_to,
             run_name = synexp_args_to_wandb_run_name(args),
             logging_steps = args.logging_steps,
-            learning_rate = 5e-4,
+            learning_rate = args.learning_rate,
             warmup_ratio = 0.10,
             save_strategy = "epoch",
-            save_total_limit = 2)
+            save_total_limit = 2
+        )
 
         return Trainer(
             tfl_model,
             training_args,
             train_dataset = train_dataset,
             eval_dataset = eval_dataset,
-            compute_metrics = autoreg_ksteps_metrics)
+            compute_metrics = autoreg_ksteps_metrics
+        )
 
     else:
         raise ValueError(f"Unrecognized exp_name {args.syn_exp_name}")

@@ -1,0 +1,23 @@
+[{
+    "model_name": ["gpt2"],
+    "seed": [602, 603],
+    "num_steps": [3, 2, 1],
+    "min_chain_len": [3],
+    "max_chain_len": [5],
+    "embed_dim": [128, 112, 96, 80, 64, 48, 32, 16],
+    "num_vars": [64, 56, 48, 40, 32, 24, 16, 8],
+    "num_layers": [1],
+    "num_heads": [1],
+    "min_num_rules": [32],
+    "max_num_rules": [64],
+    "min_ante_prob": [0.25],
+    "max_ante_prob": [0.25],
+    "min_conseq_prob": [0.25],
+    "max_conseq_prob": [0.25],
+    "train_len": [131072],
+    "eval_len": [65536],
+    "num_epochs": [32],
+    "batch_size": [256],
+    "learning_rate": [0.001]
+}]
+

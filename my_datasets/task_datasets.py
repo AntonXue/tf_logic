@@ -1,8 +1,10 @@
+import math
 import torch
 from torch.utils.data import Dataset
 
 from .utils.logic_utils import *
 from .utils.string_utils import *
+
 
 class OneShotTokensDataset(Dataset):
     def __init__(
@@ -232,4 +234,5 @@ class AutoregKStepsTokensDataset(Dataset):
             "tokens": all_tokens,
             "labels": succs
         }
+
 

@@ -164,7 +164,6 @@ cython_debug/
 *.swp
 _dump/
 plots/
-configs/
 logs/
 attention_heatmaps*
 *.png
