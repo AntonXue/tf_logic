@@ -20,7 +20,7 @@ class AttackerModelOutput(ModelOutput):
     others: Optional[dict] = None
 
 
-class BadSuffixWrapperModel(nn.Module):
+class CoerceStateWrapperModel(nn.Module):
     def __init__(
         self,
         reasoner_model: SeqClsModel,
@@ -85,7 +85,7 @@ class BadSuffixWrapperModel(nn.Module):
             bin_atk_tokens = (atk_tokens > 0.0).long()
 
         # Adversarial (and its binary version) to the reasoner model and query it
-        adv_inputs = torch.cat([tokens, atk_tokens], dim=1)
+        adv_inputs = torch.cat([atk_tokens, tokens], dim=1)
         res_out = self.reasoner_model(adv_inputs)
         res_logits = res_out.logits[:,0] # The first item of the autoreg sequence
 
@@ -144,19 +144,26 @@ class SuppressRuleWrapperModel(nn.Module):
     def forward(
         self,
         tokens: torch.LongTensor,
-        supp_rule: torch.LongTensor,
-        labels,
-        **kwargs
+        labels: torch.LongTensor,
+        abcde: Optional[torch.LongTensor],
     ):
         N, L, _ = tokens.shape
-        tokens, supp_rule = tokens.float(), supp_rule.float()
+        tokens, labels = tokens.float(), labels.float()
+        device = tokens.device
+
+        # Our goal is to suppress the rule (a,b)
+        a, b, c, d, e = abcde.chunk(5, dim=-1)
+        supp_ante = torch.zeros(N, self.num_vars).to(device)
+        supp_ante[:,a] = 1
+        supp_conseq = torch.zeros(N, self.num_vars).to(device)
+        supp_conseq[:,b] = 1
+        supp_rule = torch.cat([supp_ante, supp_conseq], dim=-1)
 
         # Query the attacker model
         atk_inputs_embeds = torch.cat([
-                self.token_embed_fn(tokens).view(N,L,-1),
-                self.rule_embed_fn(supp_rule).view(N,1,-1)
-            ], dim=1
-        )
+            self.rule_embed_fn(supp_rule).view(N,1,-1),
+            self.token_embed_fn(tokens).view(N,L,-1),
+        ], dim=1)
 
         atk_logits = self.attacker_model(inputs_embeds=atk_inputs_embeds).logits
 

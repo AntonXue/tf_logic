@@ -100,9 +100,9 @@ class LearnedAttackExperimentsArguments:
 
 
 def args_to_wandb_run_name(args):
-    if args.attack_name == "bad_suffix":
+    if args.attack_name == "coerce_state":
         res_model_str = f"gpt2_d{args.embed_dim}_nv{args.num_vars}_rseed{args.reasoner_seed}"
-        return f"SynLAtkBS_{args.token_range}_natk{args.num_attack_tokens}" + \
+        return f"SynLAtkCS_{args.token_range}_natk{args.num_attack_tokens}" + \
             f"_{res_model_str}_" + \
             f"_ntr{args.train_len}_ntt{args.eval_len}" + \
             f"_bsz{args.batch_size}_lr{args.learning_rate:.5f}" + \
@@ -124,14 +124,14 @@ def load_reasoner_model_and_dataset(args):
     return load_model_and_dataset_from_big_grid(
         num_vars = args.num_vars,
         embed_dim = args.embed_dim,
-        num_steps = 3,
         seed = args.reasoner_seed,
+        dataset_len = args.train_len,
     )
 
 
-def make_bad_suffix_trainer(args):
+def make_coerce_state_trainer(args):
 
-    def bad_suffix_metrics(eval_preds):
+    def coerce_state_metrics(eval_preds):
         logits, labels = eval_preds
         logits = logits[0] if isinstance(logits, tuple) else logits
         assert logits.shape[1] >= 3 # Should be at least three terms
@@ -169,19 +169,19 @@ def make_bad_suffix_trainer(args):
 
     reasoner_model, reasoner_dataset = load_reasoner_model_and_dataset(args)
 
-    atk_wrap_model = BadSuffixWrapperModel(
+    atk_wrap_model = CoerceStateWrapperModel(
         reasoner_model = reasoner_model,
         num_attack_tokens = args.num_attack_tokens,
         token_range = args.token_range
     )
 
-    train_dataset = BadSuffixDataset(
+    train_dataset = CoerceStateDataset(
         reasoner_dataset = reasoner_dataset,
         num_attack_tokens = args.num_attack_tokens,
         dataset_len = args.train_len
     )
 
-    eval_dataset = BadSuffixDataset(
+    eval_dataset = CoerceStateDataset(
         reasoner_dataset = reasoner_dataset,
         num_attack_tokens = args.num_attack_tokens,
         dataset_len = args.eval_len
@@ -209,7 +209,7 @@ def make_bad_suffix_trainer(args):
         training_args,
         train_dataset = train_dataset,
         eval_dataset = eval_dataset,
-        compute_metrics = bad_suffix_metrics
+        compute_metrics = coerce_state_metrics
     )
 
 
@@ -286,8 +286,8 @@ if __name__ == "__main__":
 
     torch.manual_seed(args.attacker_seed)
 
-    if args.attack_name == "bad_suffix":
-        trainer = make_bad_suffix_trainer(args)
+    if args.attack_name == "coerce_state":
+        trainer = make_coerce_state_trainer(args)
 
     elif args.attack_name == "suppress_rule":
         trainer = make_suppress_rule_trainer(args)

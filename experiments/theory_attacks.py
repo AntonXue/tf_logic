@@ -39,9 +39,9 @@ class TheoryAttackExperimentsArguments:
 
 
 @torch.no_grad()
-def run_big_token_attack(config):
+def run_coerce_state_attack(config):
     assert config.num_samples % config.batch_size == 0
-    saveto_file = Path(config.output_dir, "theory_attack_big_token.csv")
+    saveto_file = Path(config.output_dir, "theory_attack_coerce_state.csv")
     print(f"Will save to: {saveto_file}")
 
     df_idx = 0
@@ -52,15 +52,20 @@ def run_big_token_attack(config):
     for train_seed in config.train_seeds:
         for nd_pair in config.nd_pairs:
             n, d = nd_pair
-            model, dataset = load_model_and_dataset_from_big_grid(
+            model, train_dataset = load_model_and_dataset_from_big_grid(
                 embed_dim = d,
                 num_vars = n,
-                num_steps = 3, # TODO: change
                 seed = train_seed,
                 dataset_len = config.num_samples,
             )
 
             model.eval().to(config.device)
+
+            dataset = CoerceStateDataset(
+                train_dataset,
+                num_attack_tokens = 1,
+            )
+
             dataloader = DataLoader(dataset, batch_size=config.batch_size, shuffle=True)
 
             for kappa_power in config.kappa_powers:
@@ -70,13 +75,12 @@ def run_big_token_attack(config):
 
                 for batch in pbar:
                     batch_tokens = batch["tokens"].to(config.device)
-                    # Slice out the first rule to make the length correct
-                    batch_tokens = batch_tokens[:,1:]
-                    tgt_state = (torch.rand(config.batch_size, n) < 0.5).long().to(config.device)
-                    tgt_scaled = tgt_state - kappa * (1 - tgt_state)
+                    tgt_state = batch["labels"].to(config.device)
+                    # tgt_scaled = tgt_state - kappa * (1 - tgt_state)
+                    tgt_scaled = kappa * (2 * tgt_state - 1)
 
                     adv_token = torch.cat([torch.zeros_like(tgt_scaled), tgt_scaled.float()], dim=1)
-                    all_tokens = torch.cat([batch_tokens, adv_token.view(-1,1,2*n)], dim=1)
+                    all_tokens = torch.cat([adv_token.view(-1,1,2*n), batch_tokens], dim=1)
                     out = model(all_tokens)
                     pred = (out.logits[:,0] > 0).long()
                     num_dones += batch_tokens.size(0)
@@ -94,74 +98,6 @@ def run_big_token_attack(config):
                     "num_vars": n,
                     "embed_dim": d,
                     "kappa_power": kappa_power,
-                    "elems_acc": elems_acc.item(),
-                    "states_acc": states_acc.item(),
-                }, index=[df_idx])
-
-                df_idx += 1
-
-                df = pd.concat([df, this_df])
-                df.to_csv(saveto_file)
-
-            print(f"Done with: trseed {train_seed}, n {n}, d {d}")
-
-
-@torch.no_grad()
-def run_repeat_token_attack(config):
-    assert config.num_samples % config.batch_size == 0
-    saveto_file = Path(config.output_dir, "theory_attack_repeat_token.csv")
-    print(f"Will save to: {saveto_file}")
-
-    df_idx = 0
-    df = pd.DataFrame(columns=[
-        "train_seed", "num_vars", "embed_dim", "elems_acc", "states_acc"
-    ])
-
-    for train_seed in config.train_seeds:
-        for nd_pair in config.nd_pairs:
-            n, d = nd_pair
-            model, dataset = load_model_and_dataset_from_big_grid(
-                embed_dim = d,
-                num_vars = n,
-                num_steps = 3, # TODO: change
-                seed = train_seed,
-                dataset_len = config.num_samples,
-                max_test_seq_len = 2**16,
-            )
-
-            # We need to make the context length very big
-
-            model.eval().to(config.device)
-            dataloader = DataLoader(dataset, batch_size=config.batch_size, shuffle=True)
-
-            for repeat_power in config.repeat_powers:
-                num_repeats = 2 ** repeat_power
-                num_dones, cum_elem_hits, cum_state_hits = 0, 0, 0
-                pbar = tqdm(dataloader)
-
-                for batch in pbar:
-                    batch_tokens = batch["tokens"].to(config.device)
-                    tgt_state = (torch.rand(config.batch_size, n) < 0.5).long().to(config.device)
-                    tgt_repeated = tgt_state.view(-1,1,n).repeat(1,num_repeats,1)
-                    adv_tokens = torch.cat([torch.zeros_like(tgt_repeated), tgt_repeated], dim=2)
-                    all_tokens = torch.cat([batch_tokens, adv_tokens.float()], dim=1)
-                    out = model(all_tokens)
-                    pred = (out.logits[:,0] > 0).long()
-                    num_dones += batch_tokens.size(0)
-                    cum_elem_hits += (tgt_state == pred).float().mean(dim=1).sum()
-                    cum_state_hits += ((tgt_state == pred).sum(dim=1) == n).sum()
-                    elems_acc = cum_elem_hits / num_dones
-                    states_acc = cum_state_hits / num_dones
-
-                    desc_str = f"n {n}, d {d}, nr {num_repeats}: "
-                    desc_str += f"N {num_dones}, elems {elems_acc:.3f}, states {states_acc:.3f}"
-                    pbar.set_description(desc_str)
-
-                this_df = pd.DataFrame({
-                    "train_seed": train_seed,
-                    "num_vars": n,
-                    "embed_dim": d,
-                    "repeat_power": int(repeat_power),
                     "elems_acc": elems_acc.item(),
                     "states_acc": states_acc.item(),
                 }, index=[df_idx])
@@ -193,7 +129,6 @@ def run_suppress_rule_attack(config):
             model, res_dataset = load_model_and_dataset_from_big_grid(
                 embed_dim = embed_dim,
                 num_vars = n,
-                num_steps = 3,
                 seed = train_seed,
                 dataset_len = config.num_samples
             )
@@ -292,11 +227,8 @@ if __name__ == "__main__":
     config.output_dir = args.output_dir
     config.device = args.device
 
-    if config.attack_name == "big_token":
-        ret = run_big_token_attack(config)
-
-    elif config.attack_name == "repeat_token":
-        ret = run_repeat_token_attack(config)
+    if config.attack_name == "coerce_state":
+        ret = run_coerce_state_attack(config)
 
     elif config.attack_name == "suppress_rule":
         ret = run_suppress_rule_attack(config)

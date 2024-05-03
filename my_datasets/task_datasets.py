@@ -256,6 +256,7 @@ class AutoregScaledProbTokensDataset(Dataset):
 
         self.num_vars = num_vars
         self.num_rules_range = num_rules_range
+        self.exp_hots = exp_hots
         self.ante_prob = exp_hots / num_vars
         self.conseq_prob = exp_hots / num_vars
         self.state_prob = exp_hots / num_vars

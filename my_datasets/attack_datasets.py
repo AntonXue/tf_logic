@@ -6,27 +6,28 @@ from .utils.logic_utils import *
 from my_datasets.task_datasets import *
 
 
-class BadSuffixDataset(Dataset):
+class CoerceStateDataset(Dataset):
     """ Dataset for performing attacks on models trained with AutoregKSteps """
     def __init__(
         self,
         reasoner_dataset: Dataset,
         num_attack_tokens: int,
-        dataset_len: Optional[int] = None,
+        dataset_len: int,
     ):
+        # The attack dataset is only used to compute a few things
         self.reasoner_dataset = reasoner_dataset
         self.num_vars = reasoner_dataset.num_vars
         self.num_attack_tokens = num_attack_tokens
-        self.dataset_len = len(reasoner_dataset) if dataset_len is None else dataset_len
-        assert self.dataset_len <= len(reasoner_dataset)
+        self.hot_prob = reasoner_dataset.exp_hots / self.num_vars
+        self.num_rules = reasoner_dataset.num_rules_range[1] - self.num_attack_tokens
+        self.dataset_len = dataset_len
 
     def __len__(self):
         return self.dataset_len
 
     def __getitem__(self, idx):
-        tokens = self.reasoner_dataset[idx]["tokens"]
-        tokens = tokens[self.num_attack_tokens:]    # Slice off the start to stay in-distribution wrt length
-        target = (torch.rand(self.num_vars) < 0.5).long()
+        tokens = (torch.rand(self.num_rules, 2*self.num_vars) < self.hot_prob).long()
+        target = (torch.rand(self.num_vars) < self.hot_prob).long()
 
         # We have to use huggingface trainer's naming convention for "labels"
         return {
@@ -50,16 +51,15 @@ class SuppressRuleDataset(Dataset):
     """
     def __init__(
         self,
-        num_vars: int,
-        num_rules: int,
+        reasoner_dataset: Dataset,
         dataset_len: int,
-        hot_prob: Optional[float] = None
     ):
-        assert num_vars > 4 and num_rules > 5
-        self.num_vars = num_vars
-        self.num_rules = num_rules
+        # The attack dataset is only used to compute a few things
+        self.reasoner_dataset = reasoner_dataset
+        self.num_vars = reasoner_dataset.num_vars
+        self.hot_prob = reasoner_dataset.exp_hots / self.num_vars
+        self.num_rules = reasoner_dataset.num_rules_range[1] - 1 # We generate one adversarial rule
         self.dataset_len = dataset_len
-        self.hot_prob = (1.0/num_vars) if hot_prob is None else hot_prob
 
     def __len__(self):
         return self.dataset_len
@@ -76,10 +76,12 @@ class SuppressRuleDataset(Dataset):
             torch.cat([F.one_hot(b,n) + F.one_hot(c,n), F.one_hot(d,n)]) # b,c -> d
         ]).long()
 
+        num_sp_rules = 4
+
         # Other rules
-        other_antes = torch.rand(self.num_rules-4, self.num_vars) < self.hot_prob
-        other_antes[:,e] = 1 # This guarantees that the other rules are never triggered
-        other_conseqs = torch.rand(self.num_rules-4, self.num_vars) < self.hot_prob
+        other_antes = (torch.rand(self.num_rules-num_sp_rules, self.num_vars) < self.hot_prob).long()
+        other_conseqs = (torch.rand(self.num_rules-num_sp_rules, self.num_vars) < self.hot_prob).long()
+        other_antes[:,e] = 1
         other_rules = torch.cat([other_antes, other_conseqs], dim=-1).long()
 
         # Gather all the rules
