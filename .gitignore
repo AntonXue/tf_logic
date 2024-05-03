@@ -166,4 +166,5 @@ _dump/
 plots/
 configs/
 logs/
-
+attention_heatmaps*
+*.png
