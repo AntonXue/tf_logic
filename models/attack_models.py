@@ -79,28 +79,15 @@ class CoerceStateWrapperModel(nn.Module):
         # Depending on the token mode, clamp if necessary and binarize accordingly
         if self.token_range == "unbounded":
             atk_tokens = torch.cat([torch.zeros_like(atk_logits), atk_logits], dim=-1)
-            bin_atk_tokens = (atk_tokens > 0.0).long()
         elif self.token_range == "clamped":
             atk_tokens = torch.cat([torch.zeros_like(atk_logits), atk_logits], dim=-1).clamp(0,1)
-            bin_atk_tokens = (atk_tokens > 0.0).long()
 
         # Adversarial (and its binary version) to the reasoner model and query it
         adv_inputs = torch.cat([atk_tokens, tokens], dim=1)
-        res_out = self.reasoner_model(adv_inputs)
-        res_logits = res_out.logits[:,0] # The first item of the autoreg sequence
+        out = self.reasoner_model(adv_inputs)
+        logits = out.logits[:,0] # The first item of the autoreg sequence
 
-        with torch.no_grad():
-            # Don't apply grad here because binarization as we wrote is not differentiable
-            bin_adv_inputs = torch.cat([tokens, bin_atk_tokens], dim=1)
-            bin_res_out = self.reasoner_model(bin_adv_inputs)
-            bin_res_logits = bin_res_out.logits[:,0]
-
-        loss = nn.BCEWithLogitsLoss()(res_logits, labels.float())
-
-        logits = torch.cat([
-            atk_logits,
-            torch.stack([res_logits, bin_res_logits], dim=1)
-        ], dim=1) # (N,k+2,n)
+        loss = nn.BCEWithLogitsLoss()(logits, labels.float())
 
         return AttackerModelOutput(
             loss = loss,
@@ -131,9 +118,10 @@ class SuppressRuleWrapperModel(nn.Module):
             pad_token_id = -1
         )
         self.embed_dim = self.attacker_model.transformer.embed_dim
+
+        # Special thing here
         self.token_embed_fn = nn.Linear(self.token_dim, self.embed_dim)
         self.rule_embed_fn = nn.Linear(self.token_dim, self.embed_dim)
-
 
     def train(self, mode=True):
         """ We don't want the seqcls_model under attack to be in training mode """
@@ -144,8 +132,8 @@ class SuppressRuleWrapperModel(nn.Module):
     def forward(
         self,
         tokens: torch.LongTensor,
+        abcde: torch.LongTensor,
         labels: torch.LongTensor,
-        abcde: Optional[torch.LongTensor],
     ):
         N, L, _ = tokens.shape
         tokens, labels = tokens.float(), labels.float()
@@ -153,11 +141,11 @@ class SuppressRuleWrapperModel(nn.Module):
 
         # Our goal is to suppress the rule (a,b)
         a, b, c, d, e = abcde.chunk(5, dim=-1)
-        supp_ante = torch.zeros(N, self.num_vars).to(device)
-        supp_ante[:,a] = 1
-        supp_conseq = torch.zeros(N, self.num_vars).to(device)
-        supp_conseq[:,b] = 1
-        supp_rule = torch.cat([supp_ante, supp_conseq], dim=-1)
+        n = self.num_vars
+
+        supp_ante = F.one_hot(a, num_classes=n).view(-1,1,n)
+        supp_conseq = F.one_hot(b, num_classes=n).view(-1,1,n)
+        supp_rule = torch.cat([supp_ante, supp_conseq], dim=-1).float()
 
         # Query the attacker model
         atk_inputs_embeds = torch.cat([
@@ -169,29 +157,19 @@ class SuppressRuleWrapperModel(nn.Module):
 
         # Prepend the logits to the token sequence
         adv_inputs = torch.cat([atk_logits.view(-1,1,self.token_dim), tokens], dim=1)
-        res_out = self.reasoner_model(adv_inputs)
+        res_out = self.reasoner_model(tokens=adv_inputs)
         res_logits = res_out.logits #
 
         loss = None
         if labels is not None:
             loss = nn.BCEWithLogitsLoss()(res_logits, labels.float())
 
-        supp_ante, supp_conseq = supp_rule.chunk(2, dim=-1)
-        atk_ante, atk_conseq = atk_logits.chunk(2, dim=-1)
-
-        logits = torch.stack([
-                supp_ante,
-                supp_conseq,
-                atk_ante,
-                atk_conseq,
-            ], dim=1
-        )
-
-        logits = torch.cat([logits, res_logits], dim=1)
-
         return AttackerModelOutput(
             loss = loss,
-            logits = logits,
+            logits = atk_logits,
+            others = {
+                "reasoner_output": res_out,
+            }
         )
 
 

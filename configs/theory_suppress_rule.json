@@ -1,5 +1,6 @@
 {
     "attack_name": "suppress_rule",
+    "reasoner_type": "theory",
     "train_seeds": [571],
     "nd_pairs": [
         [64, 128],

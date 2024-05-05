@@ -80,8 +80,8 @@ class SuppressRuleDataset(Dataset):
 
         # Other rules
         other_antes = (torch.rand(self.num_rules-num_sp_rules, self.num_vars) < self.hot_prob).long()
-        other_conseqs = (torch.rand(self.num_rules-num_sp_rules, self.num_vars) < self.hot_prob).long()
         other_antes[:,e] = 1
+        other_conseqs = (torch.rand(self.num_rules-num_sp_rules, self.num_vars) < self.hot_prob).long()
         other_rules = torch.cat([other_antes, other_conseqs], dim=-1).long()
 
         # Gather all the rules

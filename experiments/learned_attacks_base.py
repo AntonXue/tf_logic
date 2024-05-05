@@ -14,6 +14,8 @@ from models import *
 from my_datasets import *
 from utils.model_loader_utils import *
 
+from learned_attacks_stuff import *
+
 """ Parser for Hugging Face """
 
 @dataclass
@@ -96,6 +98,16 @@ class LearnedAttackExperimentsArguments:
     logging_steps: int = field(
         default = 16,
         metadata = {"help": "How often the HF's Trainer logs."}
+    )
+
+    device: str = field(
+        default = "cuda",
+        metadata = {"help": "The device we run things on."}
+    )
+
+    reasoner_type: str = field(
+        default = "learned",
+        metadata = {"help": "The type (learned/theory) of reasoner that we use."}
     )
 
 
@@ -229,9 +241,13 @@ def make_suppress_rule_trainer(args):
         conseq_align = np.mean((atk_conseq < 0).astype(np.int64) == supp_conseq)
 
         pred = (res_logits > 0).astype(np.int64)
-        acc = np.mean(pred == labels)
+        _, num_steps, num_vars = logits.shape
+
+        elems_acc = np.mean(pred == labels)
+        state_acc = np.mean(np.sum(pred == labels, axis=(-1,-2)) == num_steps * num_vars)
         return {
-            "Acc": acc,
+            "ElemsAcc": elems_acc,
+            "StateAcc": state_acc,
             "AnteAlign": ante_align,
             "ConseqAlign": conseq_align,
         }
@@ -290,13 +306,25 @@ if __name__ == "__main__":
         trainer = make_coerce_state_trainer(args)
 
     elif args.attack_name == "suppress_rule":
-        trainer = make_suppress_rule_trainer(args)
+        # trainer = make_suppress_rule_trainer(args)
+        config = LearnedSuppressRuleConfig(
+            num_vars = args.num_vars,
+            embed_dim = args.embed_dim,
+            train_len = args.train_len,
+            eval_len = args.eval_len,
+            batch_size = args.batch_size,
+            num_epochs = args.num_epochs,
+            learning_rate = args.learning_rate,
+            reasoner_seed = args.reasoner_seed,
+            attacker_seed = args.attacker_seed,
+            reasoner_type = args.reasoner_type,
+        )
+
+        run_learned_suppress_rule(config)
 
     else:
         raise ValueError(f"Unknown attack name {args.attack_name}")
     
-    trainer.train()
-    wandb.finish()
 
 
 

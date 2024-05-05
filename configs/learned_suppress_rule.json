@@ -1,14 +1,17 @@
 [{
     "attack_name": ["suppress_rule"],
+    "reasoner_type": ["theory"],
     "reasoner_seed": [571],
     "attacker_seed": [701],
     "nd_pairs": [
-        [64, 128]
+        [48, 96],
+        [64, 128],
+        [32, 64],
+        [16, 32]
     ],
-    "num_attack_tokens": [1],
-    "train_len": [16384],
-    "eval_len": [16384],
+    "train_len": [131072],
+    "eval_len": [65536],
     "batch_size": [64],
     "num_epochs": [16],
-    "learning_rate": [0.0001]
+    "learning_rate": [0.001]
 }]

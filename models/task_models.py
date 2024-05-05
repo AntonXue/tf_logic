@@ -1,7 +1,8 @@
-from typing import Optional
+from typing import Optional, Tuple
 from dataclasses import dataclass
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from transformers.utils import ModelOutput
 
 from .common import *
@@ -199,3 +200,115 @@ class AutoregKStepsTaskModel(SeqClsModel):
         )
 
 
+@dataclass
+class TheoryAutoregKStepsTaskOutput(ModelOutput):
+    loss: Optional[torch.FloatTensor] = None
+    logits: Optional[torch.FloatTensor] = None
+    attentions: Tuple[torch.FloatTensor] = None
+
+
+class TheoryAutoregKStepsModel(nn.Module):
+    """ The theoretical model's algorithm """
+    def __init__(
+        self,
+        num_vars: int,
+        num_steps: int,
+        lambd: float = 1e5,
+        rho: float = 1e5
+    ):
+        super().__init__()
+        n = num_vars
+        self.num_vars = n
+        self.embed_dim = 2 * n
+        self.num_steps = num_steps
+        self.lambd = lambd
+        self.rho = rho
+
+        self.Pia = torch.cat([torch.eye(n), torch.zeros(n,n)], dim=1)
+        self.Pib = torch.cat([torch.zeros(n,n), torch.eye(n)], dim=1)
+
+        self.Wq = nn.Linear(2*n, n, bias=True)
+        self.Wq.weight.data = self.Pib
+        self.Wq.bias.data = -1*torch.ones(n)
+        for p in self.Wq.parameters():
+            p.requires_grad = False
+
+
+        self.Wk = nn.Linear(2*n, n, bias=False)
+        self.Wk.weight.data = self.lambd * self.Pia
+        for p in self.Wk.parameters():
+            p.requires_grad = False
+
+        self.Wv = nn.Linear(2*n, 2*n, bias=False)
+        self.Wv.weight.data = self.rho * torch.matmul(self.Pib.transpose(0,1), self.Pib)
+        for p in self.Wv.parameters():
+            p.requires_grad = False
+
+        # The continuous piecewise linear binarization function
+        self.id_ffwd = lambda x: 3*F.relu(x - 1/3) - 3*F.relu(x - 2/3)
+
+        self.loss_fn = nn.BCEWithLogitsLoss()
+
+    @property
+    def model_name(self):
+        return f"theory"
+
+    @property
+    def input_dim(self):
+        return self.embed_dim # This is also the input dim
+
+    @property
+    def num_labels(self):
+        return self.num_vars
+
+    def one_step(self, x: torch.FloatTensor, output_attentions: bool = False):
+        N, L, n2 = x.shape
+        x = x.float()
+        Q, K, V = self.Wq(x), self.Wk(x), self.Wv(x)
+        A = F.softmax(torch.bmm(Q, K.transpose(-1,-2)), dim=-1) # (N,L,L)
+
+        # Output of attention thing
+        z = x + torch.bmm(A, V)
+        y = self.id_ffwd(z)
+        logits = y[:,-1,self.num_vars:]
+        logits = 2*logits - 1   # Make this +/-1 for the purpose of being a logit
+
+        if output_attentions:
+            return logits, A
+        else:
+            return logits
+
+
+    def forward(
+        self,
+        tokens: torch.LongTensor,
+        labels: Optional[torch.LongTensor] = None,
+        output_attentions: bool = False,
+    ):
+        all_succ_logits = ()
+        all_attentions = () if output_attentions else None
+        all_tokens = tokens
+
+        for t in range(self.num_steps):
+            if output_attentions:
+                logits, attns = self.one_step(all_tokens.float(), output_attentions=True)
+                all_attentions += (attns,)
+            else:
+                logits = self.one_step(all_tokens.float(), output_attentions=False)
+
+            all_succ_logits += (logits,)
+            succ = (logits > 0).long()
+            succ_token = torch.cat([torch.zeros_like(succ), succ], dim=-1)
+            all_tokens = torch.cat([all_tokens, succ_token.unsqueeze(1)], dim=1).float()
+
+        all_succ_logits = torch.stack(all_succ_logits, dim=1) # (N, num_steps, n)
+
+        loss = None
+        if labels is not None:
+            self.loss_fn(all_succ_logits.float(), labels.float())
+
+        return TheoryAutoregKStepsTaskOutput(
+            loss = loss,
+            logits = all_succ_logits,
+            attentions = all_attentions,
+        )
