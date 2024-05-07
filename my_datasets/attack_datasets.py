@@ -106,3 +106,41 @@ class SuppressRuleDataset(Dataset):
         }
 
 
+class KnowledgeAmnesiaDataset(Dataset):
+    """
+    This is very similar to the diamond-shape dataset.
+    The main difference is that we forget "a" it is derived.
+    """
+    def __init__(
+        self,
+        reasoner_dataset: Dataset,
+        dataset_len: int,
+    ):
+        self.suppress_rule_dataset = SuppressRuleDataset(
+            reasoner_dataset = reasoner_dataset,
+            dataset_len = dataset_len
+        )
+        self.num_vars = self.suppress_rule_dataset.num_vars
+
+    def __len__(self):
+        return len(self.suppress_rule_dataset)
+
+    def __getitem__(self, idx):
+        item = self.suppress_rule_dataset[idx]
+        abcde = item["abcde"]
+        a, b, c, d, e = abcde
+        n = self.num_vars
+
+        labels = torch.stack([
+            F.one_hot(a,n),
+            F.one_hot(b,n) + F.one_hot(c,n),
+            F.one_hot(a,n) + F.one_hot(b,n) + F.one_hot(c,n) + F.one_hot(d,n),
+        ]).long()
+
+        return {
+            "tokens": item["tokens"],
+            "labels": labels,
+            "abcde": abcde
+        }
+
+

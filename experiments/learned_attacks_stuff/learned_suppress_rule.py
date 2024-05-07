@@ -160,10 +160,7 @@ def run_learned_suppress_rule(config: LearnedSuppressRuleConfig):
     )
 
     if config.reasoner_type == "theory":
-        reasoner_model = TheoryAutoregKStepsModel(
-            num_vars = config.num_vars,
-            num_steps = 3,
-        )
+        reasoner_model = TheoryAutoregKStepsModel(num_vars=config.num_vars, num_steps=3)
 
     atk_model = SuppressRuleWrapperModel(reasoner_model=reasoner_model)
     atk_model.to(config.device)
@@ -204,7 +201,8 @@ def run_learned_suppress_rule(config: LearnedSuppressRuleConfig):
     eval_one_epoch(atk_model, eval_dataloader, config)
 
     for epoch in range(1, config.num_epochs+1):
-        print(f"epoch: {epoch}/{config.num_epochs}, lr {lr_scheduler.get_last_lr()[0]:.6f}")
+        print(f"epoch {epoch}/{config.num_epochs}, lr {lr_scheduler.get_last_lr()[0]:.6f}")
+        print(f"reasoner_type {config.reasoner_type}")
         train_one_epoch(atk_model, train_dataloader, optimizer, lr_scheduler, config)
 
         if epoch % 2 == 0:

@@ -122,6 +122,7 @@ class SuppressRuleWrapperModel(nn.Module):
         # Special thing here
         self.token_embed_fn = nn.Linear(self.token_dim, self.embed_dim)
         self.rule_embed_fn = nn.Linear(self.token_dim, self.embed_dim)
+        self.loss_fn = nn.BCEWithLogitsLoss(reduction="mean")
 
     def train(self, mode=True):
         """ We don't want the seqcls_model under attack to be in training mode """
@@ -160,9 +161,11 @@ class SuppressRuleWrapperModel(nn.Module):
         res_out = self.reasoner_model(tokens=adv_inputs)
         res_logits = res_out.logits #
 
+        # Amplify the component regarding b
+
         loss = None
         if labels is not None:
-            loss = nn.BCEWithLogitsLoss()(res_logits, labels.float())
+            loss = self.loss_fn(res_logits, labels.float())
 
         return AttackerModelOutput(
             loss = loss,

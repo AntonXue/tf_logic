@@ -34,7 +34,7 @@ class TheoryAttackExperimentsArguments:
     )
 
     device: str = field(
-        default = "cuda",
+        default = "cpu",
     )
 
 
@@ -44,10 +44,10 @@ def run_coerce_state_attack(config):
     saveto_file = Path(config.output_dir, "theory_attack_coerce_state.csv")
     print(f"Will save to: {saveto_file}")
 
-    df_idx = 0
     df = pd.DataFrame(columns=[
         "train_seed", "num_vars", "embed_dim", "kappa_power", "elems_acc", "states_acc"
     ])
+    df_idx = 0
 
     for train_seed in config.train_seeds:
         for nd in config.nd_pairs:
@@ -57,6 +57,9 @@ def run_coerce_state_attack(config):
                 num_vars = n,
                 seed = train_seed,
             )
+
+            if config.reasoner_type == "theory":
+                model = TheoryAutoregKStepsModel(num_vars=n, num_steps=3)
 
             model.eval().to(config.device)
 
@@ -74,14 +77,12 @@ def run_coerce_state_attack(config):
                     tgt_state = batch["labels"].to(config.device)
 
                     adv_ante = torch.zeros_like(tgt_state)
+                    # adv_ante = -kappa*torch.ones_like(tgt_state)
                     adv_conseq = tgt_state - kappa * (1 - tgt_state)
                     # adv_conseq = kappa * (2 * tgt_state - 1)
                     adv_tokens = torch.cat([adv_ante, adv_conseq], dim=-1).view(-1,1,2*n)
 
                     all_tokens = torch.cat([adv_tokens, batch_tokens], dim=1)
-                    # all_tokens = torch.cat([batch_tokens, adv_token], dim=1)
-                    # all_tokens = torch.cat([adv_rule.view(-1,1,2*n), batch_tokens], dim=1)
-                    # all_tokens = torch.cat([adv_rule.view(-1,1,2*n), batch_tokens], dim=1)
 
                     out = model(all_tokens)
                     pred = (out.logits[:,0] > 0).long()
@@ -107,7 +108,6 @@ def run_coerce_state_attack(config):
 
                 df = pd.concat([df, this_df])
                 df.to_csv(saveto_file)
-
                 df_idx += 1
 
             print(f"Done with: trseed {train_seed}, n {n}, d {d}")
@@ -119,11 +119,11 @@ def run_suppress_rule_attack(config):
     saveto_file = Path(config.output_dir, "theory_attack_suppress_rule.csv")
     print(f"Will save to: {saveto_file}")
 
-    df_idx = 0
     df = pd.DataFrame(columns=[
         "train_seed", "num_vars", "embed_dim", "raw_state_acc", "adv_state_acc",
         "adv_top3", "adv_weight", "adv_rel_weight"
     ])
+    df_idx = 0
 
     for train_seed in config.train_seeds:
         for nd_pair in config.nd_pairs:
@@ -136,14 +136,10 @@ def run_suppress_rule_attack(config):
             )
 
             if config.reasoner_type == "theory":
-                model = TheoryAutoregKStepsModel(
-                    num_vars = n,
-                    num_steps = 3,
-                )
-
+                model = TheoryAutoregKStepsModel(num_vars=n, num_steps=3)
 
             model.eval().to(config.device)
-            supp_dataset = SuppressRuleDataset(
+            atk_dataset = SuppressRuleDataset(
                 reasoner_dataset = res_dataset,
                 dataset_len = config.num_samples,
             )
@@ -154,11 +150,11 @@ def run_suppress_rule_attack(config):
             cum_top3_hits = 0
             cum_adv_weight = 0
 
-            dataloader = DataLoader(supp_dataset, batch_size=config.batch_size, shuffle=True)
+            dataloader = DataLoader(atk_dataset, batch_size=config.batch_size, shuffle=True)
             pbar = tqdm(dataloader)
             for i, batch in enumerate(pbar):
-                raw_tokens, abcde = batch["tokens"].to(config.device), batch["abcde"].to(config.device)
-                # a, b, c, d = abcde[:,0], abcde[:,1], abcde[:,2], abcde[:,3]
+                raw_tokens = batch["tokens"].to(config.device)
+                abcde = batch["abcde"].to(config.device)
                 a, b, c, d, e = abcde.chunk(5, dim=-1)
 
                 # Output of the raw token sequence (i.e., without attacks)
@@ -173,6 +169,7 @@ def run_suppress_rule_attack(config):
                 # Now add the known adversarial rule form and run it through the model
                 adv_labels = batch["labels"].to(config.device)
                 atk_ante = F.one_hot(a, num_classes=n).view(-1,1,n)
+
                 atk_conseq = -1 * F.one_hot(b, num_classes=n).view(-1,1,n)
                 atk_rule = torch.cat([atk_ante, atk_conseq], dim=-1)
                 adv_tokens = torch.cat([atk_rule, raw_tokens], dim=1)
@@ -224,10 +221,97 @@ def run_suppress_rule_attack(config):
 
             df = pd.concat([df, this_df])
             df.to_csv(saveto_file)
-
             df_idx += 1
 
         print(f"Done with: trseed {train_seed}, n {n}, d {embed_dim}")
+
+
+
+@torch.no_grad()
+def run_knowledge_amnesia_attack(config):
+    assert config.num_samples % config.batch_size == 0
+    saveto_file = Path(config.output_dir, "theory_attack_coerce_state.csv")
+    print(f"Will save to: {saveto_file}")
+
+    df = pd.DataFrame(columns=[
+        "train_seed", "num_vars", "embed_dim", "raw_state_acc", "adv_state_acc",
+    ])
+    df_idx = 0
+
+    for train_seed in config.train_seeds:
+        for nd_pair in config.nd_pairs:
+            n, embed_dim = nd_pair
+
+            model, res_dataset = load_model_and_dataset_from_big_grid(
+                embed_dim = embed_dim,
+                num_vars = n,
+                seed = train_seed,
+            )
+
+            if config.reasoner_type == "theory":
+                model = TheoryAutoregKStepsModel(num_vars=n, num_steps=3)
+
+            model.eval().to(config.device)
+            atk_dataset = KnowledgeAmnesiaDataset(
+                reasoner_dataset = res_dataset,
+                dataset_len = config.num_samples,
+            )
+
+            num_dones = 0
+            cum_raw_state_hits = 0
+            cum_adv_elems_hits = 0.
+            cum_adv_state_hits = 0
+
+            dataloader = DataLoader(atk_dataset, batch_size=config.batch_size, shuffle=True)
+            pbar = tqdm(dataloader)
+            for i, batch in enumerate(pbar):
+                raw_tokens = batch["tokens"].to(config.device)
+                abcde = batch["abcde"].to(config.device)
+                a, b, c, d, e = abcde.chunk(5, dim=-1)
+
+                # Output of the raw token sequence (i.e., without attacks)
+                raw_labels = torch.cat([
+                    F.one_hot(a,n).view(-1,1,n),
+                    (F.one_hot(a,n) + F.one_hot(b,n) + F.one_hot(c,n)).view(-1,1,n),
+                    (F.one_hot(a,n) + F.one_hot(b,n) + F.one_hot(c,n) + F.one_hot(d,n)).view(-1,1,n),
+                ], dim=1)
+                raw_out = model(tokens=raw_tokens)
+                raw_pred = (raw_out.logits > 0).long()
+
+                # Now the adversarial stuff
+                adv_labels = batch["labels"].to(config.device)
+                atk_rule = torch.cat([F.one_hot(a,n), -1000*F.one_hot(a,n)], dim=-1)
+                adv_tokens = torch.cat([atk_rule.view(-1,1,2*n), raw_tokens], dim=1)
+                adv_out = model(tokens=adv_tokens)
+                adv_pred = (adv_out.logits > 0).long()
+
+                # Compute some statistics
+                num_dones += raw_tokens.size(0)
+                cum_raw_state_hits += ((raw_pred == raw_labels).sum(dim=(-1,-2)) == 3 * n).sum()
+                raw_state_acc = cum_raw_state_hits / num_dones
+
+                cum_adv_elems_hits += (adv_pred == adv_labels).float().mean(dim=(1,2)).sum()
+                adv_elems_acc = cum_adv_elems_hits / num_dones
+
+                cum_adv_state_hits += ((adv_pred == adv_labels).sum(dim=(-1,-2)) == 3 * n).sum()
+                adv_state_acc = cum_adv_state_hits / num_dones
+
+                desc = f"n {n}, d {embed_dim}, N {num_dones}: "
+                desc += f"raw_sacc {raw_state_acc:.3f}, "
+                desc += f"adv ({adv_elems_acc:.3f}, {adv_state_acc:.3f}), "
+                pbar.set_description(desc)
+
+            this_df = pd.DataFrame({
+                "train_seed": train_seed,
+                "num_vars": n,
+                "embed_dim": embed_dim,
+                "raw_state_acc": raw_state_acc.item(),
+                "adv_state_acc": adv_state_acc.item()
+            }, index=[df_idx])
+
+            df = pd.concat([df, this_df])
+            df.to_csv(saveto_file)
+            df_idx += 1
 
 
 if __name__ == "__main__":
@@ -245,6 +329,9 @@ if __name__ == "__main__":
 
     elif config.attack_name == "suppress_rule":
         ret = run_suppress_rule_attack(config)
+
+    elif config.attack_name == "knowledge_amnesia":
+        ret = run_knowledge_amnesia_attack(config)
 
     else:
         raise ValueError(f"Unknown attack name {config.attack_name}")
