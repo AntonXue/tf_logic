@@ -41,7 +41,6 @@ class SuppressRuleDataset(Dataset):
     This is a diamond-shaped dataset. We construct a dataset that has rules of form
 
     Rules:
-        _ -> a
         a -> b
         a -> c
         b,c -> d
@@ -65,23 +64,20 @@ class SuppressRuleDataset(Dataset):
         return self.dataset_len
 
     def __getitem__(self, idx):
-        n = self.num_vars
+        n, r = self.num_vars, self.num_rules
         abcde = torch.randperm(n)[:5]
         a, b, c, d, e = abcde
 
         special_rules = torch.stack([
-            torch.cat([torch.zeros(n), F.one_hot(a,n)]), # _ -> a
             torch.cat([F.one_hot(a,n), F.one_hot(b,n)]), # a -> b
             torch.cat([F.one_hot(a,n), F.one_hot(c,n)]), # a -> c
             torch.cat([F.one_hot(b,n) + F.one_hot(c,n), F.one_hot(d,n)]) # b,c -> d
         ]).long()
 
-        num_sp_rules = 4
-
         # Other rules
-        other_antes = (torch.rand(self.num_rules-num_sp_rules, self.num_vars) < self.hot_prob).long()
+        other_antes = (torch.rand(r-special_rules.size(0), n) < self.hot_prob).long()
         other_antes[:,e] = 1
-        other_conseqs = (torch.rand(self.num_rules-num_sp_rules, self.num_vars) < self.hot_prob).long()
+        other_conseqs = (torch.rand(r-special_rules.size(0), n) < self.hot_prob).long()
         other_rules = torch.cat([other_antes, other_conseqs], dim=-1).long()
 
         # Gather all the rules
@@ -89,14 +85,11 @@ class SuppressRuleDataset(Dataset):
         rules = rules[torch.randperm(rules.size(0))]
 
         # Append the initial state to the token sequence
-        tokens = torch.cat([rules, torch.zeros(1,2*n)], dim=0)
+        init_token = torch.cat([torch.zeros(n), F.one_hot(a,n)])
+        tokens = torch.cat([rules, init_token.view(1,2*n)], dim=0)
 
-        # Labels for a three-step process
-        labels = torch.stack([
-            F.one_hot(a,n),
-            F.one_hot(a,n) + F.one_hot(c,n),
-            F.one_hot(a,n) + F.one_hot(c,n),
-        ]).long()
+        # Labels for a one-step process
+        labels = torch.stack([F.one_hot(a,n) + F.one_hot(c,n)]).long()
 
         # Need to calculate the new label that's supposed to happen
         return {
@@ -131,11 +124,7 @@ class KnowledgeAmnesiaDataset(Dataset):
         a, b, c, d, e = abcde
         n = self.num_vars
 
-        labels = torch.stack([
-            F.one_hot(a,n),
-            F.one_hot(b,n) + F.one_hot(c,n),
-            F.one_hot(a,n) + F.one_hot(b,n) + F.one_hot(c,n) + F.one_hot(d,n),
-        ]).long()
+        labels = torch.stack([F.one_hot(b,n) + F.one_hot(c,n)]).long()
 
         return {
             "tokens": item["tokens"],

@@ -312,3 +312,6 @@ class AutoregScaledProbTokensDataset(Dataset):
         }
 
 
+class AutoregTokensDataset(Dataset):
+    pass
+
