@@ -273,10 +273,7 @@ class TheoryAutoregKStepsModel(nn.Module):
         logits = y[:,-1,self.num_vars:]
         logits = 2*logits - 1   # Make this +/-1 for the purpose of being a logit
 
-        if output_attentions:
-            return logits, A
-        else:
-            return logits
+        return (logits, A) if output_attentions else logits
 
 
     def forward(
@@ -305,10 +302,12 @@ class TheoryAutoregKStepsModel(nn.Module):
 
         loss = None
         if labels is not None:
-            self.loss_fn(all_succ_logits.float(), labels.float())
+            loss = self.loss_fn(all_succ_logits.float(), labels.float())
 
         return TheoryAutoregKStepsTaskOutput(
             loss = loss,
             logits = all_succ_logits,
             attentions = all_attentions,
         )
+
+

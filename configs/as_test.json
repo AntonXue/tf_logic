@@ -1,0 +1,17 @@
+[{
+	"model_name": ["gpt2"],
+    "dataset_name": ["autoreg_diamond"],
+    "seed": [580],
+    "embed_dim": [128],
+    "num_vars": [64],
+    "num_layers": [1],
+    "num_heads": [1],
+    "num_rules": [32],
+    "exp_hots": [3.0],
+    "train_len": [524288],
+    "eval_len": [65536],
+    "num_epochs": [16],
+    "batch_size": [4],
+    "learning_rate": [0.0005]
+}]
+

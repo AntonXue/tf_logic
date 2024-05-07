@@ -312,6 +312,61 @@ class AutoregScaledProbTokensDataset(Dataset):
         }
 
 
-class AutoregTokensDataset(Dataset):
-    pass
+class AutoregDiamondTokensDataset(Dataset):
+    """
+        {A} -> {A,B,C} -> {A,B,C,D} -> {A,B,C,D,E,F}
+    """
+    def __init__(
+        self,
+        num_vars: int,
+        num_rules: int,
+        exp_hots: float,
+        dataset_len: int
+    ):
+        assert num_vars > 7
+        self.num_vars = num_vars
+        self.num_rules = num_rules
+        self.exp_hots = exp_hots
+        self.hot_prob = exp_hots / num_vars
+        self.dataset_len = dataset_len
+
+    def __len__(self):
+        return self.dataset_len
+
+    def __getitem__(self, idx):
+        n, r = self.num_vars, self.num_rules
+        abcdefg = torch.randperm(n)[:7]
+        a, b, c, d, e, f, g = abcdefg
+
+        special_rules = torch.stack([
+            torch.cat([F.one_hot(a,n), F.one_hot(b,n)]), # a -> b
+            torch.cat([F.one_hot(a,n), F.one_hot(c,n)]), # a -> c
+            torch.cat([F.one_hot(b,n) + F.one_hot(c,n), F.one_hot(d,n)]), # b,c -> d
+            torch.cat([F.one_hot(d,n), F.one_hot(e,n)]), # d -> e
+            torch.cat([F.one_hot(d,n), F.one_hot(f,n)]), # d -> f
+        ]).long()
+
+        num_others = r - special_rules.size(0)
+        other_antes = (torch.rand(num_others, n) < self.hot_prob).long()
+        other_antes[:,g] = 1
+        other_conseqs = (torch.rand(num_others, n) < self.hot_prob).long()
+        other_rules = torch.cat([other_antes, other_conseqs], dim=-1)
+        rules = torch.cat([special_rules, other_rules], dim=0)
+        rules = rules[torch.randperm(rules.size(0))]
+
+        init_token = torch.cat([torch.zeros(n), F.one_hot(a,n)])
+        tokens = torch.cat([rules, init_token.view(1,2*n)], dim=0)
+
+        labels = torch.stack([
+            F.one_hot(a,n) + F.one_hot(b,n) + F.one_hot(c,n),
+            F.one_hot(a,n) + F.one_hot(b,n) + F.one_hot(c,n) + F.one_hot(d,n),
+            F.one_hot(a,n) + F.one_hot(b,n) + F.one_hot(c,n) + F.one_hot(d,n) + F.one_hot(e,n) + F.one_hot(f,n),
+        ]).long()
+
+        return {
+            "tokens": tokens,
+            "labels": labels,
+            "abcdefg": abcdefg
+        }
+
 

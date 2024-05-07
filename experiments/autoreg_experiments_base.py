@@ -182,6 +182,9 @@ def synexp_args_to_wandb_run_name(args: AutoregExperimentsArguments):
             f"_exph{args.exp_hots:.3f}" + \
             f"_cl{args.min_chain_len}-{args.max_chain_len}"
 
+    elif args.dataset_name == "autoreg_diamond":
+        dataset_str = f"DMD_nv{args.num_vars}_nr{args.num_rules}_exph{args.exp_hots:.3f}"
+
     else:
         raise ValueError(f"Unknown dataset name {args.dataset_name}")
 
@@ -256,6 +259,12 @@ def make_trainer_for_autoreg(
             for p in [0.1, 0.2, 0.3, 0.4, 0.5]
         }
 
+        task_model = AutoregKStepsTaskModel(
+            seqcls_model = seqcls_model,
+            num_steps = args.num_steps,
+            train_supervision_mode = "all"
+        )
+
     elif args.dataset_name == "autoreg_scaled_prob":
         train_dataset = AutoregScaledProbTokensDataset(
             num_vars = args.num_vars,
@@ -281,14 +290,39 @@ def make_trainer_for_autoreg(
             for h in [0.5, 1.0, 2.0, 4.0, 5.0, 6.0, 7.0, 8.0]
         }
 
+        task_model = AutoregKStepsTaskModel(
+            seqcls_model = seqcls_model,
+            num_steps = args.num_steps,
+            train_supervision_mode = "all"
+        )
+
+    elif args.dataset_name == "autoreg_diamond":
+        train_dataset = AutoregDiamondTokensDataset(
+            num_vars = args.num_vars,
+            num_rules = args.num_rules,
+            exp_hots = args.exp_hots,
+            dataset_len = args.train_len
+        )
+
+        eval_datasets = {
+            f"exph{h:.3f}":
+                AutoregDiamondTokensDataset(
+                    num_vars = args.num_vars,
+                    num_rules = args.num_rules,
+                    exp_hots = args.exp_hots,
+                    dataset_len = args.eval_len
+                )
+            for h in [0.5, 1.0, 2.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+        }
+
+        task_model = AutoregKStepsTaskModel(
+            seqcls_model = seqcls_model,
+            num_steps = 3,
+            train_supervision_mode = "all"
+        )
+
     else:
         raise ValueError(f"Unknown dataset name {args.dataset_name}")
-
-    task_model = AutoregKStepsTaskModel(
-        seqcls_model = seqcls_model,
-        num_steps = args.num_steps,
-        train_supervision_mode = "all"
-    )
 
     run_name = synexp_args_to_wandb_run_name(args)
     training_args = TrainingArguments(
@@ -314,7 +348,6 @@ def make_trainer_for_autoreg(
         eval_dataset = eval_datasets,
         compute_metrics = autoreg_ksteps_metrics
     )
-
 
 """ Main stuff """
 
