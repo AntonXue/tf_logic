@@ -103,10 +103,14 @@ def run_coerce_state_attack(config):
                         batch_tokens = batch["tokens"].to(config.device)
                         tgt_state = batch["labels"].to(config.device)
 
-                        adv_ante = torch.zeros_like(tgt_state)
-                        adv_conseq = tgt_state - kappa * (1 - tgt_state)
-                        adv_tokens = torch.cat([adv_ante, adv_conseq], dim=-1).view(-1,1,2*n)
-                        all_tokens = torch.cat([adv_tokens, batch_tokens], dim=1)
+                        atk_ante = torch.zeros_like(tgt_state)
+                        # atk_ante = -kappa * torch.ones_like(tgt_state)
+                        # atk_ante = -1*batch_tokens[:,-1,n:]
+
+                        atk_conseq = tgt_state - kappa * (1 - tgt_state)
+                        # atk_conseq = kappa * (2 * tgt_state - 1)
+                        atk_rule = torch.cat([atk_ante, atk_conseq], dim=-1).view(-1,1,2*n)
+                        all_tokens = torch.cat([atk_rule, batch_tokens], dim=1)
 
                         out = model(all_tokens)
                         pred = (out.logits[:,0] > 0).long()
@@ -308,9 +312,8 @@ def run_knowledge_amnesia_attack(config):
                     raw_pred = (raw_out.logits > 0).long()
 
                     # Now the adversarial stuff
-                    atk_tokens = torch.cat([F.one_hot(a,n), -1*F.one_hot(a,n)], dim=-1).view(-1,1,2*n)
-                    atk_tokens = atk_tokens.repeat(1,100,1)
-                    adv_tokens = torch.cat([atk_tokens, raw_tokens], dim=1)
+                    atk_rule = torch.cat([F.one_hot(a,n), -2*F.one_hot(a,n)], dim=-1).view(-1,1,2*n)
+                    adv_tokens = torch.cat([atk_rule, raw_tokens], dim=1)
                     adv_out = model(tokens=adv_tokens)
                     adv_pred = (adv_out.logits > 0).long()
 

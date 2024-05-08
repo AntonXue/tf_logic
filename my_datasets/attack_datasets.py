@@ -19,7 +19,12 @@ class CoerceStateDataset(Dataset):
         self.num_vars = reasoner_dataset.num_vars
         self.num_attack_tokens = num_attack_tokens
         self.hot_prob = reasoner_dataset.exp_hots / self.num_vars
-        self.num_rules = reasoner_dataset.num_rules_range[1] - self.num_attack_tokens
+
+        if hasattr(reasoner_dataset, "num_rules_range"):
+            self.num_rules = reasoner_dataset.num_rules_range[1] - self.num_attack_tokens
+        else:
+            self.num_rules = reasoner_dataset.num_rules - self.num_attack_tokens
+
         self.dataset_len = dataset_len
 
     def __len__(self):
@@ -57,7 +62,12 @@ class SuppressRuleDataset(Dataset):
         self.reasoner_dataset = reasoner_dataset
         self.num_vars = reasoner_dataset.num_vars
         self.hot_prob = reasoner_dataset.exp_hots / self.num_vars
-        self.num_rules = reasoner_dataset.num_rules_range[1] - 1 # We generate one adversarial rule
+
+        if hasattr(reasoner_dataset, "num_rules_range"):
+            self.num_rules = reasoner_dataset.num_rules_range[1] - 1
+        else:
+            self.num_rules = reasoner_dataset.num_rules - 1
+
         self.dataset_len = dataset_len
 
     def __len__(self):

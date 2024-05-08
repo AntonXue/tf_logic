@@ -157,17 +157,15 @@ def load_model_and_dataset_from_big_grid(
     model_name: str = "gpt2",
     num_layers: int = 1,
     num_heads: int = 1,
-    num_autoreg_steps: int = 3,
     dataset_len: Optional[int] = None,
-    num_rules_range: tuple[int, int] = (16,32),
-    exph: float = 4.0,
-    chain_len_range: tuple[int, int] = (3,5),
-    num_trains: int = 524288,
-    num_evals: int = 65536,
-    num_train_steps: int = 16384,
-    learning_rate: float = 5e-4,
+    num_rules: int = 32,
+    exph: float = 3.0,
+    train_len: int = 262144,
+    eval_len: int = 65536,
+    num_train_steps: int = 8192,
+    learning_rate: float = 1e-4,
     batch_size: int = 512,
-    seed: int = 571,
+    seed: int = 591,
     quiet: bool = False,
     wandb_project: str = "transformer_friends/transformer_friends",
     overwrite: bool = True,
@@ -185,17 +183,13 @@ def load_model_and_dataset_from_big_grid(
 
     model = AutoregKStepsTaskModel(
         seqcls_model = seqcls_model,
-        num_steps = num_autoreg_steps,
+        num_steps = 3,
         train_supervision_mode = "all"
     )
 
     model_str = f"{model_name}_d{embed_dim}_L{num_layers}_H{num_heads}"
-    dataset_str = f"DAS_nv{num_vars}_ns{num_autoreg_steps}" + \
-        f"_nr{num_rules_range[0]}-{num_rules_range[1]}" + \
-        f"_exph{exph:.3f}" + \
-        f"_cl{chain_len_range[0]}-{chain_len_range[1]}"
-
-    train_str = f"ntr{num_trains}_ntt{num_evals}_bsz{batch_size}" + \
+    dataset_str = f"DMD_nv{num_vars}_nr{num_rules}_exph{exph:.3f}"
+    train_str = f"ntr{train_len}_ntt{eval_len}_bsz{batch_size}" + \
         f"_steps{num_train_steps}_lr{learning_rate:.5f}"
 
     artifact_id = f"model-SynSAR_{model_str}__{dataset_str}__{train_str}_seed{seed}:v0"
@@ -222,20 +216,55 @@ def load_model_and_dataset_from_big_grid(
     model.seqcls_model.gpt2s.transformer.wpe = nn.Embedding(max_test_seq_len, embed_dim)
     model.seqcls_model.gpt2s.transformer.wpe.requires_grad_(False)
     model.seqcls_model.gpt2s.transformer.wpe.weight.fill_(0)
-
     model.eval()
 
-    dataset_len = num_trains if dataset_len is None else dataset_len
-    dataset = AutoregScaledProbTokensDataset(
+    dataset_len = train_len if dataset_len is None else dataset_len
+    dataset = AutoregDiamondTokensDataset(
         num_vars = num_vars,
-        num_rules_range = num_rules_range,
+        num_rules = num_rules,
         exp_hots = exph,
-        chain_len_range = chain_len_range,
-        num_prevs_range = (1, chain_len_range[0]),
-        num_steps = num_autoreg_steps,
-        dataset_len = dataset_len,
+        dataset_len = dataset_len
     )
 
     return model, dataset
+
+
+def load_big_grid_stats_from_wandb(
+    embed_dim: int,
+    num_vars: int,
+    model_name: str = "gpt2",
+    num_layers: int = 1,
+    num_heads: int = 1,
+    num_rules: int = 32,
+    exph: float = 3.0,
+    train_len: int = 262144,
+    eval_len: int = 65536,
+    num_train_steps: int = 8192,
+    learning_rate: float = 5e-4,
+    batch_size: int = 512,
+    seed: int = 591,
+    quiet: bool = False,
+    wandb_project: str = "transformer_friends/transformer_friends",
+    overwrite: bool = True,
+    max_test_seq_len: int = 1024,
+    return_first: bool = True
+):
+    model_str = f"{model_name}_d{embed_dim}_L{num_layers}_H{num_heads}"
+    dataset_str = f"DMD_nv{num_vars}_nr{num_rules}_exph{exph:.3f}"
+    train_str = f"ntr{train_len}_ntt{eval_len}_bsz{batch_size}" + \
+        f"_steps{num_train_steps}_lr{learning_rate:.5f}"
+
+    run_name = f"SynSAR_{model_str}__{dataset_str}__{train_str}_seed{seed}"
+
+    api = wandb.Api()
+    runs = api.runs(wandb_project, filters={"config.run_name": run_name})
+
+    if len(runs) == 0:
+        raise Exception(f"No runs found for run_name {run_name}")
+    elif len(runs) > 1:
+        if not return_first:
+            raise Exception(f"Multiple runs found for run_name {run_name}")
+    run = runs[0]
+    return run.summary
 
 
