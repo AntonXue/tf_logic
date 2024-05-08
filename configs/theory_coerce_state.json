@@ -1,10 +1,9 @@
 {
     "attack_name": "coerce_state",
     "reasoner_types": ["theory", "learned"],
-    "train_seeds": [581],
+    "train_seeds": [601],
     "nd_pairs": [
-        [64, 128],
-        [24, 48]
+        [64, 128]
     ],
     "kappa_powers": [
         -2.0, -1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0

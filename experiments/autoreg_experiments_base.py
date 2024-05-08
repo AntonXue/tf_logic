@@ -182,8 +182,8 @@ def synexp_args_to_wandb_run_name(args: AutoregExperimentsArguments):
             f"_exph{args.exp_hots:.3f}" + \
             f"_cl{args.min_chain_len}-{args.max_chain_len}"
 
-    elif args.dataset_name == "autoreg_diamond":
-        dataset_str = f"DMD_nv{args.num_vars}_nr{args.num_rules}_exph{args.exp_hots:.3f}"
+    elif args.dataset_name == "autoreg_custom":
+        dataset_str = f"DMY_nv{args.num_vars}_nr{args.num_rules}_exph{args.exp_hots:.3f}"
 
     else:
         raise ValueError(f"Unknown dataset name {args.dataset_name}")
@@ -296,8 +296,8 @@ def make_trainer_for_autoreg(
             train_supervision_mode = "all"
         )
 
-    elif args.dataset_name == "autoreg_diamond":
-        train_dataset = AutoregDiamondTokensDataset(
+    elif args.dataset_name == "autoreg_custom":
+        train_dataset = AutoregCustomTokensDataset(
             num_vars = args.num_vars,
             num_rules = args.num_rules,
             exp_hots = args.exp_hots,
@@ -306,7 +306,7 @@ def make_trainer_for_autoreg(
 
         eval_datasets = {
             f"exph{h:.3f}":
-                AutoregDiamondTokensDataset(
+                AutoregCustomTokensDataset(
                     num_vars = args.num_vars,
                     num_rules = args.num_rules,
                     exp_hots = args.exp_hots,

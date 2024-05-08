@@ -37,14 +37,15 @@ class TheoryAttackExperimentsArguments:
         default = "cpu",
     )
 
-
+def hot(i, n):
+    return F.one_hot(i, n)
 
 def load_model_and_dataset(
     num_vars: int,
     embed_dim: int,
     train_seed: int,
     reasoner_type: str,
-    reasoner_num_steps: int = 3
+    num_reasoner_steps: Optional[int] = None
 ):
     model, dataset = load_model_and_dataset_from_big_grid(
         embed_dim = embed_dim,
@@ -52,12 +53,13 @@ def load_model_and_dataset(
         seed = train_seed
     )
 
-    model.num_steps = reasoner_num_steps
+    if num_reasoner_steps is not None:
+        model.num_steps = num_reasoner_steps
 
     if reasoner_type == "theory":
         model = TheoryAutoregKStepsModel(
             num_vars = num_vars,
-            num_steps = reasoner_num_steps
+            num_steps = model.num_steps,
         )
 
     model.eval()
@@ -85,13 +87,11 @@ def run_coerce_state_attack(config):
                     embed_dim = d,
                     train_seed = train_seed,
                     reasoner_type = reasoner_type,
-                    reasoner_num_steps = 1
+                    num_reasoner_steps = 1
                 )
 
                 model.eval().to(config.device)
-
                 dataset = CoerceStateDataset(res_dataset, num_attack_tokens=1, dataset_len=config.num_samples)
-
                 dataloader = DataLoader(dataset, batch_size=config.batch_size, shuffle=True)
 
                 for kappa_power in config.kappa_powers:
@@ -104,11 +104,7 @@ def run_coerce_state_attack(config):
                         tgt_state = batch["labels"].to(config.device)
 
                         atk_ante = torch.zeros_like(tgt_state)
-                        # atk_ante = -kappa * torch.ones_like(tgt_state)
-                        # atk_ante = -1*batch_tokens[:,-1,n:]
-
                         atk_conseq = tgt_state - kappa * (1 - tgt_state)
-                        # atk_conseq = kappa * (2 * tgt_state - 1)
                         atk_rule = torch.cat([atk_ante, atk_conseq], dim=-1).view(-1,1,2*n)
                         all_tokens = torch.cat([atk_rule, batch_tokens], dim=1)
 
@@ -165,7 +161,7 @@ def run_suppress_rule_attack(config):
                     embed_dim = embed_dim,
                     train_seed = train_seed,
                     reasoner_type = reasoner_type,
-                    reasoner_num_steps = 1
+                    num_reasoner_steps = 1
                 )
 
                 model.eval().to(config.device)
@@ -189,26 +185,25 @@ def run_suppress_rule_attack(config):
                     a, b, c, d, e = abcde.chunk(5, dim=-1)
 
                     # Output of the raw token sequence (i.e., without attacks)
-                    raw_labels = torch.cat([
-                        (F.one_hot(a,n) + F.one_hot(b,n) + F.one_hot(c,n)).view(-1,1,n),
-                    ], dim=1)
+                    raw_labels = (hot(a,n) + hot(b,n) + hot(c,n) + hot(d,n)).view(-1,1,n)
                     raw_out = model(tokens=raw_tokens, output_attentions=True)
                     raw_pred = (raw_out.logits > 0).long()
 
                     # Now add the known adversarial rule form and run it through the model
                     atk_rule = torch.cat([F.one_hot(a,n), -1*F.one_hot(b,n)], dim=-1)
-                    adv_tokens = torch.cat([atk_rule.view(-1,1,2*n), raw_tokens], dim=1)
+                    atk_rules = atk_rule.view(-1,1,2*n).repeat(1,3,1)
+                    adv_tokens = torch.cat([atk_rules, raw_tokens], dim=1)
                     adv_out = model(tokens=adv_tokens, output_attentions=True)
                     adv_pred = (adv_out.logits > 0).long()
 
                     # Extract the relevant attention for the adversarial inputs
                     if reasoner_type == "learned":
-                        adv_out = adv_out.all_seqcls_outputs[0]
+                        adv_out, *_ = adv_out.all_seqcls_outputs    # Suppression occurs at first attn
                         adv_attn = adv_out.attentions[0] # Extract from the 1-tuple; shape (N,1,L,L)
                         adv_attn = adv_attn[:,0] # (N,L,L)
 
                     elif reasoner_type == "theory":
-                        adv_attn = adv_out.attentions[0]
+                        adv_attn, *_ = adv_out.attentions
 
                     top_attn_inds = adv_attn[:,-1].sort(dim=1, descending=True).indices # (N,L)
 
@@ -283,7 +278,7 @@ def run_knowledge_amnesia_attack(config):
                     embed_dim = embed_dim,
                     train_seed = train_seed,
                     reasoner_type = reasoner_type,
-                    reasoner_num_steps = 1
+                    num_reasoner_steps = 1
                 )
 
                 model.eval().to(config.device)
@@ -305,15 +300,14 @@ def run_knowledge_amnesia_attack(config):
                     a, b, c, d, e = abcde.chunk(5, dim=-1)
 
                     # Output of the raw token sequence (i.e., without attacks)
-                    raw_labels = torch.cat([
-                        (F.one_hot(a,n) + F.one_hot(b,n) + F.one_hot(c,n)).view(-1,1,n),
-                    ], dim=1)
+                    raw_labels = (hot(a,n) + hot(b,n) + hot(c,n) + hot(d,n)).view(-1,1,n)
                     raw_out = model(tokens=raw_tokens)
                     raw_pred = (raw_out.logits > 0).long()
 
                     # Now the adversarial stuff
-                    atk_rule = torch.cat([F.one_hot(a,n), -2*F.one_hot(a,n)], dim=-1).view(-1,1,2*n)
-                    adv_tokens = torch.cat([atk_rule, raw_tokens], dim=1)
+                    atk_rule = torch.cat([F.one_hot(a,n), -1*F.one_hot(a,n)], dim=-1)
+                    atk_rules = atk_rule.view(-1,1,2*n).repeat(1,8,1)
+                    adv_tokens = torch.cat([atk_rules, raw_tokens], dim=1)
                     adv_out = model(tokens=adv_tokens)
                     adv_pred = (adv_out.logits > 0).long()
 

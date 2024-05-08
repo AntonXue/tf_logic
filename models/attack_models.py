@@ -101,7 +101,6 @@ class SuppressRuleWrapperModel(nn.Module):
         reasoner_model: AutoregKStepsTaskModel,
     ):
         super().__init__()
-
         # Set up the reasoner model
         reasoner_model = copy.deepcopy(reasoner_model)
         for p in reasoner_model.parameters():
@@ -128,7 +127,6 @@ class SuppressRuleWrapperModel(nn.Module):
         """ We don't want the seqcls_model under attack to be in training mode """
         self.reasoner_model.eval()
         self.attacker_model.train(mode=mode)
-
 
     def forward(
         self,
@@ -161,7 +159,82 @@ class SuppressRuleWrapperModel(nn.Module):
         res_out = self.reasoner_model(tokens=adv_inputs)
         res_logits = res_out.logits #
 
-        # Amplify the component regarding b
+        loss = None
+        if labels is not None:
+            loss = self.loss_fn(res_logits, labels.float())
+
+        return AttackerModelOutput(
+            loss = loss,
+            logits = atk_logits,
+            others = {
+                "reasoner_output": res_out,
+            }
+        )
+
+
+class KnowledgeAmnesiaWrapperModel(nn.Module):
+    def __init__(
+        self,
+        reasoner_model: AutoregKStepsTaskModel,
+    ):
+        super().__init__()
+        # Set up the reasoner model
+        reasoner_model = copy.deepcopy(reasoner_model)
+        for p in reasoner_model.parameters():
+            p.requires_grad = False
+        reasoner_model.eval()
+        self.reasoner_model = reasoner_model
+
+        self.num_vars = reasoner_model.num_labels
+        self.token_dim = 2 * self.num_vars
+        self.attacker_model = GPT2ForSequenceClassification.from_pretrained(
+            "gpt2",
+            num_labels = self.token_dim,
+            problem_type = "multi_label_classification",
+            pad_token_id = -1
+        )
+        self.embed_dim = self.attacker_model.transformer.embed_dim
+
+        # Special thing here
+        self.token_embed_fn = nn.Linear(self.token_dim, self.embed_dim)
+        self.rule_embed_fn = nn.Linear(self.token_dim, self.embed_dim)
+        self.loss_fn = nn.BCEWithLogitsLoss(reduction="mean")
+
+    def train(self, mode=True):
+        """ We don't want the seqcls_model under attack to be in training mode """
+        self.reasoner_model.eval()
+        self.attacker_model.train(mode=mode)
+
+    def forward(
+        self,
+        tokens: torch.LongTensor,
+        abcde: torch.LongTensor,
+        labels: torch.LongTensor,
+    ):
+        N, L, _ = tokens.shape
+        tokens, labels = tokens.float(), labels.float()
+        device = tokens.device
+
+        # Our goal is to suppress the rule (a,b)
+        a, b, c, d, e = abcde.chunk(5, dim=-1)
+        n = self.num_vars
+
+        supp_ante = F.one_hot(a, num_classes=n).view(-1,1,n)
+        supp_conseq = F.one_hot(b, num_classes=n).view(-1,1,n)
+        supp_rule = torch.cat([supp_ante, supp_conseq], dim=-1).float()
+
+        # Query the attacker model
+        atk_inputs_embeds = torch.cat([
+            self.rule_embed_fn(supp_rule).view(N,1,-1),
+            self.token_embed_fn(tokens).view(N,L,-1),
+        ], dim=1)
+
+        atk_logits = self.attacker_model(inputs_embeds=atk_inputs_embeds).logits
+
+        # Prepend the logits to the token sequence
+        adv_inputs = torch.cat([atk_logits.view(-1,1,self.token_dim), tokens], dim=1)
+        res_out = self.reasoner_model(tokens=adv_inputs)
+        res_logits = res_out.logits #
 
         loss = None
         if labels is not None:
