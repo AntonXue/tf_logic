@@ -23,6 +23,8 @@ from my_datasets import SuppressRuleDataset
 class LearnedSuppressRuleConfig:
     num_vars: int
     embed_dim: int
+    num_attack_tokens: int
+    attack_tokens_style: str
     train_len: int
     eval_len: int
     batch_size: int
@@ -30,9 +32,10 @@ class LearnedSuppressRuleConfig:
     reasoner_seed: int
     attacker_seed: int
     reasoner_type: str = "learned"
-    learning_rate: float = 1e-4
+    learning_rate: float = 5e-4
     warmup_ratio: float = 0.1
     device: str = "cuda"
+    output_dir: str = None
 
 
 def train_one_epoch(atk_model, dataloader, optimizer, lr_scheduler, config):
@@ -65,6 +68,10 @@ def train_one_epoch(atk_model, dataloader, optimizer, lr_scheduler, config):
         desc = "[train] "
         desc += f"N {num_dones}, lr {lr:.6f}, loss {avg_loss:.4f} (first {first_loss:.4f})"
         pbar.set_description(desc)
+
+    return {
+        "loss": avg_loss
+    }
 
 
 @torch.no_grad()
@@ -111,11 +118,11 @@ def eval_one_epoch(atk_model, dataloader, config):
 
         # Extract the relevant information
         if config.reasoner_type == "learned":
-            _, adv_out2, _ = adv_out.all_seqcls_outputs # This is 3 steps; get the seocnd step
-            adv_attn = adv_out2.attentions[0] # Extract from the 1-tuple; shape (N,1,L,L)
+            adv_out, *_ = adv_out.all_seqcls_outputs # This is 3 steps; get the seocnd step
+            adv_attn = adv_out.attentions[0] # Extract from the 1-tuple; shape (N,1,L,L)
             adv_attn = adv_attn[:,0] # (N,L,L)
         elif config.reasoner_type == "theory":
-            _, adv_attn, _ = adv_out.attentions
+            adv_attn, *_ = adv_out.attentions
         else:
             raise ValueError(f"Unrecognized reasoner_type {config.reasoner_type}")
         top_attn_inds = adv_attn[:,-1].sort(dim=1, descending=True).indices # (N,L)
@@ -148,6 +155,15 @@ def eval_one_epoch(atk_model, dataloader, config):
         desc += f"adv_wt {adv_weight:.3f} (rel {rel_adv_weight:.3f}), "
         pbar.set_description(desc)
 
+    return {
+        "raw_elems_acc": raw_elems_acc,
+        "raw_state_acc": raw_state_acc,
+        "adv_elems_acc": raw_elems_acc,
+        "adv_state_acc": raw_state_acc,
+        "adv_top3_acc": top3_acc,
+        "adv_wt": adv_weight,
+    }
+
 
 
 def run_learned_suppress_rule(config: LearnedSuppressRuleConfig):
@@ -159,10 +175,16 @@ def run_learned_suppress_rule(config: LearnedSuppressRuleConfig):
         seed = config.reasoner_seed,
     )
 
-    if config.reasoner_type == "theory":
-        reasoner_model = TheoryAutoregKStepsModel(num_vars=config.num_vars, num_steps=3)
+    reasoner_model.num_steps = 1 # By default, it loads a 3-step model
 
-    atk_model = SuppressRuleWrapperModel(reasoner_model=reasoner_model)
+    if config.reasoner_type == "theory":
+        reasoner_model = TheoryAutoregKStepsModel(num_vars=config.num_vars, num_steps=1)
+
+    atk_model = SuppressRuleWrapperModel(
+        reasoner_model = reasoner_model,
+        num_attack_tokens = config.num_attack_tokens,
+        attack_tokens_style = config.attack_tokens_style,
+    )
     atk_model.to(config.device)
 
     train_dataloader = DataLoader(
@@ -197,18 +219,48 @@ def run_learned_suppress_rule(config: LearnedSuppressRuleConfig):
         milestones = [warmup_steps]
     )
 
+
+    # Figure out where to save things
+    run_name = f"learned_suppress_rules"
+    run_name += f"_n{config.num_vars}_d{config.embed_dim}"
+    run_name += f"_k{config.num_attack_tokens}_{config.attack_tokens_style}"
+    last_saveto = str(Path(config.output_dir, run_name + "_last.pt"))
+    best_saveto = str(Path(config.output_dir, run_name + "_best.pt"))
+
     # Do one eval at the start just for reference
     eval_one_epoch(atk_model, eval_dataloader, config)
 
+    best_loss = None
+
+    print(f"{config.reasoner_type}, n {config.num_vars}, d {config.embed_dim}")
     for epoch in range(1, config.num_epochs+1):
         print(f"epoch {epoch}/{config.num_epochs}, lr {lr_scheduler.get_last_lr()[0]:.6f}")
-        print(f"reasoner_type {config.reasoner_type}")
-        train_one_epoch(atk_model, train_dataloader, optimizer, lr_scheduler, config)
+        train_stats = train_one_epoch(atk_model, train_dataloader, optimizer, lr_scheduler, config)
+        this_loss = train_stats["loss"]
 
+        eval_stats = None
         if epoch % 2 == 0:
-            eval_one_epoch(atk_model, eval_dataloader, config)
+            eval_stats = eval_one_epoch(atk_model, eval_dataloader, config)
+
+        save_dict = {
+            "epoch": epoch,
+            "train_loss": this_loss,
+            "model_state_dict": {k: v.cpu() for (k,v) in atk_model.state_dict().items()},
+            "optimizer_state_dict": optimizer.state_dict(),
+            "lr_scheduler_state_dict": lr_scheduler.state_dict(),
+        }
+
+        torch.save(save_dict, last_saveto)
+
+        if best_loss is None or this_loss < best_loss:
+            best_save_dict = save_dict
+            delta = 0. if best_loss is None else (best_loss - this_loss)
+            print(f"New best {this_loss:.4f}, delta {delta:.4f}")
+            best_loss = this_loss
+            torch.save(save_dict, best_saveto)
 
     eval_one_epoch(atk_model, eval_dataloader, config)
+    return best_save_dict
 
 
 

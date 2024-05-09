@@ -24,7 +24,7 @@ class CoerceStateWrapperModel(nn.Module):
     def __init__(
         self,
         reasoner_model: SeqClsModel,
-        num_attack_tokens: int,
+        num_attack_tokens: int = 1,
         token_range: str = "unbounded",
     ):
         super().__init__()
@@ -47,10 +47,10 @@ class CoerceStateWrapperModel(nn.Module):
             problem_type = "multi_label_classification",
             pad_token_id = -1
         )
-        self.embed_dim = self.attacker_model.transformer.embed_dim
+        self.atk_embed_dim = self.attacker_model.transformer.embed_dim
 
-        self.tokens_embed_fn = nn.Linear(self.token_dim, self.embed_dim)
-        self.target_embed_fn = nn.Linear(self.num_vars, self.embed_dim)
+        self.tokens_embed_fn = nn.Linear(self.token_dim, self.atk_embed_dim)
+        self.target_embed_fn = nn.Linear(self.num_vars, self.atk_embed_dim)
 
 
     def train(self, mode=True):
@@ -99,6 +99,8 @@ class SuppressRuleWrapperModel(nn.Module):
     def __init__(
         self,
         reasoner_model: AutoregKStepsTaskModel,
+        num_attack_tokens: int = 1,
+        attack_tokens_style: str = "any",
     ):
         super().__init__()
         # Set up the reasoner model
@@ -108,19 +110,31 @@ class SuppressRuleWrapperModel(nn.Module):
         reasoner_model.eval()
         self.reasoner_model = reasoner_model
 
+        # Set up the attacker model
         self.num_vars = reasoner_model.num_labels
         self.token_dim = 2 * self.num_vars
+        self.num_attack_tokens = num_attack_tokens
+
+        # Depending on the attack style, we do things differently
+        self.attack_tokens_style = attack_tokens_style
+        if attack_tokens_style == "any":
+            self.num_labels = self.token_dim * self.num_attack_tokens
+        elif attack_tokens_style == "repeat":
+            self.num_labels = self.token_dim
+        else:
+            raise ValueError(f"Invalid attack_tokens_style {attack_tokens_style}")
+
         self.attacker_model = GPT2ForSequenceClassification.from_pretrained(
             "gpt2",
-            num_labels = self.token_dim,
+            num_labels = self.num_labels,
             problem_type = "multi_label_classification",
             pad_token_id = -1
         )
-        self.embed_dim = self.attacker_model.transformer.embed_dim
+        self.atk_embed_dim = self.attacker_model.transformer.embed_dim
 
         # Special thing here
-        self.token_embed_fn = nn.Linear(self.token_dim, self.embed_dim)
-        self.rule_embed_fn = nn.Linear(self.token_dim, self.embed_dim)
+        self.token_embed_fn = nn.Linear(self.token_dim, self.atk_embed_dim)
+        self.rule_embed_fn = nn.Linear(self.token_dim, self.atk_embed_dim)
         self.loss_fn = nn.BCEWithLogitsLoss(reduction="mean")
 
     def train(self, mode=True):
@@ -142,9 +156,9 @@ class SuppressRuleWrapperModel(nn.Module):
         a, b, c, d, e = abcde.chunk(5, dim=-1)
         n = self.num_vars
 
-        supp_ante = F.one_hot(a, num_classes=n).view(-1,1,n)
-        supp_conseq = F.one_hot(b, num_classes=n).view(-1,1,n)
-        supp_rule = torch.cat([supp_ante, supp_conseq], dim=-1).float()
+        supp_ante = F.one_hot(a, num_classes=n)
+        supp_conseq = F.one_hot(b, num_classes=n)
+        supp_rule = torch.cat([supp_ante, supp_conseq], dim=1).float().view(N,1,2*n)
 
         # Query the attacker model
         atk_inputs_embeds = torch.cat([
@@ -154,8 +168,15 @@ class SuppressRuleWrapperModel(nn.Module):
 
         atk_logits = self.attacker_model(inputs_embeds=atk_inputs_embeds).logits
 
+        if self.attack_tokens_style == "any":
+            atk_logits = atk_logits.view(N, self.num_attack_tokens, self.token_dim)
+        elif self.attack_tokens_style == "repeat":
+            atk_logits = atk_logits.view(N, 1, self.token_dim).repeat(1, self.num_attack_tokens, 1)
+        else:
+            raise ValueError(f"Invalid attack_tokens_style {attack_tokens_style}")
+
         # Prepend the logits to the token sequence
-        adv_inputs = torch.cat([atk_logits.view(-1,1,self.token_dim), tokens], dim=1)
+        adv_inputs = torch.cat([atk_logits, tokens], dim=1)
         res_out = self.reasoner_model(tokens=adv_inputs)
         res_logits = res_out.logits #
 
@@ -176,6 +197,8 @@ class KnowledgeAmnesiaWrapperModel(nn.Module):
     def __init__(
         self,
         reasoner_model: AutoregKStepsTaskModel,
+        num_attack_tokens: int = 1,
+        attack_tokens_style: str = "any",
     ):
         super().__init__()
         # Set up the reasoner model
@@ -193,11 +216,11 @@ class KnowledgeAmnesiaWrapperModel(nn.Module):
             problem_type = "multi_label_classification",
             pad_token_id = -1
         )
-        self.embed_dim = self.attacker_model.transformer.embed_dim
+        self.atk_embed_dim = self.attacker_model.transformer.embed_dim
 
         # Special thing here
-        self.token_embed_fn = nn.Linear(self.token_dim, self.embed_dim)
-        self.rule_embed_fn = nn.Linear(self.token_dim, self.embed_dim)
+        self.token_embed_fn = nn.Linear(self.token_dim, self.atk_embed_dim)
+        self.rule_embed_fn = nn.Linear(self.token_dim, self.atk_embed_dim)
         self.loss_fn = nn.BCEWithLogitsLoss(reduction="mean")
 
     def train(self, mode=True):
