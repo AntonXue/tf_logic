@@ -585,7 +585,8 @@ class MinecraftAutoregKStepsNVarsSupressAttackDataset(MinecraftAutoregKStepsNVar
         adv_params: dict = None,
         model: torch.nn.Module = None,          # Model to be attacked
         num_samples_per_recipe: int = 2,
-        shuffle: bool = True
+        shuffle: bool = True,
+        only_qed: bool = False,                 # Only use qed recipes
     ):
         
         self.model = model
@@ -593,6 +594,7 @@ class MinecraftAutoregKStepsNVarsSupressAttackDataset(MinecraftAutoregKStepsNVar
         self.idx_to_recipe = {}
         self.num_samples_per_recipe = num_samples_per_recipe
         self.shuffle_dataset = shuffle
+        self.only_qed = only_qed
         super().__init__(
             num_steps=num_steps,
             num_vars_range=num_vars_range,
@@ -624,7 +626,10 @@ class MinecraftAutoregKStepsNVarsSupressAttackDataset(MinecraftAutoregKStepsNVar
         # TODO: Add support for num_samples_per_recipe < 2
         if num_samples_per_recipe < 2:
             raise Exception("Number of samples per recipe should be at least 2.")
-        num_qed_samples = num_samples_per_recipe // 2
+        if self.only_qed:
+            num_qed_samples = num_samples_per_recipe
+        else:
+            num_qed_samples = num_samples_per_recipe // 2
         for recipe in self.dataset:
             qed_samples = [
                 self._get_components_with_distrations(recipe, qed=True)
@@ -634,13 +639,16 @@ class MinecraftAutoregKStepsNVarsSupressAttackDataset(MinecraftAutoregKStepsNVar
                 self._get_components_with_distrations(recipe, qed=False)
                 for _ in range(num_samples_per_recipe - num_qed_samples)
             ]
-            # Alternate between qed and non-qed samples
-            dataset[idx] = []
-            for i in range(num_samples_per_recipe):
-                if i % 2 == 0:
-                    dataset[idx].append(qed_samples[i // 2])
-                else:
-                    dataset[idx].append(non_qed_samples[i // 2])
+            if self.only_qed:
+                dataset[idx] = qed_samples
+            else:
+                # Alternate between qed and non-qed samples
+                dataset[idx] = []
+                for i in range(num_samples_per_recipe):
+                    if i % 2 == 0:
+                        dataset[idx].append(qed_samples[i // 2])
+                    else:
+                        dataset[idx].append(non_qed_samples[i // 2])
             self.idx_to_recipe[idx] = recipe
             idx += 1
         print(f"Found {len(dataset)} recipes.")
