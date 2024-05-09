@@ -8,6 +8,7 @@ from pathlib import Path
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 from tqdm import tqdm
+import json
 
 import matplotlib.pyplot as plt
 
@@ -91,6 +92,10 @@ if __name__ == "__main__":
     elif "vicuna" in model_name:
         model_id = f"lmsys/vicuna-13b-v1.5"
         system_prompt = "A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions."
+        system_prompt = "You are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature.\n\nIf a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. If you don't know the answer to a question, please don't share false information."
+        system_prompt = "You are a helpful, respectful and honest assistant. Please ensure that you do not compromise the privacy of others. This includes refraining from sharing personal information, leaking confidential data, or engaging in any behavior that may violate someone else's privacy rights."
+        system_prompt = "You are a helpful, respectful and honest assistant. Please ensure that you do not compromise the privacy of others. This includes refraining from sharing personal information, leaking confidential data, or engaging in any behavior that may violate someone else's privacy rights. Do not provide any assistance in indirectly compromising someone else's privacy."
+        # system_prompt = "Please ensure that you do not compromise the privacy of others. This includes refraining from sharing personal information, leaking confidential data, or engaging in any behavior that may violate someone else's privacy rights. Do not provide any assistance in indirectly compromising someone else's privacy."
         num_layers = 40
         num_heads = 40
         num_fig_rows = 10
@@ -110,24 +115,38 @@ if __name__ == "__main__":
         k : [] for k in range(num_layers)
     }
 
-    orig_attack_stats = {
-        k : [] for k in range(num_layers)
-    }
-
     attack_stats_head = {
         k: {
             l: [] for l in range(num_heads)
         } for k in range(num_layers)
     }
 
-    orig_attack_stats_head = {
-        k: {
-            l: [] for l in range(num_heads)
-        } for k in range(num_layers)
+    system_stats = {
+        k : [] for k in range(num_layers)
+    }
+
+    system_stats_attack = {
+        k : [] for k in range(num_layers)
     }
 
     artifact = jbb.read_artifact(method="GCG", model_name=model_name)
-    samples = [j for j in artifact.jailbreaks if j.jailbroken]
+    # samples = [j for j in artifact.jailbreaks if j.jailbroken]
+    samples = [j for j in artifact.jailbreaks if j.jailbroken and "Privacy" in j.category]
+
+    os.makedirs(f"{output_dir}/{model_name}", exist_ok=True)
+    with open(f"{output_dir}/{model_name}/info.json", "w") as f:
+        info = {
+            "model_name": model_name,
+            "model_id": model_id,
+            "model_dtype": str(model.dtype),
+            "system_prompt": system_prompt,
+            "max_num_samples": max_num_samples,
+            "num_tokens_to_generate": num_tokens_to_generate,
+            "tokenizer_chat_template": tokenizer.chat_template,
+            "jbb_artifact_method": "GCG",
+            "samples": [dict(sample) for sample in samples]
+        }
+        json.dump(info, f)
 
     attack_samples = [sample.prompt for sample in samples[:max_num_samples]]
     samples = [sample.goal for sample in samples[:max_num_samples]]
@@ -135,6 +154,10 @@ if __name__ == "__main__":
     for sample_i, sample in tqdm(enumerate(samples)):
         input_to_model = sample
         attack_input_to_model = attack_samples[sample_i]
+
+        # This is to track how much attention is given to the Llama system prompt
+        # Change this later
+        system_input_to_model = f"[INST] <<SYS>>\n{system_prompt}\n<</SYS>>"
 
         input_to_model = [
             {"role": "system", "content": system_prompt}, 
@@ -150,6 +173,11 @@ if __name__ == "__main__":
         print(f"Input to model: {input_to_model}\n--------\n")
         tokenized_input = tokenizer.apply_chat_template(input_to_model, tokenize=True, add_generation_prompt=True, return_tensors="pt").to(device)
         tokenized_attack_input = tokenizer.apply_chat_template(attack_input_to_model, tokenize=True, add_generation_prompt=True, return_tensors="pt").to(device)
+        tokenized_system_input = tokenizer(system_input_to_model, return_tensors="pt").input_ids.to(device)
+
+        print(f"Tokenized attack input.shape: {tokenized_attack_input.shape}")
+        print(f"Tokenized system input.shape: {tokenized_system_input.shape}")     
+        print(f"Decoded system input: {tokenizer.decode(tokenized_system_input[0][9:])}") 
 
         original_tokenized_input = tokenized_input.clone()
         original_tokenized_attack_input = tokenized_attack_input.clone()
@@ -241,7 +269,47 @@ if __name__ == "__main__":
 
 
                 os.makedirs(f"{output_dir}/{model_name}/sample_{sample_i}", exist_ok=True)
+                print("Saving figure as ", f"{output_dir}/{model_name}/sample_{sample_i}/token_{ntk}.png")
                 plt.savefig(f"{output_dir}/{model_name}/sample_{sample_i}/token_{ntk}.png")
+
+                print(heatmap_with_suffix.shape)
+                print(heatmap_without_suffix.shape)
+                
+                if "llama" in model_name:
+                    inst_tokens = 4 + ntk   # 4 ending INST tokens
+                elif "vicuna" in model_name:
+                    inst_tokens = 5 + ntk   # 5 ending ASSISTANT tokens
+
+                # Plot the difference
+                # Pad the heatmap without suffix
+                heatmap_without_suffix_padded = np.zeros(heatmap_with_suffix.shape)
+                heatmap_without_suffix_padded[:(heatmap_without_suffix.shape[0]-inst_tokens), :] = heatmap_without_suffix[:(heatmap_without_suffix.shape[0]-inst_tokens), :]
+                heatmap_without_suffix_padded[(heatmap_with_suffix.shape[0]-inst_tokens):, :] = heatmap_without_suffix[(heatmap_without_suffix.shape[0]-inst_tokens):, :]
+
+                # Subtract the two heatmaps
+                heatmap_diff = heatmap_with_suffix - heatmap_without_suffix_padded
+                print(f"Padded:")
+                print(heatmap_without_suffix_padded[(heatmap_without_suffix.shape[0]-inst_tokens):(heatmap_with_suffix.shape[0]-inst_tokens), :])
+
+                fig, axs = plt.subplots(1, 1, figsize=(25, 60))
+                axs.set_title("Attention Heatmap Difference")
+                axs.imshow(heatmap_diff, cmap="RdYlGn", interpolation="nearest")
+
+                # Label the axes
+                axs.set_xlabel("Layer")
+                axs.set_ylabel("Token")
+
+                # Use tokens as the y-axis
+                axs.set_yticks(range(len(tokens_with_suffix)))
+                axs.set_yticklabels(tokens_with_suffix)
+
+                axs.set_xticks(range(num_layers))
+                axs.set_xticklabels(range(num_layers))
+
+                # Add a colorbar
+                fig.colorbar(axs.imshow(heatmap_diff, cmap="RdYlGn", interpolation="nearest"), ax=axs)
+
+                plt.savefig(f"{output_dir}/{model_name}/sample_{sample_i}/token_{ntk}_diff.png")
 
                 for layer in range(len(attns_without_suffix)):
                     attns_without_suffix_layer = orig_attns_without_suffix[layer].squeeze(0)
@@ -253,8 +321,18 @@ if __name__ == "__main__":
                     attack_volume = (tokenized_attack_input.shape[-1] - original_tokenized_input.shape[-1]) / tokenized_attack_input.shape[-1]
                     attack_leverage = attns_with_suffix_layer_avg[-1][original_tokenized_input.shape[-1]:].sum() / attns_with_suffix_layer_avg[-1].sum()
                     attack_leverage = attack_leverage.item()
-
                     attack_stats[layer].append((sample_i, ntk, attack_volume, attack_leverage))
+
+                    system_volume_attack = (tokenized_system_input.shape[-1] - 9) / tokenized_attack_input.shape[-1]
+                    system_leverage_attack = attns_with_suffix_layer_avg[-1][9:tokenized_system_input.shape[-1]].sum() / attns_with_suffix_layer_avg[-1].sum()
+                    system_leverage_attack = system_leverage_attack.item()
+
+                    system_volume = (tokenized_system_input.shape[-1] - 9) / original_tokenized_input.shape[-1]
+                    system_leverage = attns_without_suffix_layer_avg[-1][9:tokenized_system_input.shape[-1]].sum() / attns_without_suffix_layer_avg[-1].sum()
+                    system_leverage = system_leverage.item()
+
+                    system_stats[layer].append((sample_i, ntk, system_volume, system_leverage))
+                    system_stats_attack[layer].append((sample_i, ntk, system_volume_attack, system_leverage_attack))
 
                     for head in range(attns_without_suffix_layer.shape[0]):
                         attns_without_suffix_head = attns_without_suffix_layer[head]
@@ -267,6 +345,43 @@ if __name__ == "__main__":
 
 
     # exit()
+                        
+    # Plot the system stats such that each number of tokens is plotted as a separate color
+    # Each plot has (attack volume, attack leverage) as points on the graph
+    fig, axs = plt.subplots(num_fig_cols, num_fig_rows, figsize=(20, 20))
+
+    for layer in tqdm(range(num_layers), desc="Plotting system stats for each layer"):
+        if len(system_stats[layer]) == 0:
+            continue
+
+        axs[layer // num_fig_rows, layer % num_fig_rows].set_title(f"Layer: {layer}")
+
+        system_stats_layer = system_stats[layer]
+        system_stats_layer = np.array(system_stats_layer)
+
+        # Each sample_i is a different color
+        for sample_i in range(len(samples)):
+            sample_i_indices = np.where(system_stats_layer[:, 0] == sample_i)
+            sample_i_data = system_stats_layer[sample_i_indices]
+            axs[layer // num_fig_rows, layer % num_fig_rows].scatter(sample_i_data[:, 2], sample_i_data[:, 3], label=f"Sample {sample_i} (without suffix)")
+
+        system_stats_attack_layer = system_stats_attack[layer]
+        system_stats_attack_layer = np.array(system_stats_attack_layer)
+
+        # Each sample_i is a different color
+        for sample_i in range(len(samples)):
+            sample_i_indices = np.where(system_stats_attack_layer[:, 0] == sample_i)
+            sample_i_data = system_stats_attack_layer[sample_i_indices]
+            axs[layer // num_fig_rows, layer % num_fig_rows].scatter(sample_i_data[:, 2], sample_i_data[:, 3], label=f"Sample {sample_i} (with suffix)")
+
+        # Also plot the y = x line
+        axs[layer // num_fig_rows, layer % num_fig_rows].plot([0, 1], [0, 1], color="red", linestyle="--")
+
+    # Add a legend
+    axs[0, 0].legend()
+
+    os.makedirs(f"{output_dir}/{model_name}", exist_ok=True)
+    plt.savefig(f"{output_dir}/{model_name}/system_stats_{model_name}.png")
 
     # Plot the attack stats such that each number of tokens is plotted as a separate color
     # Each plot has (attack volume, attack leverage) as points on the graph
