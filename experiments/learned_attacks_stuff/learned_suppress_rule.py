@@ -97,11 +97,7 @@ def eval_one_epoch(atk_model, dataloader, config):
         a, b, c, d, e = abcde.chunk(5, dim=-1)
 
         # Check the raw stats
-        raw_labels = torch.cat([
-            F.one_hot(a,n).view(-1,1,n),
-            (F.one_hot(a,n) + F.one_hot(b,n) + F.one_hot(c,n)).view(-1,1,n),
-            (F.one_hot(a,n) + F.one_hot(b,n) + F.one_hot(c,n) + F.one_hot(d,n)).view(-1,1,n),
-        ], dim=1)
+        raw_labels = (F.one_hot(a,n) + F.one_hot(b,n) + F.one_hot(c,n) + F.one_hot(d,n)).view(-1,1,n)
         raw_out = res_model(tokens=raw_tokens, output_attentions=True)
         raw_pred = (raw_out.logits > 0).long()
 
@@ -109,7 +105,7 @@ def eval_one_epoch(atk_model, dataloader, config):
         atk_out = atk_model(tokens=raw_tokens, abcde=abcde, labels=adv_labels)
         atk_token = atk_out.logits
         adv_tokens = torch.cat([
-            atk_out.logits.view(-1,1,2*n),
+            atk_out.logits.view(-1, config.num_attack_tokens, 2*n),
             raw_tokens
         ], dim=1)
 
@@ -129,16 +125,21 @@ def eval_one_epoch(atk_model, dataloader, config):
 
         # Do some metrics
         num_dones += raw_tokens.size(0)
-        cum_raw_elems_hits += (raw_pred == raw_labels).float().mean(dim=(1,2)).sum()
+
+        cum_raw_elems_hits += \
+            (raw_pred == raw_labels).float().mean(dim=(1,2)).sum()
         raw_elems_acc = cum_raw_elems_hits / num_dones
 
-        cum_raw_state_hits += ((raw_pred == raw_labels).sum(dim=(1,2)) == 3*n).sum()
+        cum_raw_state_hits += \
+            ((raw_pred == raw_labels).float().mean(dim=(1,2)) > 0.999).sum()
         raw_state_acc = cum_raw_state_hits / num_dones
 
-        cum_adv_elems_hits += (adv_pred == adv_labels).float().mean(dim=(1,2)).sum()
+        cum_adv_elems_hits += \
+            (adv_pred == adv_labels).float().mean(dim=(1,2)).sum()
         adv_elems_acc = cum_adv_elems_hits / num_dones
 
-        cum_adv_state_hits += ((adv_pred == adv_labels).sum(dim=(1,2)) == 3*n).sum()
+        cum_adv_state_hits += \
+            ((adv_pred == adv_labels).float().mean(dim=(1,2)) > 0.999).sum()
         adv_state_acc = cum_adv_state_hits / num_dones
 
         cum_top3_hits += (top_attn_inds[:,:3] == 0).sum()
@@ -219,13 +220,14 @@ def run_learned_suppress_rule(config: LearnedSuppressRuleConfig):
         milestones = [warmup_steps]
     )
 
-
     # Figure out where to save things
-    run_name = f"learned_suppress_rules"
+    run_name = f"suppress_rules"
+    run_name += f"_{config.reasoner_type}"
     run_name += f"_n{config.num_vars}_d{config.embed_dim}"
     run_name += f"_k{config.num_attack_tokens}_{config.attack_tokens_style}"
     last_saveto = str(Path(config.output_dir, run_name + "_last.pt"))
     best_saveto = str(Path(config.output_dir, run_name + "_best.pt"))
+    print(f"run name: {run_name}")
 
     # Do one eval at the start just for reference
     eval_one_epoch(atk_model, eval_dataloader, config)

@@ -213,16 +213,17 @@ class TheoryAutoregKStepsModel(nn.Module):
         self,
         num_vars: int,
         num_steps: int,
-        lambd: float = 1e5,
-        rho: float = 1e5
+        lambd: Optional[float] = None,
+        rho: Optional[float] = None,
+        logit_type: str = "continuous"
     ):
         super().__init__()
         n = num_vars
         self.num_vars = n
         self.embed_dim = 2 * n
         self.num_steps = num_steps
-        self.lambd = lambd
-        self.rho = rho
+        self.lambd = n**2 if lambd is None else lambd
+        self.rho = n**2 if rho is None else rho
 
         self.Pia = torch.cat([torch.eye(n), torch.zeros(n,n)], dim=1)
         self.Pib = torch.cat([torch.zeros(n,n), torch.eye(n)], dim=1)
@@ -232,7 +233,6 @@ class TheoryAutoregKStepsModel(nn.Module):
         self.Wq.bias.data = -1*torch.ones(n)
         for p in self.Wq.parameters():
             p.requires_grad = False
-
 
         self.Wk = nn.Linear(2*n, n, bias=False)
         self.Wk.weight.data = self.lambd * self.Pia
@@ -245,8 +245,15 @@ class TheoryAutoregKStepsModel(nn.Module):
             p.requires_grad = False
 
         # The continuous piecewise linear binarization function
-        self.id_ffwd = lambda x: 3*F.relu(x - 1/3) - 3*F.relu(x - 2/3)
-
+        self.logit_type = logit_type
+        if logit_type == "binarized":
+            self.id_ffwd = lambda x: 3*F.relu(x - 1/3) - 3*F.relu(x - 2/3)
+        elif logit_type == "continuous":
+            self.id_ffwd = lambda x: x - 1/2
+            # self.id_ffwd = lambda x: F.tanh(x - 1/2)
+            # self.id_ffwd = lambda x: torch.log(n*x)
+        else:
+            raise ValueError(f"Unrecognized logit_type {logit_type}")
         self.loss_fn = nn.BCEWithLogitsLoss()
 
     @property
@@ -271,7 +278,6 @@ class TheoryAutoregKStepsModel(nn.Module):
         z = x + torch.bmm(A, V)
         y = self.id_ffwd(z)
         logits = y[:,-1,self.num_vars:]
-        logits = 2*logits - 1   # Make this +/-1 for the purpose of being a logit
 
         return (logits, A) if output_attentions else logits
 

@@ -211,7 +211,7 @@ def run_suppress_rule_attack(config):
                         raw_elems_acc = cum_raw_elems_hits / num_dones
 
                         cum_raw_state_hits += \
-                            ((raw_pred == raw_labels).float().mean(dim=(-1,-2)) > 0.999).sum()
+                            ((raw_pred == raw_labels).float().mean(dim=(1,2)) > 0.999).sum()
                         raw_state_acc = cum_raw_state_hits / num_dones
 
                         cum_adv_elems_hits += \
@@ -219,7 +219,7 @@ def run_suppress_rule_attack(config):
                         adv_elems_acc = cum_adv_elems_hits / num_dones
 
                         cum_adv_state_hits += \
-                            ((adv_pred == adv_labels).float().mean(dim=(-1,-2)) > 0.999).sum()
+                            ((adv_pred == adv_labels).float().mean(dim=(1,2)) > 0.999).sum()
                         adv_state_acc = cum_adv_state_hits / num_dones
 
                         cum_top3_hits += (top_attn_inds[:,:3] == 0).sum()
@@ -315,7 +315,7 @@ def run_knowledge_amnesia_attack(config):
                         raw_elems_acc = cum_raw_elems_hits / num_dones
 
                         cum_raw_state_hits += \
-                            ((raw_pred == raw_labels).float().mean(dim=(-1,-2)) > 0.999).sum()
+                            ((raw_pred == raw_labels).float().mean(dim=(1,2)) > 0.999).sum()
                         raw_state_acc = cum_raw_state_hits / num_dones
 
                         cum_adv_elems_hits += \
@@ -323,7 +323,7 @@ def run_knowledge_amnesia_attack(config):
                         adv_elems_acc = cum_adv_elems_hits / num_dones
 
                         cum_adv_state_hits += \
-                            ((adv_pred == adv_labels).float().mean(dim=(-1,-2)) > 0.999).sum()
+                            ((adv_pred == adv_labels).float().mean(dim=(1,2)) > 0.999).sum()
                         adv_state_acc = cum_adv_state_hits / num_dones
 
                         desc = f"{reasoner_type}, "
