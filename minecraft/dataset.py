@@ -49,9 +49,7 @@ class MinecraftAutoregKStepsBaseDataset(Dataset):
         return self.dataset_len
 
     def _get_minecraft_rules(self):
-        dataset_dir = (
-            r"/home/akhare/repos/Minecraft-Crafting-Web/minecraft-data/recipes"
-        )
+        dataset_dir = "./recipes"
         raw_rule_files = os.listdir(dataset_dir)
         raw_rule_files = [
             os.path.join(dataset_dir, f) for f in raw_rule_files if f.endswith(".json")
