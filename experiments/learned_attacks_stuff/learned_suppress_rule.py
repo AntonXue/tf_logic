@@ -45,8 +45,7 @@ def hot(i,n):
 def train_one_epoch(atk_model, dataloader, optimizer, lr_scheduler, config):
     optimizer.zero_grad()
     atk_model.train()
-    num_dones, cum_loss = 0, 0.
-    first_loss = 0.
+    num_dones, all_losses = 0, []
     pbar = tqdm(dataloader)
     for i, batch in enumerate(pbar):
         tokens = batch["tokens"].to(config.device)
@@ -62,19 +61,19 @@ def train_one_epoch(atk_model, dataloader, optimizer, lr_scheduler, config):
         lr_scheduler.step()
 
         # Track stats
-        if i == 0:
-            first_loss = loss.item()
-
         num_dones += tokens.size(0)
-        cum_loss += loss.item() * tokens.size(0)
-        avg_loss = cum_loss / num_dones
+        all_losses.append(loss.item())
+        first_loss = all_losses[0]
+        sma_loss = torch.tensor(all_losses[-16:]).mean().item() # Smooth-moving average
         lr = lr_scheduler.get_last_lr()[0]
+
         desc = "[train] "
-        desc += f"N {num_dones}, lr {lr:.6f}, loss {avg_loss:.4f} (first {first_loss:.4f})"
+        desc += f"N {num_dones}, lr {lr:.6f}, loss {sma_loss:.4f} (first {first_loss:.4f}"
         pbar.set_description(desc)
 
     return {
-        "loss": avg_loss
+        "loss": sma_loss,
+        "all_losses": all_losses
     }
 
 
@@ -86,10 +85,8 @@ def eval_one_epoch(atk_model, dataloader, config):
     n = config.num_vars
 
     num_dones = 0
-    cum_raw_elems_hits = 0
-    cum_raw_state_hits = 0
-    cum_adv_elems_hits = 0
-    cum_adv_state_hits = 0
+    cum_raw_elems_hits, cum_raw_state_hits = 0, 0
+    cum_adv_elems_hits, cum_adv_state_hits = 0, 0
     cum_top3_hits = 0
     cum_adv_weight = 0
 
@@ -237,6 +234,7 @@ def run_learned_suppress_rule(config: LearnedSuppressRuleConfig):
     # Do one eval at the start just for reference
     eval_one_epoch(atk_model, eval_dataloader, config)
 
+    all_losses = []
     best_loss = None
 
     print(f"{config.reasoner_type}, n {config.num_vars}, d {config.embed_dim}")
@@ -244,10 +242,9 @@ def run_learned_suppress_rule(config: LearnedSuppressRuleConfig):
         print(f"epoch {epoch}/{config.num_epochs}, lr {lr_scheduler.get_last_lr()[0]:.6f}")
         train_stats = train_one_epoch(atk_model, train_dataloader, optimizer, lr_scheduler, config)
         this_loss = train_stats["loss"]
+        all_losses.extend(train_stats["all_losses"])
 
-        eval_stats = None
-        if epoch % 2 == 0:
-            eval_stats = eval_one_epoch(atk_model, eval_dataloader, config)
+        eval_stats = eval_one_epoch(atk_model, eval_dataloader, config)
 
         save_dict = {
             "epoch": epoch,
@@ -255,6 +252,7 @@ def run_learned_suppress_rule(config: LearnedSuppressRuleConfig):
             "model_state_dict": {k: v.cpu() for (k,v) in atk_model.state_dict().items()},
             "optimizer_state_dict": optimizer.state_dict(),
             "lr_scheduler_state_dict": lr_scheduler.state_dict(),
+            "all_losses": all_losses
         }
 
         torch.save(save_dict, last_saveto)
@@ -266,7 +264,7 @@ def run_learned_suppress_rule(config: LearnedSuppressRuleConfig):
             best_loss = this_loss
             torch.save(save_dict, best_saveto)
 
-    eval_one_epoch(atk_model, eval_dataloader, config)
+    # eval_one_epoch(atk_model, eval_dataloader, config)
     return best_save_dict
 
 

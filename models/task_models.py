@@ -249,9 +249,11 @@ class TheoryAutoregKStepsModel(nn.Module):
         if logit_type == "binarized":
             self.id_ffwd = lambda x: 3*F.relu(x - 1/3) - 3*F.relu(x - 2/3)
         elif logit_type == "continuous":
-            self.id_ffwd = lambda x: x - 1/2
-            # self.id_ffwd = lambda x: F.tanh(x - 1/2)
-            # self.id_ffwd = lambda x: torch.log(n*x)
+            # self.id_ffwd = lambda z: z - 1/2
+            self.id_ffwd = lambda z: F.tanh(z - 1/2)
+            # self.id_ffwd = lambda z: torch.log(n*F.relu(z) + 1e-4)
+            # self.id_ffwd = lambda z: torch.log(2 * F.relu(z - 1/2) + 1e-5)
+            # self.id_ffwd = lambda z: torch.log(F.relu(z-0.5) + 1e-4) - torch.log(F.relu(1-z+0.5) + 1e-4)
         else:
             raise ValueError(f"Unrecognized logit_type {logit_type}")
         self.loss_fn = nn.BCEWithLogitsLoss()
