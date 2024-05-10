@@ -100,7 +100,7 @@ class SuppressRuleWrapperModel(nn.Module):
         self,
         reasoner_model: AutoregKStepsTaskModel,
         num_attack_tokens: int = 1,
-        attack_tokens_style: str = "any",
+        attack_tokens_style: str = "repeat",
     ):
         super().__init__()
         # Set up the reasoner model
@@ -145,7 +145,7 @@ class SuppressRuleWrapperModel(nn.Module):
     def forward(
         self,
         tokens: torch.LongTensor,
-        abcde: torch.LongTensor,
+        infos: torch.LongTensor,
         labels: torch.LongTensor,
     ):
         N, L, _ = tokens.shape
@@ -153,7 +153,7 @@ class SuppressRuleWrapperModel(nn.Module):
         device = tokens.device
 
         # Our goal is to suppress the rule (a,b)
-        a, b, c, d, e = abcde.chunk(5, dim=-1)
+        a, b = infos[:,0], infos[:,1]
         n = self.num_vars
 
         supp_ante = F.one_hot(a, num_classes=n)
@@ -231,7 +231,7 @@ class KnowledgeAmnesiaWrapperModel(nn.Module):
     def forward(
         self,
         tokens: torch.LongTensor,
-        abcde: torch.LongTensor,
+        infos: torch.LongTensor,
         labels: torch.LongTensor,
     ):
         N, L, _ = tokens.shape
@@ -239,7 +239,7 @@ class KnowledgeAmnesiaWrapperModel(nn.Module):
         device = tokens.device
 
         # Our goal is to suppress the rule (a,b)
-        a, b, c, d, e = abcde.chunk(5, dim=-1)
+        a, b = infos[:,0], infos[:,1]
         n = self.num_vars
 
         supp_ante = F.one_hot(a, num_classes=n).view(-1,1,n)

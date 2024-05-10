@@ -45,7 +45,7 @@ def load_model_and_dataset(
     embed_dim: int,
     train_seed: int,
     reasoner_type: str,
-    num_reasoner_steps: Optional[int] = None
+    num_reasoner_steps: Optional[int] = None,
 ):
     model, dataset = load_model_and_dataset_from_big_grid(
         embed_dim = embed_dim,
@@ -159,7 +159,7 @@ def run_suppress_rule_attack(config):
                     embed_dim = embed_dim,
                     train_seed = train_seed,
                     reasoner_type = reasoner_type,
-                    num_reasoner_steps = 1
+                    num_reasoner_steps = 3
                 )
 
                 model.eval().to(config.device)
@@ -177,11 +177,16 @@ def run_suppress_rule_attack(config):
                     for i, batch in enumerate(pbar):
                         adv_labels = batch["labels"].to(config.device)
                         raw_tokens = batch["tokens"].to(config.device)
-                        abcde = batch["abcde"].to(config.device)
-                        a, b, c, d, e = abcde.chunk(5, dim=-1)
+                        infos = batch["infos"].to(config.device)
+                        a, b, c, d, e, f, g, h = infos.chunk(8, dim=-1)
 
                         # Output of the raw token sequence (i.e., without attacks)
-                        raw_labels = (hot(a,n) + hot(b,n) + hot(c,n) + hot(d,n)).view(-1,1,n)
+                        raw_labels = torch.cat([
+                            hot(a,n) + hot(b,n) + hot(c,n) + hot(d,n),
+                            hot(a,n) + hot(b,n) + hot(c,n) + hot(d,n) + hot(e,n) + hot(f,n),
+                            hot(a,n) + hot(b,n) + hot(c,n) + hot(d,n) + hot(e,n) + hot(f,n) + hot(g,n)
+                        ], dim=1)
+
                         raw_out = model(tokens=raw_tokens, output_attentions=True)
                         raw_pred = (raw_out.logits > 0).long()
 
@@ -206,20 +211,16 @@ def run_suppress_rule_attack(config):
                         # Now compute some metrics
                         num_dones += raw_tokens.size(0)
 
-                        cum_raw_elems_hits += \
-                            (raw_pred == raw_labels).float().mean(dim=(1,2)).sum()
+                        cum_raw_elems_hits += (raw_pred == raw_labels).float().mean(dim=(1,2)).sum()
                         raw_elems_acc = cum_raw_elems_hits / num_dones
 
-                        cum_raw_state_hits += \
-                            ((raw_pred == raw_labels).float().mean(dim=(1,2)) > 0.999).sum()
+                        cum_raw_state_hits += (raw_pred == raw_labels).all(dim=-1).all(dim=-1).sum()
                         raw_state_acc = cum_raw_state_hits / num_dones
 
-                        cum_adv_elems_hits += \
-                            (adv_pred == adv_labels).float().mean(dim=(1,2)).sum()
+                        cum_adv_elems_hits += (adv_pred == adv_labels).float().mean(dim=(1,2)).sum()
                         adv_elems_acc = cum_adv_elems_hits / num_dones
 
-                        cum_adv_state_hits += \
-                            ((adv_pred == adv_labels).float().mean(dim=(1,2)) > 0.999).sum()
+                        cum_adv_state_hits += (adv_pred == adv_labels).all(dim=-1).all(dim=-1).sum()
                         adv_state_acc = cum_adv_state_hits / num_dones
 
                         cum_top3_hits += (top_attn_inds[:,:3] == 0).sum()
@@ -277,7 +278,7 @@ def run_knowledge_amnesia_attack(config):
                     embed_dim = embed_dim,
                     train_seed = train_seed,
                     reasoner_type = reasoner_type,
-                    num_reasoner_steps = 1
+                    num_reasoner_steps = 3
                 )
 
                 model.eval().to(config.device)
@@ -293,41 +294,47 @@ def run_knowledge_amnesia_attack(config):
                     for i, batch in enumerate(pbar):
                         adv_labels = batch["labels"].to(config.device)
                         raw_tokens = batch["tokens"].to(config.device)
-                        abcde = batch["abcde"].to(config.device)
-                        a, b, c, d, e = abcde.chunk(5, dim=-1)
+                        infos = batch["infos"].to(config.device)
+                        a, b, c, d, e, f, g, h = infos.chunk(8, dim=-1)
 
                         # Output of the raw token sequence (i.e., without attacks)
-                        raw_labels = (hot(a,n) + hot(b,n) + hot(c,n) + hot(d,n)).view(-1,1,n)
+                        raw_labels = torch.cat([
+                            hot(a,n) + hot(b,n) + hot(c,n) + hot(d,n),
+                            hot(a,n) + hot(b,n) + hot(c,n) + hot(d,n) + hot(e,n) + hot(f,n),
+                            hot(a,n) + hot(b,n) + hot(c,n) + hot(d,n) + hot(e,n) + hot(f,n) + hot(g,n)
+                        ], dim=1)
+
                         raw_out = model(tokens=raw_tokens)
                         raw_pred = (raw_out.logits > 0).long()
 
                         # Now the adversarial stuff
-                        atk_rule = torch.cat([F.one_hot(a,n), -1*F.one_hot(a,n)], dim=-1)
+                        # Scale by 2 is the theory for this case
+                        atk_rule = torch.cat([F.one_hot(a,n), -2*F.one_hot(a,n)], dim=-1)
                         atk_rules = atk_rule.view(-1,1,2*n).repeat(1,k,1)
                         adv_tokens = torch.cat([atk_rules, raw_tokens], dim=1)
                         adv_out = model(tokens=adv_tokens)
                         adv_pred = (adv_out.logits > 0).long()
 
+                        # Only take the first one!!!
+                        adv_pred= adv_pred[:,0:1]
+                        adv_labels = adv_labels[:,0:1]
+
                         # Compute some statistics
                         num_dones += raw_tokens.size(0)
-                        cum_raw_elems_hits += \
-                            (raw_pred == raw_labels).float().mean(dim=(1,2)).sum()
+                        cum_raw_elems_hits += (raw_pred == raw_labels).float().mean(dim=(1,2)).sum()
                         raw_elems_acc = cum_raw_elems_hits / num_dones
 
-                        cum_raw_state_hits += \
-                            ((raw_pred == raw_labels).float().mean(dim=(1,2)) > 0.999).sum()
+                        cum_raw_state_hits += (raw_pred == raw_labels).all(dim=-1).all(dim=-1).sum()
                         raw_state_acc = cum_raw_state_hits / num_dones
 
-                        cum_adv_elems_hits += \
-                            (adv_pred == adv_labels).float().mean(dim=(1,2)).sum()
+                        cum_adv_elems_hits += (adv_pred == adv_labels).float().mean(dim=(1,2)).sum()
                         adv_elems_acc = cum_adv_elems_hits / num_dones
 
-                        cum_adv_state_hits += \
-                            ((adv_pred == adv_labels).float().mean(dim=(1,2)) > 0.999).sum()
+                        cum_adv_state_hits += (adv_pred == adv_labels).all(dim=-1).all(dim=-1).sum()
                         adv_state_acc = cum_adv_state_hits / num_dones
 
                         desc = f"{reasoner_type}, "
-                        desc += f"n {n}, d {embed_dim}, nrep {k}, N {num_dones}: "
+                        desc += f"ndr ({n},{embed_dim},{k}), N {num_dones}: "
                         desc += f"raw ({raw_elems_acc:.3f}, {raw_state_acc:.3f}), "
                         desc += f"adv ({adv_elems_acc:.3f}, {adv_state_acc:.3f}), "
                         pbar.set_description(desc)

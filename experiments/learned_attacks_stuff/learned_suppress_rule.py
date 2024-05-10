@@ -38,6 +38,10 @@ class LearnedSuppressRuleConfig:
     output_dir: str = None
 
 
+def hot(i,n):
+    return F.one_hot(i, n)
+
+
 def train_one_epoch(atk_model, dataloader, optimizer, lr_scheduler, config):
     optimizer.zero_grad()
     atk_model.train()
@@ -46,10 +50,10 @@ def train_one_epoch(atk_model, dataloader, optimizer, lr_scheduler, config):
     pbar = tqdm(dataloader)
     for i, batch in enumerate(pbar):
         tokens = batch["tokens"].to(config.device)
-        abcde = batch["abcde"].to(config.device)
+        infos = batch["infos"].to(config.device)
         adv_labels = batch["labels"].to(config.device)
 
-        out = atk_model(tokens=tokens, abcde=abcde, labels=adv_labels)
+        out = atk_model(tokens=tokens, infos=infos, labels=adv_labels)
 
         loss = out.loss
         loss.backward()
@@ -93,16 +97,20 @@ def eval_one_epoch(atk_model, dataloader, config):
     for i, batch in enumerate(pbar):
         raw_tokens = batch["tokens"].to(config.device)
         adv_labels = batch["labels"].to(config.device)
-        abcde = batch["abcde"].to(config.device)
-        a, b, c, d, e = abcde.chunk(5, dim=-1)
+        infos = batch["infos"].to(config.device)
+        a, b, c, d, e, f, g, h = infos.chunk(8, dim=-1)
 
         # Check the raw stats
-        raw_labels = (F.one_hot(a,n) + F.one_hot(b,n) + F.one_hot(c,n) + F.one_hot(d,n)).view(-1,1,n)
+        raw_labels = torch.cat([
+            hot(a,n) + hot(b,n) + hot(c,n) + hot(d,n),
+            hot(a,n) + hot(b,n) + hot(c,n) + hot(d,n) + hot(e,n) + hot(f,n),
+            hot(a,n) + hot(b,n) + hot(c,n) + hot(d,n) + hot(e,n) + hot(f,n) + hot(g,n),
+        ], dim=1)
         raw_out = res_model(tokens=raw_tokens, output_attentions=True)
         raw_pred = (raw_out.logits > 0).long()
 
         # Check the adv states
-        atk_out = atk_model(tokens=raw_tokens, abcde=abcde, labels=adv_labels)
+        atk_out = atk_model(tokens=raw_tokens, infos=infos, labels=adv_labels)
         atk_token = atk_out.logits
         adv_tokens = torch.cat([
             atk_out.logits.view(-1, config.num_attack_tokens, 2*n),
@@ -126,20 +134,16 @@ def eval_one_epoch(atk_model, dataloader, config):
         # Do some metrics
         num_dones += raw_tokens.size(0)
 
-        cum_raw_elems_hits += \
-            (raw_pred == raw_labels).float().mean(dim=(1,2)).sum()
+        cum_raw_elems_hits += (raw_pred == raw_labels).float().mean(dim=(1,2)).sum()
         raw_elems_acc = cum_raw_elems_hits / num_dones
 
-        cum_raw_state_hits += \
-            ((raw_pred == raw_labels).float().mean(dim=(1,2)) > 0.999).sum()
+        cum_raw_state_hits += (raw_pred == raw_labels).all(dim=-1).all(dim=-1).sum()
         raw_state_acc = cum_raw_state_hits / num_dones
 
-        cum_adv_elems_hits += \
-            (adv_pred == adv_labels).float().mean(dim=(1,2)).sum()
+        cum_adv_elems_hits += (adv_pred == adv_labels).float().mean(dim=(1,2)).sum()
         adv_elems_acc = cum_adv_elems_hits / num_dones
 
-        cum_adv_state_hits += \
-            ((adv_pred == adv_labels).float().mean(dim=(1,2)) > 0.999).sum()
+        cum_adv_state_hits += (adv_pred == adv_labels).all(dim=-1).all(dim=-1).sum()
         adv_state_acc = cum_adv_state_hits / num_dones
 
         cum_top3_hits += (top_attn_inds[:,:3] == 0).sum()
@@ -176,10 +180,11 @@ def run_learned_suppress_rule(config: LearnedSuppressRuleConfig):
         seed = config.reasoner_seed,
     )
 
-    reasoner_model.num_steps = 1 # By default, it loads a 3-step model
-
     if config.reasoner_type == "theory":
-        reasoner_model = TheoryAutoregKStepsModel(num_vars=config.num_vars, num_steps=1)
+        reasoner_model = TheoryAutoregKStepsModel(
+            num_vars = config.num_vars,
+            num_steps = reasoner_model.num_steps
+        )
 
     atk_model = SuppressRuleWrapperModel(
         reasoner_model = reasoner_model,
@@ -263,7 +268,6 @@ def run_learned_suppress_rule(config: LearnedSuppressRuleConfig):
 
     eval_one_epoch(atk_model, eval_dataloader, config)
     return best_save_dict
-
 
 
 

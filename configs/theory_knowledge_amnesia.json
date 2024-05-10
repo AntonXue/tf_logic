@@ -3,9 +3,12 @@
     "reasoner_types": ["theory", "learned"],
     "train_seeds": [601],
     "nd_pairs": [
-        [64, 128]
+        [64, 128],
+        [56, 112],
+        [48, 96],
+        [40, 80]
     ],
-    "num_repeats": [1, 2, 3, 4, 5, 6, 7, 8],
+    "num_repeats": [1, 2, 4, 8, 16, 32],
     "num_samples": 4096,
     "batch_size": 128
 }

@@ -54,12 +54,14 @@ class SuppressRuleDataset(Dataset):
         a -> b
         a -> c
         a -> d
-        ...
+        b,c -> e
+        c,d -> f
+        e,f -> g
 
-    The goal for the attacker is to generate a token that suppresses the rule a->b,
+    The goal is to suppress a -> b
 
     Proof states:
-        {a} -> {acd}
+        {a} -> {acd} -> {acdf} -> {acdf}
     """
     def __init__(
         self,
@@ -83,37 +85,47 @@ class SuppressRuleDataset(Dataset):
 
     def __getitem__(self, idx):
         n, r, p = self.num_vars, self.num_rules, self.hot_prob
-        abcde = torch.randperm(n)[:5]
-        a, b, c, d, e = abcde
+        infos = torch.randperm(n)[:8]
+        a, b, c, d, e, f, g, h = infos
 
         special_rules = torch.stack([
             torch.cat([hot(a,n), hot(b,n)]), # a -> b
             torch.cat([hot(a,n), hot(c,n)]), # a -> c
             torch.cat([hot(a,n), hot(d,n)]), # a -> d
+            torch.cat([hot(b,n) + hot(c,n), hot(e,n)]), # b,c -> e
+            torch.cat([hot(c,n) + hot(d,n), hot(f,n)]), # c,d -> f
+            torch.cat([hot(e,n) + hot(f,n), hot(g,n)]), # e,f -> g
         ]).long()
 
         # Other rules
         other_antes = (torch.rand(r-special_rules.size(0), n) < p).long()
-        other_antes[:,e] = 1
+        other_antes[:,h] = 1
         other_conseqs = (torch.rand(r-special_rules.size(0), n) < p).long()
         other_rules = torch.cat([other_antes, other_conseqs], dim=-1).long()
 
         # Gather all the rules
         rules = torch.cat([special_rules, other_rules], dim=0)
-        rules = rules[torch.randperm(rules.size(0))]
+        perm = torch.randperm(rules.size(0))
+        rules = rules[perm]
 
         # Append the initial state to the token sequence
         init_token = torch.cat([torch.zeros(n), hot(a,n)])
         tokens = torch.cat([rules, init_token.view(1,2*n)], dim=0)
 
-        # Labels for a one-step process
-        labels = torch.stack([hot(a,n) + hot(c,n) + hot(d,n)]).long()
+        # Labels for a three-step process
+        labels = torch.stack([
+            hot(a,n) + hot(c,n) + hot(d,n),
+            hot(a,n) + hot(c,n) + hot(d,n) + hot(f,n),
+            hot(a,n) + hot(c,n) + hot(d,n) + hot(f,n),
+        ])
 
         # Need to calculate the new label that's supposed to happen
         return {
             "tokens": tokens,
             "labels": labels,
-            "abcde": abcde
+            "infos": infos,
+            # Invert the perm with argsort to find where the 0th rule (a->b) is
+            "supp_idx": perm.argsort()[0]
         }
 
 
@@ -123,11 +135,14 @@ class KnowledgeAmnesiaDataset(Dataset):
         a -> b
         a -> c
         a -> d
+        b,c -> e
+        c,d -> f
+        e,f -> g
 
-    The goal is to suppress "a"
+    The goal is to forget "a"
 
     Proof states:
-        {a} -> {bcd}
+        {a} -> {bcd} -> {abcdef} -> {bcdefgh}
     """
     def __init__(
         self,
@@ -145,17 +160,21 @@ class KnowledgeAmnesiaDataset(Dataset):
 
     def __getitem__(self, idx):
         item = self.suppress_rule_dataset[idx]
-        abcde = item["abcde"]
-        a, b, c, d, e = abcde
+        infos = item["infos"]
+        a, b, c, d, e, f, g, h = infos
         n = self.num_vars
 
         # Labels for a one-step process
-        labels = torch.stack([hot(b,n) + hot(c,n) + hot(d,n)]).long()
+        labels = torch.stack([
+                       hot(b,n) + hot(c,n) + hot(d,n),
+            hot(a,n) + hot(b,n) + hot(c,n) + hot(d,n) + hot(e,n) + hot(f,n),
+                       hot(b,n) + hot(c,n) + hot(d,n) + hot(e,n) + hot(f,n) + hot(g,n),
+        ])
 
         return {
             "tokens": item["tokens"],
             "labels": labels,
-            "abcde": abcde
+            "infos": infos,
         }
 
 
