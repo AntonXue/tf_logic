@@ -92,21 +92,19 @@ def run_theory_attack_common(config):
     else:
         raise ValueError(f"Unknown config.attack_name {config.attack_name}")
 
-    df_idx = 0
-
     print(f"Will save to: {saveto_file}")
 
     for train_seed in config.train_seeds:
         for reasoner_type in config.reasoner_types:
             for (n, embed_dim) in config.nd_pairs:
-                model, res_dataset = load_model_and_dataset(
+                res_model, res_dataset = load_model_and_dataset(
                     num_vars = n,
                     embed_dim = embed_dim,
                     train_seed = train_seed,
                     reasoner_type = reasoner_type,
                 )
 
-                model.eval().to(config.device)
+                res_model.eval().to(config.device)
 
                 if config.attack_name == "suppress_rule":
                     atk_dataset = SuppressRuleDataset(res_dataset, dataset_len=config.num_samples)
@@ -132,7 +130,6 @@ def run_theory_attack_common(config):
                         raw_tokens = batch["tokens"].to(config.device)
                         infos = batch["infos"].to(config.device)
                         a, b, c, d, e, f, g, h = infos.chunk(8, dim=-1)
-                        r = raw_tokens.size(1)
 
                         # Output of the raw token sequence (i.e., without attacks)
                         raw_labels = torch.cat([
@@ -141,7 +138,7 @@ def run_theory_attack_common(config):
                             hot(a,n) + hot(b,n) + hot(c,n) + hot(d,n) + hot(e,n) + hot(f,n) + hot(g,n)
                         ], dim=1)
 
-                        raw_out = model(tokens=raw_tokens, output_attentions=True)
+                        raw_out = res_model(tokens=raw_tokens, output_attentions=True)
                         raw_pred = (raw_out.logits > 0).long()
 
                         # Now add the known adversarial rule form and run it through the model
@@ -149,11 +146,12 @@ def run_theory_attack_common(config):
                             atk_rule = torch.cat([F.one_hot(a,n), -1*F.one_hot(b,n)], dim=-1)
                             atk_rules = atk_rule.view(-1,1,2*n).repeat(1,k,1)
                         elif config.attack_name == "knowledge_amnesia":
+                            r = raw_tokens.size(1)
                             atk_rule = torch.cat([F.one_hot(a,n), -r*F.one_hot(a,n)], dim=-1)
                             atk_rules = atk_rule.view(-1,1,2*n).repeat(1,k,1)
 
                         adv_tokens = torch.cat([atk_rules, raw_tokens], dim=1)
-                        adv_out = model(tokens=adv_tokens, output_attentions=True)
+                        adv_out = res_model(tokens=adv_tokens, output_attentions=True)
                         adv_pred = (adv_out.logits > 0).long()
 
                         # Now compute some metrics
@@ -250,10 +248,9 @@ def run_theory_attack_common(config):
                         }
                         save_dict = save_dict | other_dict
 
-                    this_df = pd.DataFrame(save_dict, index=[df_idx])
-                    df = pd.concat([df, this_df])
-                    df.to_csv(saveto_file)
-                    df_idx += 1
+                    this_df = pd.DataFrame(save_dict, index=[0])
+                    df = pd.concat([df, this_df], ignore_index=True)
+                    df.to_csv(saveto_file, index=False)
 
 
 @torch.no_grad()
@@ -270,7 +267,7 @@ def run_coerce_state_attack(config):
         for reasoner_type in config.reasoner_types:
             for nd in config.nd_pairs:
                 n, d = nd
-                model, res_dataset = load_model_and_dataset(
+                res_model, res_dataset = load_model_and_dataset(
                     num_vars = n,
                     embed_dim = d,
                     train_seed = train_seed,
@@ -278,8 +275,8 @@ def run_coerce_state_attack(config):
                     num_reasoner_steps = 1
                 )
 
-                model.eval().to(config.device)
-                dataset = CoerceStateDataset(res_dataset, num_attack_tokens=1, dataset_len=config.num_samples)
+                res_model.eval().to(config.device)
+                dataset = CoerceStateDataset(res_dataset, 1, config.num_samples)
                 dataloader = DataLoader(dataset, batch_size=config.batch_size, shuffle=True)
 
                 for kappa_power in config.kappa_powers:
@@ -296,7 +293,7 @@ def run_coerce_state_attack(config):
                         atk_rule = torch.cat([atk_ante, atk_conseq], dim=-1).view(-1,1,2*n)
                         all_tokens = torch.cat([atk_rule, batch_tokens], dim=1)
 
-                        out = model(all_tokens)
+                        out = res_model(all_tokens)
                         pred = (out.logits[:,0] > 0).long()
 
                         num_dones += batch_tokens.size(0)
@@ -322,262 +319,6 @@ def run_coerce_state_attack(config):
 
                     df = pd.concat([df, this_df], ignore_index=True)
                     df.to_csv(saveto_file)
-
-
-"""
-
-@torch.no_grad()
-def run_suppress_rule_attack(config):
-    assert config.num_samples % config.batch_size == 0
-    saveto_file = Path(config.output_dir, "theory_attack_suppress_rule.csv")
-    print(f"Will save to: {saveto_file}")
-
-    df = pd.DataFrame(columns=[
-        "reasoner_type", "train_seed", "num_vars", "embed_dim", "num_repeats",
-        "raw_state_acc", "adv_ns1_state_acc", "adv_ns2_state_acc", "adv_ns3_state_acc",
-        "ns1_attn_ratio", "ns2_attn_ratio", "ns3_attn_ratio"
-    ])
-    df_idx = 0
-    for train_seed in config.train_seeds:
-        for reasoner_type in config.reasoner_types:
-            for (n, embed_dim) in config.nd_pairs:
-                model, res_dataset = load_model_and_dataset(
-                    num_vars = n,
-                    embed_dim = embed_dim,
-                    train_seed = train_seed,
-                    reasoner_type = reasoner_type,
-                )
-
-                model.eval().to(config.device)
-                atk_dataset = SuppressRuleDataset(res_dataset, dataset_len=config.num_samples)
-                dataloader = DataLoader(atk_dataset, batch_size=config.batch_size, shuffle=True)
-
-                for k in config.num_repeats:
-                    num_dones = 0
-                    raw_elems_hits, raw_state_hits = 0, 0
-                    adv_ns1_elems_hits, adv_ns1_state_hits = 0, 0
-                    adv_ns2_elems_hits, adv_ns2_state_hits = 0, 0
-                    adv_ns3_elems_hits, adv_ns3_state_hits = 0, 0
-                    attn1_ratios, attn2_ratios, attn3_ratios = \
-                        torch.tensor([]), torch.tensor([]), torch.tensor([])
-                    top3_hits = 0
-                    adv_weight = 0
-
-                    pbar = tqdm(dataloader)
-                    for i, batch in enumerate(pbar):
-                        adv_labels = batch["labels"].to(config.device)
-                        raw_tokens = batch["tokens"].to(config.device)
-                        infos = batch["infos"].to(config.device)
-                        supp_idx = batch["supp_idx"].to(config.device)
-                        a, b, c, d, e, f, g, h = infos.chunk(8, dim=-1)
-
-                        # Output of the raw token sequence (i.e., without attacks)
-                        raw_labels = torch.cat([
-                            hot(a,n) + hot(b,n) + hot(c,n) + hot(d,n),
-                            hot(a,n) + hot(b,n) + hot(c,n) + hot(d,n) + hot(e,n) + hot(f,n),
-                            hot(a,n) + hot(b,n) + hot(c,n) + hot(d,n) + hot(e,n) + hot(f,n) + hot(g,n)
-                        ], dim=1)
-
-                        raw_out = model(tokens=raw_tokens, output_attentions=True)
-                        raw_pred = (raw_out.logits > 0).long()
-
-                        # Now add the known adversarial rule form and run it through the model
-                        atk_rule = torch.cat([F.one_hot(a,n), -2*F.one_hot(b,n)], dim=-1)
-                        atk_rules = atk_rule.view(-1,1,2*n).repeat(1,k,1)
-                        adv_tokens = torch.cat([atk_rules, raw_tokens], dim=1)
-                        adv_out = model(tokens=adv_tokens, output_attentions=True)
-                        adv_pred = (adv_out.logits > 0).long()
-
-                        # Now compute some metrics
-                        num_dones += raw_tokens.size(0)
-                        all_raw_hits = raw_pred == raw_labels   # (N,3,n)
-                        raw_elems_hits += all_raw_hits.float().mean(dim=(1,2)).sum()
-                        raw_state_hits += all_raw_hits.all(dim=-1).all(dim=-1).sum()
-                        raw_elems_acc = raw_elems_hits / num_dones
-                        raw_state_acc = raw_state_hits / num_dones
-
-                        all_adv_hits = adv_pred == adv_labels   # (N,3,n)
-                        adv_ns1_elems_hits += all_adv_hits[:,0:1].float().mean(dim=(1,2)).sum()
-                        adv_ns1_state_hits += all_adv_hits[:,0:1].all(dim=-1).all(dim=-1).sum()
-                        adv_ns1_elems_acc = adv_ns1_elems_hits / num_dones
-                        adv_ns1_state_acc = adv_ns1_state_hits / num_dones
-
-                        adv_ns2_elems_hits += all_adv_hits[:,0:2].float().mean(dim=(1,2)).sum()
-                        adv_ns2_state_hits += all_adv_hits[:,0:2].all(dim=-1).all(dim=-1).sum()
-                        adv_ns2_elems_acc = adv_ns2_elems_hits / num_dones
-                        adv_ns2_state_acc = adv_ns2_state_hits / num_dones
-
-                        adv_ns3_elems_hits += all_adv_hits[:,0:3].float().mean(dim=(1,2)).sum()
-                        adv_ns3_state_hits += all_adv_hits[:,0:3].all(dim=-1).all(dim=-1).sum()
-                        adv_ns3_elems_acc = adv_ns3_elems_hits / num_dones
-                        adv_ns3_state_acc = adv_ns3_state_hits / num_dones
-
-                        # Attention metrics
-                        if reasoner_type == "learned":
-                            adv_out1, adv_out2, adv_out3 = adv_out.all_seqcls_outputs
-                            adv_attn1 = adv_out1.attentions[0][:,0] # (N, r+k, r+k)
-                            adv_attn2 = adv_out2.attentions[0][:,0] # (N, r+k+1, r+k+1)
-                            adv_attn3 = adv_out3.attentions[0][:,0] # (N, r+k+2, r+k+2)
-
-                        elif reasoner_type == "theory":
-                            adv_attn1, adv_attn2, adv_attn3 = adv_out.attentions
-
-                        # Cumulative attention weight of the attack tokens
-                        atk_attn1_wts = adv_attn1[:,-1,:k].sum(dim=-1)
-                        atk_attn2_wts = adv_attn2[:,-1,:k].sum(dim=-1)
-                        atk_attn3_wts = adv_attn3[:,-1,:k].sum(dim=-1)
-
-                        # Attention weight of the suppressed rule
-                        suppd_attn1_wts = adv_attn1[:,-1].gather(1, k+supp_idx.view(-1,1)).view(-1)
-                        suppd_attn2_wts = adv_attn2[:,-1].gather(1, k+supp_idx.view(-1,1)).view(-1)
-                        suppd_attn3_wts = adv_attn3[:,-1].gather(1, k+supp_idx.view(-1,1)).view(-1)
-
-                        attn1_ratios = torch.cat([attn1_ratios, atk_attn1_wts / suppd_attn1_wts])
-                        attn2_ratios = torch.cat([attn2_ratios, atk_attn2_wts / suppd_attn1_wts])
-                        attn3_ratios = torch.cat([attn3_ratios, atk_attn3_wts / suppd_attn1_wts])
-
-                        desc = f"{reasoner_type} "
-                        desc += f"ndk ({n},{embed_dim},{k}), N {num_dones}: "
-                        desc += f"raw ({raw_elems_acc:.2f},{raw_state_acc:.2f}), "
-                        desc += f"adv ({adv_ns1_elems_acc:.2f},{adv_ns1_state_acc:.2f} # "
-                        desc += f"{adv_ns2_elems_acc:.2f},{adv_ns2_state_acc:.2f} # "
-                        desc += f"{adv_ns3_elems_acc:.2f},{adv_ns3_state_acc:.2f}), "
-                        desc += f"ratios "
-                        desc += f"({attn1_ratios.mean().item():.2f},"
-                        desc += f"{attn2_ratios.mean().item():.2f},"
-                        desc += f"{attn3_ratios.mean().item():.2f})"
-                        pbar.set_description(desc)
-
-                    this_df = pd.DataFrame({
-                        "reasoner_type": reasoner_type,
-                        "train_seed": train_seed,
-                        "num_vars": n,
-                        "embed_dim": embed_dim,
-                        "num_repeats": k,
-                        "raw_state_acc": raw_state_acc.item(),
-                        "adv_ns1_state_acc": adv_ns1_state_acc.item(),
-                        "adv_ns2_state_acc": adv_ns2_state_acc.item(),
-                        "adv_ns3_state_acc": adv_ns3_state_acc.item(),
-                        "attn1_ratio": attn1_ratios.mean().item(),
-                        "attn2_ratio": attn2_ratios.mean().item(),
-                        "attn3_ratio": attn3_ratios.mean().item(),
-                    }, index=[df_idx])
-
-                    df = pd.concat([df, this_df])
-                    df.to_csv(saveto_file)
-                    df_idx += 1
-
-
-
-@torch.no_grad()
-def run_knowledge_amnesia_attack(config):
-    assert config.num_samples % config.batch_size == 0
-    saveto_file = Path(config.output_dir, "theory_attack_knowledge_amnesia.csv")
-    print(f"Will save to: {saveto_file}")
-
-    df = pd.DataFrame(columns=[
-        "reasoner_type", "train_seed", "num_vars", "embed_dim", "num_repeats",
-        "raw_state_acc", "adv_ns1_state_acc", "adv_ns2_state_acc", "adv_ns3_state_acc",
-        "ns1_attn_ratio", "ns2_attn_ratio", "ns3_attn_ratio"
-    ])
-    df_idx = 0
-
-    for train_seed in config.train_seeds:
-        for reasoner_type in config.reasoner_types:
-            for (n, embed_dim) in config.nd_pairs:
-                model, res_dataset = load_model_and_dataset(
-                    num_vars = n,
-                    embed_dim = embed_dim,
-                    train_seed = train_seed,
-                    reasoner_type = reasoner_type,
-                )
-
-                model.eval().to(config.device)
-                atk_dataset = KnowledgeAmnesiaDataset(res_dataset, dataset_len=config.num_samples)
-                dataloader = DataLoader(atk_dataset, batch_size=config.batch_size, shuffle=True)
-
-                for k in config.num_repeats:
-                    num_dones = 0
-                    raw_elems_hits, raw_state_hits = 0, 0
-                    adv_ns1_elems_hits, adv_ns1_state_hits = 0, 0
-                    adv_ns2_elems_hits, adv_ns2_state_hits = 0, 0
-                    adv_ns3_elems_hits, adv_ns3_state_hits = 0, 0
-
-                    pbar = tqdm(dataloader)
-                    for i, batch in enumerate(pbar):
-                        adv_labels = batch["labels"].to(config.device)
-                        raw_tokens = batch["tokens"].to(config.device)
-                        infos = batch["infos"].to(config.device)
-                        a, b, c, d, e, f, g, h = infos.chunk(8, dim=-1)
-                        r = raw_tokens.size(1)
-
-                        # Output of the raw token sequence (i.e., without attacks)
-                        raw_labels = torch.cat([
-                            hot(a,n) + hot(b,n) + hot(c,n) + hot(d,n),
-                            hot(a,n) + hot(b,n) + hot(c,n) + hot(d,n) + hot(e,n) + hot(f,n),
-                            hot(a,n) + hot(b,n) + hot(c,n) + hot(d,n) + hot(e,n) + hot(f,n) + hot(g,n)
-                        ], dim=1)
-
-                        raw_out = model(tokens=raw_tokens)
-                        raw_pred = (raw_out.logits > 0).long()
-
-                        # Now the adversarial stuff
-                        # Scale by 2 is the theory for this case
-                        atk_rule = torch.cat([F.one_hot(a,n), -r*F.one_hot(a,n)], dim=-1)
-                        atk_rules = atk_rule.view(-1,1,2*n).repeat(1,k,1)
-                        adv_tokens = torch.cat([atk_rules, raw_tokens], dim=1)
-                        adv_out = model(tokens=adv_tokens)
-                        adv_pred = (adv_out.logits > 0).long()
-
-                        # Now compute some metrics
-                        num_dones += raw_tokens.size(0)
-                        all_raw_hits = raw_pred == raw_labels   # (N,3,n)
-                        raw_elems_hits += all_raw_hits.float().mean(dim=(1,2)).sum()
-                        raw_state_hits += all_raw_hits.all(dim=-1).all(dim=-1).sum()
-                        raw_elems_acc = raw_elems_hits / num_dones
-                        raw_state_acc = raw_state_hits / num_dones
-
-                        all_adv_hits = adv_pred == adv_labels   # (N,3,n)
-                        adv_ns1_elems_hits += all_adv_hits[:,0:1].float().mean(dim=(1,2)).sum()
-                        adv_ns1_state_hits += all_adv_hits[:,0:1].all(dim=-1).all(dim=-1).sum()
-                        adv_ns1_elems_acc = adv_ns1_elems_hits / num_dones
-                        adv_ns1_state_acc = adv_ns1_state_hits / num_dones
-
-                        adv_ns2_elems_hits += all_adv_hits[:,0:2].float().mean(dim=(1,2)).sum()
-                        adv_ns2_state_hits += all_adv_hits[:,0:2].all(dim=-1).all(dim=-1).sum()
-                        adv_ns2_elems_acc = adv_ns2_elems_hits / num_dones
-                        adv_ns2_state_acc = adv_ns2_state_hits / num_dones
-
-                        adv_ns3_elems_hits += all_adv_hits[:,0:3].float().mean(dim=(1,2)).sum()
-                        adv_ns3_state_hits += all_adv_hits[:,0:3].all(dim=-1).all(dim=-1).sum()
-                        adv_ns3_elems_acc = adv_ns3_elems_hits / num_dones
-                        adv_ns3_state_acc = adv_ns3_state_hits / num_dones
-
-                        desc = f"{reasoner_type}, "
-                        desc += f"ndk ({n},{embed_dim},{k}), N {num_dones}: "
-                        desc += f"raw ({raw_elems_acc:.2f}, {raw_state_acc:.2f}), "
-                        desc += f"adv ({adv_ns1_elems_acc:.2f}, {adv_ns1_state_acc:.2f} # "
-                        desc += f"{adv_ns2_elems_acc:.2f}, {adv_ns2_state_acc:.2f} # "
-                        desc += f"{adv_ns3_elems_acc:.2f}, {adv_ns3_state_acc:.2f}), "
-                        pbar.set_description(desc)
-
-                    this_df = pd.DataFrame({
-                        "reasoner_type": reasoner_type,
-                        "train_seed": train_seed,
-                        "num_vars": n,
-                        "embed_dim": embed_dim,
-                        "num_repeats": k,
-                        "raw_state_acc": raw_state_acc.item(),
-                        "adv_ns1_state_acc": adv_ns1_state_acc.item(),
-                        "adv_ns2_state_acc": adv_ns2_state_acc.item(),
-                        "adv_ns3_state_acc": adv_ns3_state_acc.item(),
-                    }, index=[df_idx])
-
-                    df = pd.concat([df, this_df])
-                    df.to_csv(saveto_file)
-                    df_idx += 1
-
-"""
 
 
 if __name__ == "__main__":

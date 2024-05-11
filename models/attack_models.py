@@ -83,8 +83,8 @@ class CoerceStateWrapperModel(nn.Module):
             atk_tokens = torch.cat([torch.zeros_like(atk_logits), atk_logits], dim=-1).clamp(0,1)
 
         # Adversarial (and its binary version) to the reasoner model and query it
-        adv_inputs = torch.cat([atk_tokens, tokens], dim=1)
-        out = self.reasoner_model(adv_inputs)
+        adv_tokens = torch.cat([atk_tokens, tokens], dim=1)
+        out = self.reasoner_model(adv_tokens)
         logits = out.logits[:,0] # The first item of the autoreg sequence
 
         loss = nn.BCEWithLogitsLoss()(logits, labels.float())
@@ -176,8 +176,8 @@ class SuppressRuleWrapperModel(nn.Module):
             raise ValueError(f"Invalid attack_tokens_style {attack_tokens_style}")
 
         # Prepend the logits to the token sequence
-        adv_inputs = torch.cat([atk_logits, tokens], dim=1)
-        res_out = self.reasoner_model(tokens=adv_inputs)
+        adv_tokens = torch.cat([atk_logits, tokens], dim=1)
+        res_out = self.reasoner_model(tokens=adv_tokens)
         res_logits = res_out.logits #
 
         loss = None
@@ -255,8 +255,8 @@ class KnowledgeAmnesiaWrapperModel(nn.Module):
         atk_logits = self.attacker_model(inputs_embeds=atk_inputs_embeds).logits
 
         # Prepend the logits to the token sequence
-        adv_inputs = torch.cat([atk_logits.view(-1,1,self.token_dim), tokens], dim=1)
-        res_out = self.reasoner_model(tokens=adv_inputs)
+        adv_tokens = torch.cat([atk_logits.view(-1,1,self.token_dim), tokens], dim=1)
+        res_out = self.reasoner_model(tokens=adv_tokens)
         res_logits = res_out.logits #
 
         loss = None
