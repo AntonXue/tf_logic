@@ -159,7 +159,10 @@ def append_to_csv(csv_file: str, row_dict: dict):
         df = pd.DataFrame(columns=col_names)
 
     new_df = pd.DataFrame(row_dict, index=[0])
-    df = pd.concat([df, this_df], ignore_index=True).drop_duplicates()
+    df = pd.concat([df, new_df], ignore_index=True).drop_duplicates(
+        subset = ["reasoner_type", "reasoner_seed", "num_vars", "embed_dim", "num_repeats"],
+        keep = "last"
+    )
     df.to_csv(csv_file, index=False)
     return df
 
@@ -180,7 +183,7 @@ def train_one_epoch(
     for i, batch in enumerate(pbar):
         tokens, infos, labels = \
             batch["tokens"].to(device), batch["infos"].to(device), batch["labels"].to(device)
-        out = atk_model(tokens=tokens, infos=infos, labels=adv_labels)
+        out = atk_model(tokens=tokens, infos=infos, labels=labels)
 
         loss = out.loss
         loss.backward()
@@ -287,6 +290,23 @@ def eval_one_epoch(
         adv_ns2_attn_wts = torch.cat([adv_ns2_attn_wts, adv_attn2[:,-1,:k].sum(dim=-1)])
         adv_ns3_attn_wts = torch.cat([adv_ns3_attn_wts, adv_attn3[:,-1,:k].sum(dim=-1)])
 
+        if args.attack_name == "suppress_rule":
+            supp_idx = batch["supp_idx"].to(device)
+            adv_ns1_suppd_wts = torch.cat([
+                adv_ns1_suppd_wts,
+                adv_attn1[:,-1].gather(1, k+supp_idx.view(-1,1)).view(-1)
+            ])
+
+            adv_ns2_suppd_wts = torch.cat([
+                adv_ns2_suppd_wts,
+                adv_attn2[:,-1].gather(1, k+supp_idx.view(-1,1)).view(-1)
+            ])
+
+            adv_ns3_suppd_wts = torch.cat([
+                adv_ns3_suppd_wts,
+                adv_attn3[:,-1].gather(1, k+supp_idx.view(-1,1)).view(-1)
+            ])
+
         desc = f"[eval] "
         desc += f"nd ({n},{embed_dim}), N {num_dones}: "
         desc += f"raw ({raw_elems_acc:.2f},{raw_state_acc:.2f}), "
@@ -322,7 +342,6 @@ def eval_one_epoch(
             "adv_ns3_attn_ratio": (adv_ns3_attn_wts/adv_ns3_suppd_wts).mean().item(),
         }
         row_dict = row_dict | other_dict
-    
 
     if do_save:
         csv_saveto = get_info_strings(args)["csv_saveto"]
@@ -377,7 +396,7 @@ def run_learned_attack(args: LearnedAttackExperimentsArguments):
 
 
     optimizer = AdamW(atk_model.parameters(), lr=args.learning_rate)
-        
+
     train_steps = len(train_dataloader) * args.num_epochs
     warmup_steps = int(train_steps * args.warmup_ratio)
     decay_steps = train_steps - warmup_steps
@@ -396,9 +415,7 @@ def run_learned_attack(args: LearnedAttackExperimentsArguments):
 
     # Do one eval at the start just for reference
     eval_one_epoch(atk_model, eval_dataloader, args)
-
-    all_losses, best_loss = [], []
-
+    all_losses, best_loss = [], None
     print(f"{args.reasoner_type}, n {args.num_vars}, d {args.embed_dim}")
     for epoch in range(1, args.num_epochs+1):
         print(f"epoch {epoch}/{args.num_epochs}, lr {lr_scheduler.get_last_lr()[0]:.6f}")
@@ -417,20 +434,20 @@ def run_learned_attack(args: LearnedAttackExperimentsArguments):
             "all_losses": all_losses
         }
 
-        torch.save(save_dict, last_saveto)
+        torch.save(save_dict, info_strs["last_saveto"])
 
         if best_loss is None or this_loss < best_loss:
             best_save_dict = save_dict
             delta = 0. if best_loss is None else (best_loss - this_loss)
             print(f"New best {this_loss:.4f}, delta {delta:.4f}")
             best_loss = this_loss
-            torch.save(save_dict, best_saveto)
+            torch.save(save_dict, info_strs["best_saveto"])
+
+    # Do a CSV dump on the last one
+    eval_stats = eval_one_epoch(atk_model, eval_dataloader, args, do_save=True)
 
     # eval_one_epoch(atk_model, eval_dataloader, args)
     return best_save_dict
-
-
-
 
 
 if __name__ == "__main__":
@@ -444,7 +461,7 @@ if __name__ == "__main__":
         # trainer = make_coerce_state_trainer(args)
         pass
 
-    elif args.attack_name == "suppress_rule":
+    elif args.attack_name in ["suppress_rule", "knowledge_amnesia"]:
         run_learned_attack(args)
 
     else:

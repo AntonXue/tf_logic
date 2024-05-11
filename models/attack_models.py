@@ -153,11 +153,10 @@ class SuppressRuleWrapperModel(nn.Module):
         device = tokens.device
 
         # Our goal is to suppress the rule (a,b)
-        a, b = infos[:,0], infos[:,1]
         n = self.num_vars
+        a, b = infos[:,0], infos[:,1]
 
-        supp_ante = F.one_hot(a, num_classes=n)
-        supp_conseq = F.one_hot(b, num_classes=n)
+        supp_ante, supp_conseq = F.one_hot(a,n), F.one_hot(b,n)
         supp_rule = torch.cat([supp_ante, supp_conseq], dim=1).float().view(N,1,2*n)
 
         # Query the attacker model
@@ -208,11 +207,23 @@ class KnowledgeAmnesiaWrapperModel(nn.Module):
         reasoner_model.eval()
         self.reasoner_model = reasoner_model
 
+        # Set up the attacker model
         self.num_vars = reasoner_model.num_labels
         self.token_dim = 2 * self.num_vars
+        self.num_attack_tokens = num_attack_tokens
+
+        # Depending on the attack style, we do things differently
+        self.attack_tokens_style = attack_tokens_style
+        if attack_tokens_style == "any":
+            self.num_labels = self.token_dim * self.num_attack_tokens
+        elif attack_tokens_style == "repeat":
+            self.num_labels = self.token_dim
+        else:
+            raise ValueError(f"Invalid attack_tokens_style {attack_tokens_style}")
+
         self.attacker_model = GPT2ForSequenceClassification.from_pretrained(
             "gpt2",
-            num_labels = self.token_dim,
+            num_labels = self.num_labels,
             problem_type = "multi_label_classification",
             pad_token_id = -1
         )
@@ -220,7 +231,7 @@ class KnowledgeAmnesiaWrapperModel(nn.Module):
 
         # Special thing here
         self.token_embed_fn = nn.Linear(self.token_dim, self.atk_embed_dim)
-        self.rule_embed_fn = nn.Linear(self.token_dim, self.atk_embed_dim)
+        self.to_forget_embed_fn = nn.Linear(self.num_vars, self.atk_embed_dim)
         self.loss_fn = nn.BCEWithLogitsLoss(reduction="mean")
 
     def train(self, mode=True):
@@ -239,23 +250,26 @@ class KnowledgeAmnesiaWrapperModel(nn.Module):
         device = tokens.device
 
         # Our goal is to suppress the rule (a,b)
-        a, b = infos[:,0], infos[:,1]
-        n = self.num_vars
-
-        supp_ante = F.one_hot(a, num_classes=n).view(-1,1,n)
-        supp_conseq = F.one_hot(b, num_classes=n).view(-1,1,n)
-        supp_rule = torch.cat([supp_ante, supp_conseq], dim=-1).float()
+        n, a = self.num_vars, infos[:,0]
+        to_forget = F.one_hot(a,n).float()
 
         # Query the attacker model
         atk_inputs_embeds = torch.cat([
-            self.rule_embed_fn(supp_rule).view(N,1,-1),
+            self.to_forget_embed_fn(to_forget).view(N,1,-1),
             self.token_embed_fn(tokens).view(N,L,-1),
         ], dim=1)
 
         atk_logits = self.attacker_model(inputs_embeds=atk_inputs_embeds).logits
 
+        if self.attack_tokens_style == "any":
+            atk_logits = atk_logits.view(N, self.num_attack_tokens, self.token_dim)
+        elif self.attack_tokens_style == "repeat":
+            atk_logits = atk_logits.view(N, 1, self.token_dim).repeat(1, self.num_attack_tokens, 1)
+        else:
+            raise ValueError(f"Invalid attack_tokens_style {attack_tokens_style}")
+
         # Prepend the logits to the token sequence
-        adv_tokens = torch.cat([atk_logits.view(-1,1,self.token_dim), tokens], dim=1)
+        adv_tokens = torch.cat([atk_logits, tokens], dim=1)
         res_out = self.reasoner_model(tokens=adv_tokens)
         res_logits = res_out.logits #
 
@@ -270,5 +284,6 @@ class KnowledgeAmnesiaWrapperModel(nn.Module):
                 "reasoner_output": res_out,
             }
         )
+
 
 
