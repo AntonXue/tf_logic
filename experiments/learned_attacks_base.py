@@ -115,6 +115,13 @@ class LearnedAttackExperimentsArguments:
         metadata = {"help": "The type (learned/theory) of reasoner that we use."}
     )
 
+    only_run_eval: int = field(
+        default = 0,
+        metadata = {"help": (
+            "Whether to only dump the statistics without training. "
+            )
+        }
+    )
 
 
 if __name__ == "__main__":
@@ -124,11 +131,14 @@ if __name__ == "__main__":
 
     torch.manual_seed(args.attacker_seed)
 
+    print(f"ROE {args.run_only_eval}")
+
+
     if args.attack_name == "coerce_state":
-        trainer = make_coerce_state_trainer(args)
+        # trainer = make_coerce_state_trainer(args)
+        pass
 
     elif args.attack_name == "suppress_rule":
-        # trainer = make_suppress_rule_trainer(args)
         config = LearnedSuppressRuleConfig(
             num_vars = args.num_vars,
             embed_dim = args.embed_dim,
@@ -142,6 +152,7 @@ if __name__ == "__main__":
             reasoner_seed = args.reasoner_seed,
             attacker_seed = args.attacker_seed,
             reasoner_type = args.reasoner_type,
+            only_run_eval = args.only_run_eval,
             output_dir = args.output_dir
         )
 
@@ -149,7 +160,6 @@ if __name__ == "__main__":
 
     else:
         raise ValueError(f"Unknown attack name {args.attack_name}")
-    
 
 
 

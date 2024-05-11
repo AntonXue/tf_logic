@@ -132,6 +132,7 @@ def run_theory_attack_common(config):
                         raw_tokens = batch["tokens"].to(config.device)
                         infos = batch["infos"].to(config.device)
                         a, b, c, d, e, f, g, h = infos.chunk(8, dim=-1)
+                        r = raw_tokens.size(1)
 
                         # Output of the raw token sequence (i.e., without attacks)
                         raw_labels = torch.cat([
@@ -144,8 +145,13 @@ def run_theory_attack_common(config):
                         raw_pred = (raw_out.logits > 0).long()
 
                         # Now add the known adversarial rule form and run it through the model
-                        atk_rule = torch.cat([F.one_hot(a,n), -1*F.one_hot(b,n)], dim=-1)
-                        atk_rules = atk_rule.view(-1,1,2*n).repeat(1,k,1)
+                        if config.attack_name == "suppress_rule":
+                            atk_rule = torch.cat([F.one_hot(a,n), -1*F.one_hot(b,n)], dim=-1)
+                            atk_rules = atk_rule.view(-1,1,2*n).repeat(1,k,1)
+                        elif config.attack_name == "knowledge_amnesia":
+                            atk_rule = torch.cat([F.one_hot(a,n), -r*F.one_hot(a,n)], dim=-1)
+                            atk_rules = atk_rule.view(-1,1,2*n).repeat(1,k,1)
+
                         adv_tokens = torch.cat([atk_rules, raw_tokens], dim=1)
                         adv_out = model(tokens=adv_tokens, output_attentions=True)
                         adv_pred = (adv_out.logits > 0).long()
@@ -259,7 +265,6 @@ def run_coerce_state_attack(config):
     df = pd.DataFrame(columns=[
         "reasoner_type", "train_seed", "num_vars", "embed_dim", "kappa_power", "elems_acc", "states_acc"
     ])
-    df_idx = 0
 
     for train_seed in config.train_seeds:
         for reasoner_type in config.reasoner_types:
@@ -313,11 +318,10 @@ def run_coerce_state_attack(config):
                         "kappa_power": kappa_power,
                         "elems_acc": elems_acc.item(),
                         "states_acc": states_acc.item(),
-                    }, index=[df_idx])
+                    })
 
-                    df = pd.concat([df, this_df])
+                    df = pd.concat([df, this_df], ignore_index=True)
                     df.to_csv(saveto_file)
-                    df_idx += 1
 
 
 """
@@ -378,7 +382,7 @@ def run_suppress_rule_attack(config):
                         raw_pred = (raw_out.logits > 0).long()
 
                         # Now add the known adversarial rule form and run it through the model
-                        atk_rule = torch.cat([F.one_hot(a,n), -1*F.one_hot(b,n)], dim=-1)
+                        atk_rule = torch.cat([F.one_hot(a,n), -2*F.one_hot(b,n)], dim=-1)
                         atk_rules = atk_rule.view(-1,1,2*n).repeat(1,k,1)
                         adv_tokens = torch.cat([atk_rules, raw_tokens], dim=1)
                         adv_out = model(tokens=adv_tokens, output_attentions=True)
