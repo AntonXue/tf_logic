@@ -71,7 +71,7 @@ def run_theory_attack_common(config):
     """ We can only do this because there's lots of similarities between the
         suppress rule and amnesia attacks
     """
-    assert config.attack_name in ["suppress_rule", "knowledge_amnesia"]
+    assert config.attack_name in ["suppress_rule", "knowledge_amnesia", "coerce_state"]
     assert config.num_samples % config.batch_size == 0
 
     common_col_names = [
@@ -82,12 +82,15 @@ def run_theory_attack_common(config):
     ]
 
     if config.attack_name == "suppress_rule":
-        saveto_file = Path(config.output_dir, "theory_attack_suppress_rule.csv")
+        saveto_file = Path(config.output_dir, "theory_suppress_rule.csv")
         df = pd.DataFrame(columns=common_col_names + [
             "adv_ns1_attn_ratio", "adv_ns2_attn_ratio", "adv_ns3_attn_ratio"
         ])
     elif config.attack_name == "knowledge_amnesia":
-        saveto_file = Path(config.output_dir, "theory_attack_knowledge_amnesia.csv")
+        saveto_file = Path(config.output_dir, "theory_knowledge_amnesia.csv")
+        df = pd.DataFrame(columns=common_col_names)
+    elif config.attack_name == "coerce_state":
+        saveto_file = Path(config.output_dir, "theory_coerce_state.csv")
         df = pd.DataFrame(columns=common_col_names)
     else:
         raise ValueError(f"Unknown config.attack_name {config.attack_name}")
@@ -106,14 +109,16 @@ def run_theory_attack_common(config):
 
                 res_model.eval().to(config.device)
 
-                if config.attack_name == "suppress_rule":
-                    atk_dataset = SuppressRuleDataset(res_dataset, dataset_len=config.num_samples)
-                elif config.attack_name == "knowledge_amnesia":
-                    atk_dataset = KnowledgeAmnesiaDataset(res_dataset, dataset_len=config.num_samples)
-
-                dataloader = DataLoader(atk_dataset, batch_size=config.batch_size, shuffle=True)
-
                 for k in config.num_repeats:
+                    if config.attack_name == "suppress_rule":
+                        atk_dataset = SuppressRuleDataset(res_dataset, k, config.num_samples)
+                    elif config.attack_name == "knowledge_amnesia":
+                        atk_dataset = KnowledgeAmnesiaDataset(res_dataset, k, config.num_samples)
+                    elif config.attack_name == "coerce_state":
+                        atk_dataset = CoerceStateDataset(res_dataset, k, config.num_samples)
+
+                    dataloader = DataLoader(atk_dataset, batch_size=config.batch_size)
+
                     num_dones = 0
                     raw_elems_hits, raw_state_hits = 0, 0
                     adv_ns1_elems_hits, adv_ns1_state_hits = 0, 0
@@ -126,10 +131,10 @@ def run_theory_attack_common(config):
 
                     pbar = tqdm(dataloader)
                     for i, batch in enumerate(pbar):
-                        adv_labels = batch["labels"].to(config.device)
                         raw_tokens = batch["tokens"].to(config.device)
+                        adv_labels = batch["labels"].to(config.device)
                         infos = batch["infos"].to(config.device)
-                        a, b, c, d, e, f, g, h = infos.chunk(8, dim=-1)
+                        a, b, c, d, e, f, g, h = infos.chunk(infos.size(-1), dim=-1)
 
                         # Output of the raw token sequence (i.e., without attacks)
                         raw_labels = torch.cat([
@@ -149,6 +154,14 @@ def run_theory_attack_common(config):
                             r = raw_tokens.size(1)
                             atk_rule = torch.cat([F.one_hot(a,n), -r*F.one_hot(a,n)], dim=-1)
                             atk_rules = atk_rule.view(-1,1,2*n).repeat(1,k,1)
+                        elif config.attack_name == "coerce_state":
+                            r = raw_tokens.size(1)
+                            atk_conseq = adv_labels[:,0:1].repeat(1,k,1) # (N,k,n)
+                            atk_conseq = r * (2 * atk_conseq - 1)
+                            # atk_conseq = atk_conseq - r*(1 - atk_conseq)
+                            atk_ante = torch.zeros_like(atk_conseq)
+                            atk_rules = torch.cat([atk_ante, atk_conseq], dim=-1)
+
 
                         adv_tokens = torch.cat([atk_rules, raw_tokens], dim=1)
                         adv_out = res_model(tokens=adv_tokens, output_attentions=True)
@@ -253,74 +266,6 @@ def run_theory_attack_common(config):
                     df.to_csv(saveto_file, index=False)
 
 
-@torch.no_grad()
-def run_coerce_state_attack(config):
-    assert config.num_samples % config.batch_size == 0
-    saveto_file = Path(config.output_dir, "theory_attack_coerce_state.csv")
-    print(f"Will save to: {saveto_file}")
-
-    df = pd.DataFrame(columns=[
-        "reasoner_type", "train_seed", "num_vars", "embed_dim", "kappa_power", "elems_acc", "states_acc"
-    ])
-
-    for train_seed in config.train_seeds:
-        for reasoner_type in config.reasoner_types:
-            for nd in config.nd_pairs:
-                n, d = nd
-                res_model, res_dataset = load_model_and_dataset(
-                    num_vars = n,
-                    embed_dim = d,
-                    train_seed = train_seed,
-                    reasoner_type = reasoner_type,
-                    num_reasoner_steps = 1
-                )
-
-                res_model.eval().to(config.device)
-                dataset = CoerceStateDataset(res_dataset, 1, config.num_samples)
-                dataloader = DataLoader(dataset, batch_size=config.batch_size, shuffle=True)
-
-                for kappa_power in config.kappa_powers:
-                    kappa = torch.tensor(10. ** kappa_power)
-                    num_dones, elem_hits, state_hits = 0, 0, 0
-                    pbar = tqdm(dataloader)
-
-                    for batch in pbar:
-                        batch_tokens = batch["tokens"].to(config.device)
-                        tgt_state = batch["labels"].to(config.device)
-
-                        atk_ante = torch.zeros_like(tgt_state)
-                        atk_conseq = tgt_state - kappa * (1 - tgt_state)
-                        atk_rule = torch.cat([atk_ante, atk_conseq], dim=-1).view(-1,1,2*n)
-                        all_tokens = torch.cat([atk_rule, batch_tokens], dim=1)
-
-                        out = res_model(all_tokens)
-                        pred = (out.logits[:,0] > 0).long()
-
-                        num_dones += batch_tokens.size(0)
-                        elem_hits += (tgt_state == pred).float().mean(dim=1).sum()
-                        elems_acc = elem_hits / num_dones
-                        state_hits += ((tgt_state == pred).sum(dim=1) == n).sum()
-                        states_acc = state_hits / num_dones
-
-                        desc = f"{reasoner_type}, "
-                        desc += f"n {n}, d {d}, log(kappa) {kappa_power:.3f}, "
-                        desc += f"N {num_dones}, acc ({elems_acc:.3f}, {states_acc:.3f})"
-                        pbar.set_description(desc)
-
-                    this_df = pd.DataFrame({
-                        "reasoner_type": reasoner_type,
-                        "train_seed": train_seed,
-                        "num_vars": n,
-                        "embed_dim": d,
-                        "kappa_power": kappa_power,
-                        "elems_acc": elems_acc.item(),
-                        "states_acc": states_acc.item(),
-                    })
-
-                    df = pd.concat([df, this_df], ignore_index=True)
-                    df.to_csv(saveto_file)
-
-
 if __name__ == "__main__":
     parser = HfArgumentParser(TheoryAttackExperimentsArguments)
     args = parser.parse_args_into_dataclasses()[0]
@@ -331,10 +276,7 @@ if __name__ == "__main__":
     config.output_dir = args.output_dir
     config.device = args.device
 
-    if config.attack_name == "coerce_state":
-        ret = run_coerce_state_attack(config)
-
-    elif config.attack_name in ["suppress_rule", "knowledge_amnesia"]:
+    if config.attack_name in ["suppress_rule", "knowledge_amnesia", "coerce_state"]:
         ret = run_theory_attack_common(config)
 
     else:

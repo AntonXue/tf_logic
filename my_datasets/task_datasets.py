@@ -261,8 +261,8 @@ class AutoregCustomTokensDataset(Dataset):
 
     def __getitem__(self, idx):
         n, r, p = self.num_vars, self.num_rules, self.hot_prob
-        abcdefgh = torch.randperm(n)[:8]
-        a, b, c, d, e, f, g, h = abcdefgh
+        infos = torch.randperm(n)[:8]
+        a, b, c, d, e, f, g, h = infos
 
         special_rules = torch.stack([
             torch.cat([hot(a,n), hot(b,n)]), # a -> b
@@ -293,7 +293,7 @@ class AutoregCustomTokensDataset(Dataset):
         return {
             "tokens": tokens,
             "labels": labels,
-            "abcdefgh": abcdefgh
+            "infos": infos
         }
 
 

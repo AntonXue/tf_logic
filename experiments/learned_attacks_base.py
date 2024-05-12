@@ -197,8 +197,8 @@ def train_one_epoch(
         sma_loss = torch.tensor(all_losses[-16:]).mean().item() # Smooth-moving average
         lr = lr_scheduler.get_last_lr()[0]
 
-        desc = "[train] "
-        desc += f"N {num_dones}, lr {lr:.6f}, loss {sma_loss:.4f} (first {all_losses[0]:.4f}"
+        desc = ""
+        desc += f"N {num_dones}, lr {lr:.6f}, loss {sma_loss:.4f} (first {all_losses[0]:.4f})"
         pbar.set_description(desc)
 
     return {
@@ -228,6 +228,8 @@ def eval_one_epoch(
         torch.tensor([]).to(device), torch.tensor([]).to(device), torch.tensor([]).to(device)
     adv_ns1_suppd_wts, adv_ns2_suppd_wts, adv_ns3_suppd_wts = \
         torch.tensor([]).to(device), torch.tensor([]).to(device), torch.tensor([]).to(device)
+    atk_ante_align_hits, atk_conseq_align_hits = 0, 0
+    atk_ante_rels, atk_conseq_rels = torch.tensor([]).to(device), torch.tensor([]).to(device)
 
     pbar = tqdm(dataloader)
     for i, batch in enumerate(pbar):
@@ -292,6 +294,7 @@ def eval_one_epoch(
 
         if args.attack_name == "suppress_rule":
             supp_idx = batch["supp_idx"].to(device)
+
             adv_ns1_suppd_wts = torch.cat([
                 adv_ns1_suppd_wts,
                 adv_attn1[:,-1].gather(1, k+supp_idx.view(-1,1)).view(-1)
@@ -307,8 +310,36 @@ def eval_one_epoch(
                 adv_attn3[:,-1].gather(1, k+supp_idx.view(-1,1)).view(-1)
             ])
 
-        desc = f"[eval] "
-        desc += f"nd ({n},{embed_dim}), N {num_dones}: "
+        # Calculate alignment and relative weights
+        atk_ante, atk_conseq = atk_out.logits.chunk(2, dim=-1)
+        if args.attack_name == "suppress_rule":
+            atk_ante_align_hits += (atk_ante.argmax(dim=-1) == a).float().mean(dim=-1).sum()
+            atk_ante_highs = atk_ante.abs().gather(-1, a.view(-1,1,1).repeat(1,k,1)).view(-1,k)
+            atk_ante_avgs = atk_ante.abs().mean(dim=-1) # (N,k)
+
+            atk_conseq_align_hits += (atk_conseq.argmin(dim=-1) == b).float().mean(dim=-1).sum()
+            atk_conseq_highs = atk_conseq.abs().gather(-1, b.view(-1,1,1).repeat(1,k,1)).view(-1,k)
+            atk_conseq_avgs = atk_conseq.abs().mean(dim=-1) # (N,k)
+
+        elif args.attack_name == "knowledge_amnesia":
+            atk_ante_align_hits += (atk_ante.argmax(dim=-1) == a).float().mean(dim=-1).sum()
+            atk_ante_highs = atk_ante.abs().gather(-1, a.view(-1,1,1).repeat(1,k,1)).view(-1,k)
+            atk_ante_avgs = atk_ante.abs().mean(dim=-1) # (N,k)
+
+            atk_conseq_align_hits += (atk_conseq.argmin(dim=-1) == a).float().mean(dim=-1).sum()
+            atk_conseq_highs = atk_conseq.abs().gather(-1, a.view(-1,1,1).repeat(1,k,1)).view(-1,k)
+            atk_conseq_avgs = atk_conseq.abs().mean(dim=-1) # (N,k)
+
+        atk_ante_align = atk_ante_align_hits / num_dones
+        atk_ante_rel = (atk_ante_highs / atk_ante_avgs).mean(dim=1) # (N,)
+        atk_ante_rels = torch.cat([atk_ante_rels, atk_ante_rel])
+
+        atk_conseq_align = atk_conseq_align_hits / num_dones
+        atk_conseq_rel = (atk_conseq_highs / atk_conseq_avgs).mean(dim=1) # (N,)
+        atk_conseq_rels = torch.cat([atk_conseq_rels, atk_conseq_rel])
+
+        desc = f""
+        desc += f"ndk ({n},{embed_dim},{k}): "
         desc += f"raw ({raw_elems_acc:.2f},{raw_state_acc:.2f}), "
         desc += f"adv ({adv_ns1_elems_acc:.2f},{adv_ns1_state_acc:.2f} # "
         desc += f"{adv_ns2_elems_acc:.2f},{adv_ns2_state_acc:.2f} # "
@@ -316,7 +347,9 @@ def eval_one_epoch(
         desc += f"attn "
         desc += f"({adv_ns1_attn_wts.mean().item():.2f},"
         desc += f"{adv_ns2_attn_wts.mean().item():.2f},"
-        desc += f"{adv_ns3_attn_wts.mean().item():.2f})"
+        desc += f"{adv_ns3_attn_wts.mean().item():.2f}), "
+        desc += f"ante ({atk_ante_align.item():.2f},{atk_ante_rels.mean():.2f}), "
+        desc += f"conseq ({atk_conseq_align.item():.2f},{atk_conseq_rels.mean():.2f}), "
         pbar.set_description(desc)
 
     row_dict = {
@@ -332,6 +365,10 @@ def eval_one_epoch(
         "adv_ns1_attn_wts": adv_ns1_attn_wts.mean().item(),
         "adv_ns2_attn_wts": adv_ns2_attn_wts.mean().item(),
         "adv_ns3_attn_wts": adv_ns3_attn_wts.mean().item(),
+        "atk_ante_align": atk_ante_align.item(),
+        "atk_ante_rel": atk_ante_rels.mean().item(),
+        "atk_conseq_align": atk_conseq_align.item(),
+        "atk_conseq_rel": atk_conseq_rels.mean().item(),
     }
 
     # Attack-specific additions

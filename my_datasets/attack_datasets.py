@@ -10,54 +10,55 @@ def hot(i, n):
     return F.one_hot(i, n)
 
 
-class CoerceStateDataset(Dataset):
-    """ Dataset for performing attacks on models trained with AutoregKSteps """
-    def __init__(
-        self,
-        reasoner_dataset: Dataset,
-        num_attack_tokens: int,
-        dataset_len: int,
-    ):
-        # The attack dataset is only used to compute a few things
-        self.reasoner_dataset = reasoner_dataset
-        self.num_vars = reasoner_dataset.num_vars
-        self.num_attack_tokens = num_attack_tokens
-        self.hot_prob = reasoner_dataset.exp_hots / self.num_vars
-
-        if hasattr(reasoner_dataset, "num_rules_range"):
-            self.num_rules = reasoner_dataset.num_rules_range[1] - self.num_attack_tokens
-        else:
-            self.num_rules = reasoner_dataset.num_rules - self.num_attack_tokens
-
-        self.dataset_len = dataset_len
-
-    def __len__(self):
-        return self.dataset_len
-
-    def __getitem__(self, idx):
-        n, r, p = self.num_vars, self.num_rules, self.hot_prob
-        tokens = (torch.rand(r, 2*n) < p).long()
-        target = (torch.rand(n) < p).long()
-
-        # We have to use huggingface trainer's naming convention for "labels"
-        return {
-            "tokens": tokens,
-            "labels": target
-        }
-
-
-class SuppressRuleDataset(Dataset):
+def make_common_stuff(num_vars, num_rules, hot_prob):
     """
-    This is a diamond-shaped dataset. We construct a dataset that has rules of form
-
-    Rules:
+    Make rules of the following form that is common to all the experiments
         a -> b
         a -> c
         a -> d
         b,c -> e
         c,d -> f
         e,f -> g
+    """
+    n, r, p = num_vars, num_rules, hot_prob
+    infos = torch.randperm(n)[:8]
+    a, b, c, d, e, f, g, h = infos
 
+    special_rules = torch.stack([
+        torch.cat([hot(a,n), hot(b,n)]), # a -> b
+        torch.cat([hot(a,n), hot(c,n)]), # a -> c
+        torch.cat([hot(a,n), hot(d,n)]), # a -> d
+        torch.cat([hot(b,n) + hot(c,n), hot(e,n)]), # b,c -> e
+        torch.cat([hot(c,n) + hot(d,n), hot(f,n)]), # c,d -> f
+        torch.cat([hot(e,n) + hot(f,n), hot(g,n)]), # e,f -> g
+    ]).long()
+
+    # Other rules
+    num_sp = special_rules.size(0)
+    num_others = r - special_rules.size(0)
+    other_antes = (torch.rand(num_others, n) < p).long()
+    other_antes[:,h] = 1
+    other_conseqs = (torch.rand(num_others, n) < p).long()
+    other_rules = torch.cat([other_antes, other_conseqs], dim=-1).long()
+
+    # Gather all the rules
+    rules = torch.cat([special_rules, other_rules], dim=0)
+    perm = torch.randperm(rules.size(0))
+    rules = rules[perm]
+
+    # Append the initial state to the token sequence
+    init_token = torch.cat([torch.zeros(n), hot(a,n)])
+    tokens = torch.cat([rules, init_token.view(1,2*n)], dim=0)
+
+    return {
+        "tokens": tokens,
+        "infos": infos,
+        "perm": perm
+    }
+
+
+class SuppressRuleDataset(Dataset):
+    """
     The goal is to suppress a -> b
 
     Proof states:
@@ -66,17 +67,18 @@ class SuppressRuleDataset(Dataset):
     def __init__(
         self,
         reasoner_dataset: Dataset,
+        num_attack_tokens: int,
         dataset_len: int,
     ):
-        # The attack dataset is only used to compute a few things
+        # The reasoner dataset is only used to compute a few things
         self.reasoner_dataset = reasoner_dataset
         self.num_vars = reasoner_dataset.num_vars
         self.hot_prob = reasoner_dataset.exp_hots / self.num_vars
 
         if hasattr(reasoner_dataset, "num_rules_range"):
-            self.num_rules = reasoner_dataset.num_rules_range[1] - 1
+            self.num_rules = reasoner_dataset.num_rules_range[1] - num_attack_tokens
         else:
-            self.num_rules = reasoner_dataset.num_rules - 1
+            self.num_rules = reasoner_dataset.num_rules - num_attack_tokens
 
         self.dataset_len = dataset_len
 
@@ -84,35 +86,10 @@ class SuppressRuleDataset(Dataset):
         return self.dataset_len
 
     def __getitem__(self, idx):
-        n, r, p = self.num_vars, self.num_rules, self.hot_prob
-        infos = torch.randperm(n)[:8]
-        a, b, c, d, e, f, g, h = infos
+        n = self.num_vars
+        stuff = make_common_stuff(n, self.num_rules, self.hot_prob)
+        a, b, c, d, e, f, g, h = stuff["infos"]
 
-        special_rules = torch.stack([
-            torch.cat([hot(a,n), hot(b,n)]), # a -> b
-            torch.cat([hot(a,n), hot(c,n)]), # a -> c
-            torch.cat([hot(a,n), hot(d,n)]), # a -> d
-            torch.cat([hot(b,n) + hot(c,n), hot(e,n)]), # b,c -> e
-            torch.cat([hot(c,n) + hot(d,n), hot(f,n)]), # c,d -> f
-            torch.cat([hot(e,n) + hot(f,n), hot(g,n)]), # e,f -> g
-        ]).long()
-
-        # Other rules
-        other_antes = (torch.rand(r-special_rules.size(0), n) < p).long()
-        other_antes[:,h] = 1
-        other_conseqs = (torch.rand(r-special_rules.size(0), n) < p).long()
-        other_rules = torch.cat([other_antes, other_conseqs], dim=-1).long()
-
-        # Gather all the rules
-        rules = torch.cat([special_rules, other_rules], dim=0)
-        perm = torch.randperm(rules.size(0))
-        rules = rules[perm]
-
-        # Append the initial state to the token sequence
-        init_token = torch.cat([torch.zeros(n), hot(a,n)])
-        tokens = torch.cat([rules, init_token.view(1,2*n)], dim=0)
-
-        # Labels for a three-step process
         labels = torch.stack([
             hot(a,n) + hot(c,n) + hot(d,n),
             hot(a,n) + hot(c,n) + hot(d,n) + hot(f,n),
@@ -121,24 +98,16 @@ class SuppressRuleDataset(Dataset):
 
         # Need to calculate the new label that's supposed to happen
         return {
-            "tokens": tokens,
+            "tokens": stuff["tokens"],
             "labels": labels,
-            "infos": infos,
+            "infos": stuff["infos"],
             # Invert the perm with argsort to find where the 0th rule (a->b) is
-            "supp_idx": perm.argsort()[0]
+            "supp_idx": stuff["perm"].argsort()[0]
         }
 
 
 class KnowledgeAmnesiaDataset(Dataset):
     """
-    Rules:
-        a -> b
-        a -> c
-        a -> d
-        b,c -> e
-        c,d -> f
-        e,f -> g
-
     The goal is to forget "a"
 
     Proof states:
@@ -147,24 +116,30 @@ class KnowledgeAmnesiaDataset(Dataset):
     def __init__(
         self,
         reasoner_dataset: Dataset,
+        num_attack_tokens: int,
         dataset_len: int,
     ):
-        self.suppress_rule_dataset = SuppressRuleDataset(
-            reasoner_dataset = reasoner_dataset,
-            dataset_len = dataset_len
-        )
-        self.num_vars = self.suppress_rule_dataset.num_vars
+        # The reasoner dataset is only used to compute a few things
+        self.reasoner_dataset = reasoner_dataset
+        self.num_vars = reasoner_dataset.num_vars
+        self.hot_prob = reasoner_dataset.exp_hots / self.num_vars
+
+        if hasattr(reasoner_dataset, "num_rules_range"):
+            self.num_rules = reasoner_dataset.num_rules_range[1] - num_attack_tokens
+        else:
+            self.num_rules = reasoner_dataset.num_rules - num_attack_tokens
+
+        self.dataset_len = dataset_len
+
 
     def __len__(self):
-        return len(self.suppress_rule_dataset)
+        return self.dataset_len
 
     def __getitem__(self, idx):
-        item = self.suppress_rule_dataset[idx]
-        infos = item["infos"]
-        a, b, c, d, e, f, g, h = infos
         n = self.num_vars
+        stuff = make_common_stuff(n, self.num_rules, self.hot_prob)
+        a, b, c, d, e, f, g, h = stuff["infos"]
 
-        # Labels for a one-step process
         labels = torch.stack([
                        hot(b,n) + hot(c,n) + hot(d,n),
             hot(a,n) + hot(b,n) + hot(c,n) + hot(d,n) + hot(e,n) + hot(f,n),
@@ -172,9 +147,44 @@ class KnowledgeAmnesiaDataset(Dataset):
         ])
 
         return {
-            "tokens": item["tokens"],
+            "tokens": stuff["tokens"],
             "labels": labels,
-            "infos": infos,
+            "infos": stuff["infos"],
+        }
+
+
+class CoerceStateDataset(Dataset):
+    def __init__(
+        self,
+        reasoner_dataset: Dataset,
+        num_attack_tokens: int,
+        dataset_len: int,
+    ):
+        # The reasoner dataset is only used to compute a few things
+        self.reasoner_dataset = reasoner_dataset
+        self.num_vars = reasoner_dataset.num_vars
+        self.hot_prob = reasoner_dataset.exp_hots / self.num_vars
+
+        if hasattr(reasoner_dataset, "num_rules_range"):
+            self.num_rules = reasoner_dataset.num_rules_range[1] - num_attack_tokens
+        else:
+            self.num_rules = reasoner_dataset.num_rules - num_attack_tokens
+
+        self.dataset_len = dataset_len
+
+    def __len__(self):
+        return self.dataset_len
+
+    def __getitem__(self, idx):
+        stuff = make_common_stuff(self.num_vars, self.num_rules, self.hot_prob)
+        a, b, c, d, e, f, g, h = stuff["infos"]
+
+        labels = (torch.rand(1,self.num_vars) < self.hot_prob).long().repeat(3,1)
+
+        return {
+            "tokens": stuff["tokens"],
+            "labels": labels,
+            "infos": stuff["infos"],
         }
 
 
