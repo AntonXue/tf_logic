@@ -242,7 +242,7 @@ def load_big_grid_stats_from_wandb(
     num_train_steps: int = 8192,
     learning_rate: float = 5e-4,
     batch_size: int = 512,
-    seed: int = 591,
+    seed: int = 601,
     quiet: bool = False,
     wandb_project: str = "transformer_friends/transformer_friends",
     overwrite: bool = True,
@@ -250,7 +250,7 @@ def load_big_grid_stats_from_wandb(
     return_first: bool = True
 ):
     model_str = f"{model_name}_d{embed_dim}_L{num_layers}_H{num_heads}"
-    dataset_str = f"DMD_nv{num_vars}_nr{num_rules}_exph{exph:.3f}"
+    dataset_str = f"DMY_nv{num_vars}_nr{num_rules}_exph{exph:.3f}"
     train_str = f"ntr{train_len}_ntt{eval_len}_bsz{batch_size}" + \
         f"_steps{num_train_steps}_lr{learning_rate:.5f}"
 

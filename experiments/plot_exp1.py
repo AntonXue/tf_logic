@@ -68,7 +68,7 @@ def parse_args():
     parser.add_argument(
         "--aggregate_by",
         type = str,
-        default = "mean",
+        default = "median",
         choices = ["mean", "std", "median"],
         help = "Metric to use for aggregating when there are multiple values for the same (plot_x, plot_y) pair. Default: mean.",
     )
@@ -142,8 +142,8 @@ def plot_and_save_heatmap(args):
 
     fig, ax = plt.subplots()
     im, cbar = heatmap(data, d_keys, n_keys,
-        row_title = "Number of Propositions",
-        col_title = "Embedding Dimension",
+        col_title = "Number of Propositions",
+        row_title = "Embedding Dimension",
         ax = ax,
         cmap = "YlGn",
     )
@@ -155,6 +155,8 @@ def plot_and_save_heatmap(args):
     if args.plot_file is None:
         metric_str = args.metric.replace("/","_")
         plot_file = str(Path(PLOTS_DIR, f"autoreg_{metric_str}.png"))
+    else:
+        plot_file = str(Path(PLOTS_DIR, f"{args.plot_file}"))
 
     plt.savefig(plot_file, bbox_inches="tight")
     return fig

@@ -215,7 +215,7 @@ class TheoryAutoregKStepsModel(nn.Module):
         num_steps: int,
         lambd: Optional[float] = None,
         rho: Optional[float] = None,
-        logit_type: str = "continuous"
+        logit_type: str = "piecewise_linear"
     ):
         super().__init__()
         n = num_vars
@@ -246,9 +246,9 @@ class TheoryAutoregKStepsModel(nn.Module):
 
         # The continuous piecewise linear binarization function
         self.logit_type = logit_type
-        if logit_type == "binarized":
+        if logit_type == "piecewise_linear":
             self.id_ffwd = lambda x: 3*F.relu(x - 1/3) - 3*F.relu(x - 2/3)
-        elif logit_type == "continuous":
+        elif logit_type == "tanh":
             # self.id_ffwd = lambda z: z - 1/2
             self.id_ffwd = lambda z: F.tanh(z - 1/2)
             # self.id_ffwd = lambda z: torch.log(n*F.relu(z) + 1e-4)

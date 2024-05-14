@@ -95,6 +95,8 @@ def run_theory_attack_common(config):
     else:
         raise ValueError(f"Unknown config.attack_name {config.attack_name}")
 
+    device = config.device
+
     print(f"Will save to: {saveto_file}")
 
     for train_seed in config.train_seeds:
@@ -107,7 +109,7 @@ def run_theory_attack_common(config):
                     reasoner_type = reasoner_type,
                 )
 
-                res_model.eval().to(config.device)
+                res_model.eval().to(device)
 
                 for k in config.num_repeats:
                     if config.attack_name == "suppress_rule":
@@ -125,15 +127,15 @@ def run_theory_attack_common(config):
                     adv_ns2_elems_hits, adv_ns2_state_hits = 0, 0
                     adv_ns3_elems_hits, adv_ns3_state_hits = 0, 0
                     adv_ns1_attn_wts, adv_ns2_attn_wts, adv_ns3_attn_wts = \
-                        torch.tensor([]), torch.tensor([]), torch.tensor([])
+                        torch.tensor([]).to(device), torch.tensor([]).to(device), torch.tensor([]).to(device)
                     adv_ns1_suppd_wts, adv_ns2_suppd_wts, adv_ns3_suppd_wts = \
-                        torch.tensor([]), torch.tensor([]), torch.tensor([])
+                        torch.tensor([]).to(device), torch.tensor([]).to(device), torch.tensor([]).to(device)
 
                     pbar = tqdm(dataloader)
                     for i, batch in enumerate(pbar):
-                        raw_tokens = batch["tokens"].to(config.device)
-                        adv_labels = batch["labels"].to(config.device)
-                        infos = batch["infos"].to(config.device)
+                        raw_tokens = batch["tokens"].to(device)
+                        adv_labels = batch["labels"].to(device)
+                        infos = batch["infos"].to(device)
                         a, b, c, d, e, f, g, h = infos.chunk(infos.size(-1), dim=-1)
 
                         # Output of the raw token sequence (i.e., without attacks)
@@ -157,9 +159,10 @@ def run_theory_attack_common(config):
                         elif config.attack_name == "coerce_state":
                             r = raw_tokens.size(1)
                             atk_conseq = adv_labels[:,0:1].repeat(1,k,1) # (N,k,n)
-                            atk_conseq = r * (2 * atk_conseq - 1)
-                            # atk_conseq = atk_conseq - r*(1 - atk_conseq)
-                            atk_ante = torch.zeros_like(atk_conseq)
+                            # atk_conseq = r * (2 * atk_conseq - 1)
+                            atk_conseq = atk_conseq - r*(1 - atk_conseq)
+                            atk_ante = -1 * torch.ones_like(atk_conseq)
+                            # atk_ante = torch.zeros_like(atk_conseq)
                             atk_rules = torch.cat([atk_ante, atk_conseq], dim=-1)
 
 
@@ -207,7 +210,7 @@ def run_theory_attack_common(config):
                         adv_ns3_attn_wts = torch.cat([adv_ns3_attn_wts, adv_attn3[:,-1,:k].sum(dim=-1)])
 
                         if config.attack_name == "suppress_rule":
-                            supp_idx = batch["supp_idx"]
+                            supp_idx = batch["supp_idx"].to(device)
                             adv_ns1_suppd_wts = torch.cat([
                                 adv_ns1_suppd_wts,
                                 adv_attn1[:,-1].gather(1, k+supp_idx.view(-1,1)).view(-1)

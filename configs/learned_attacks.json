@@ -1,5 +1,5 @@
 [{
-    "attack_name": ["suppress_rule", "knowledge_amnesia"],
+    "attack_name": ["suppress_rule", "knowledge_amnesia", "coerce_state"],
     "reasoner_type": ["learned"],
     "reasoner_seed": [601],
     "attacker_seed": [701],
@@ -9,9 +9,8 @@
         [32,64],
         [16,32]
     ],
-    "attack_tokens_style": ["repeat"],
-    "num_attack_tokens": [1],
-    "train_len": [65536],
+    "num_attack_tokens": [1,2,3,4],
+    "train_len": [32768],
     "eval_len": [16384],
     "batch_size": [128],
     "num_epochs": [8],

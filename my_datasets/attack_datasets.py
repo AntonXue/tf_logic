@@ -177,9 +177,8 @@ class CoerceStateDataset(Dataset):
 
     def __getitem__(self, idx):
         stuff = make_common_stuff(self.num_vars, self.num_rules, self.hot_prob)
-        a, b, c, d, e, f, g, h = stuff["infos"]
-
         labels = (torch.rand(1,self.num_vars) < self.hot_prob).long().repeat(3,1)
+        # labels = (torch.rand(1,self.num_vars) < 0.5).long().repeat(3,1)
 
         return {
             "tokens": stuff["tokens"],

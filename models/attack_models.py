@@ -133,7 +133,7 @@ class SuppressRuleWrapperModel(nn.Module):
         self.atk_embed_dim = self.attacker_model.transformer.embed_dim
 
         # Special thing here
-        self.token_embed_fn = nn.Linear(self.token_dim, self.atk_embed_dim)
+        self.tokens_embed_fn = nn.Linear(self.token_dim, self.atk_embed_dim)
         self.rule_embed_fn = nn.Linear(self.token_dim, self.atk_embed_dim)
         self.loss_fn = nn.BCEWithLogitsLoss(reduction="mean")
 
@@ -162,7 +162,7 @@ class SuppressRuleWrapperModel(nn.Module):
         # Query the attacker model
         atk_inputs_embeds = torch.cat([
             self.rule_embed_fn(supp_rule).view(N,1,-1),
-            self.token_embed_fn(tokens).view(N,L,-1),
+            self.tokens_embed_fn(tokens).view(N,L,-1),
         ], dim=1)
 
         atk_logits = self.attacker_model(inputs_embeds=atk_inputs_embeds).logits
@@ -230,7 +230,7 @@ class KnowledgeAmnesiaWrapperModel(nn.Module):
         self.atk_embed_dim = self.attacker_model.transformer.embed_dim
 
         # Special thing here
-        self.token_embed_fn = nn.Linear(self.token_dim, self.atk_embed_dim)
+        self.tokens_embed_fn = nn.Linear(self.token_dim, self.atk_embed_dim)
         self.to_forget_embed_fn = nn.Linear(self.num_vars, self.atk_embed_dim)
         self.loss_fn = nn.BCEWithLogitsLoss(reduction="mean")
 
@@ -256,7 +256,7 @@ class KnowledgeAmnesiaWrapperModel(nn.Module):
         # Query the attacker model
         atk_inputs_embeds = torch.cat([
             self.to_forget_embed_fn(to_forget).view(N,1,-1),
-            self.token_embed_fn(tokens).view(N,L,-1),
+            self.tokens_embed_fn(tokens).view(N,L,-1),
         ], dim=1)
 
         atk_logits = self.attacker_model(inputs_embeds=atk_inputs_embeds).logits
@@ -285,5 +285,109 @@ class KnowledgeAmnesiaWrapperModel(nn.Module):
             }
         )
 
+
+
+class AttackWrapperModel(nn.Module):
+    def __init__(
+        self,
+        reasoner_model: AutoregKStepsTaskModel,
+        attack_name: str,
+        num_attack_tokens: int = 1,
+    ):
+        super().__init__()
+        # Set up the reasoner model
+        reasoner_model = copy.deepcopy(reasoner_model)
+        for p in reasoner_model.parameters():
+            p.requires_grad = False
+        reasoner_model.eval()
+        self.reasoner_model = reasoner_model
+
+        self.num_vars = reasoner_model.num_labels
+        self.token_dim = 2 * self.num_vars
+
+        # Set up the attacker model
+        assert attack_name in ["suppress_rule", "knowledge_amnesia", "coerce_state"]
+        self.attack_name = attack_name
+        self.num_attack_tokens = num_attack_tokens
+        self.attacker_model = GPT2ForSequenceClassification.from_pretrained(
+            "gpt2",
+            num_labels = self.token_dim,
+            problem_type = "multi_label_classification",
+            pad_token_id = -1
+        )
+        self.atk_embed_dim = self.attacker_model.transformer.embed_dim
+
+        # Special thing here
+        self.tokens_embed_fn = nn.Linear(self.token_dim, self.atk_embed_dim)
+        self.hint_embed_fn = nn.Linear(self.num_vars, self.atk_embed_dim)
+        self.loss_fn = nn.BCEWithLogitsLoss(reduction="mean")
+
+    def train(self, mode=True):
+        """ We don't want the seqcls_model under attack to be in training mode """
+        self.reasoner_model.eval()
+        self.attacker_model.train(mode=mode)
+
+    def forward(
+        self,
+        tokens: torch.LongTensor,
+        labels: torch.LongTensor,
+        target: Optional[None] = None,
+        infos: Optional[torch.LongTensor] = None,
+    ):
+        N, L, _ = tokens.shape
+        tokens, labels = tokens.float(), labels.float()
+        n = self.num_vars
+
+        if self.attack_name == "suppress_rule":
+            # Our goal is to suppress the rule (a,b)
+            a, b = infos[:,0], infos[:,1]
+            hint = F.one_hot(a,n) - F.one_hot(b,n)
+
+        elif self.attack_name == "knowledge_amnesia":
+            # Our goal is to suppress the rule (a,b)
+            a = infos[:,0]
+            hint = F.one_hot(a,n)
+
+        elif self.attack_name == "coerce_state":
+            hint = 2*target - 1
+
+        else:
+            raise ValueError(f"Unknown attack_name {self.attack_name}")
+
+        # Query the attacker model
+        atk_inputs_embeds = torch.cat([
+            self.hint_embed_fn(hint.float()).view(N,1,-1),
+            self.tokens_embed_fn(tokens).view(N,L,-1),
+        ], dim=1)
+
+
+        atk_logits = self.attacker_model(inputs_embeds=atk_inputs_embeds).logits
+        atk_logits = atk_logits.view(N, 1, self.token_dim).repeat(1, self.num_attack_tokens, 1)
+
+        """
+        if self.attack_name in ["suppress_rule", "knowledge_amnesia"]:
+            atk_logits = self.attacker_model(inputs_embeds=atk_inputs_embeds).logits
+            atk_logits = atk_logits.view(N, 1, self.token_dim).repeat(1, self.num_attack_tokens, 1)
+        else:
+            atk_logits = self.attacker_model(inputs_embeds=atk_inputs_embeds).logits
+            atk_logits = atk_logits.view(N, self.num_attack_tokens, self.token_dim)
+        """
+
+        # Prepend the logits to the token sequence
+        adv_tokens = torch.cat([atk_logits, tokens], dim=1)
+        res_out = self.reasoner_model(tokens=adv_tokens)
+        res_logits = res_out.logits #
+
+        loss = None
+        if labels is not None:
+            loss = self.loss_fn(res_logits, labels.float())
+
+        return AttackerModelOutput(
+            loss = loss,
+            logits = atk_logits,
+            others = {
+                "reasoner_output": res_out,
+            }
+        )
 
 
