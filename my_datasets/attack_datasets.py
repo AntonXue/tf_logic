@@ -91,18 +91,21 @@ class SuppressRuleDataset(Dataset):
         a, b, c, d, e, f, g, h = stuff["infos"]
 
         labels = torch.stack([
+            hot(a,n),
             hot(a,n) + hot(c,n) + hot(d,n),
             hot(a,n) + hot(c,n) + hot(d,n) + hot(f,n),
             hot(a,n) + hot(c,n) + hot(d,n) + hot(f,n),
         ])
 
+        inv_perm = stuff["perm"].argsort()
+        ab_idx, ac_idx = inv_perm[0], inv_perm[1]
         # Need to calculate the new label that's supposed to happen
         return {
             "tokens": stuff["tokens"],
             "labels": labels,
             "infos": stuff["infos"],
-            # Invert the perm with argsort to find where the 0th rule (a->b) is
-            "supp_idx": stuff["perm"].argsort()[0]
+            "ab_index": ab_idx,
+            "ac_index": ac_idx
         }
 
 
@@ -141,9 +144,10 @@ class KnowledgeAmnesiaDataset(Dataset):
         a, b, c, d, e, f, g, h = stuff["infos"]
 
         labels = torch.stack([
-                       hot(b,n) + hot(c,n) + hot(d,n),
-            hot(a,n) + hot(b,n) + hot(c,n) + hot(d,n) + hot(e,n) + hot(f,n),
-                       hot(b,n) + hot(c,n) + hot(d,n) + hot(e,n) + hot(f,n) + hot(g,n),
+            hot(a,n),
+            hot(b,n) + hot(c,n) + hot(d,n),
+            hot(b,n) + hot(c,n) + hot(d,n) + hot(e,n) + hot(f,n),
+            hot(b,n) + hot(c,n) + hot(d,n) + hot(e,n) + hot(f,n) + hot(g,n),
         ])
 
         return {
@@ -176,9 +180,11 @@ class CoerceStateDataset(Dataset):
         return self.dataset_len
 
     def __getitem__(self, idx):
+        n, p = self.num_vars, self.hot_prob
         stuff = make_common_stuff(self.num_vars, self.num_rules, self.hot_prob)
-        labels = (torch.rand(1,self.num_vars) < self.hot_prob).long().repeat(3,1)
-        # labels = (torch.rand(1,self.num_vars) < 0.5).long().repeat(3,1)
+        a = stuff["infos"][0]
+        target = (torch.rand(n) < p).long()
+        labels = torch.stack([hot(a,n), target, target, target])
 
         return {
             "tokens": stuff["tokens"],

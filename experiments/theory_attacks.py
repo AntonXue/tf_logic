@@ -78,20 +78,24 @@ def run_theory_attack_common(config):
         "reasoner_type", "train_seed", "num_vars", "embed_dim", "num_repeats",
         "raw_state_acc",
         "adv_ns1_state_acc", "adv_ns2_state_acc", "adv_ns3_state_acc",
-        "adv_ns1_attn_wts", "adv_ns2_attn_wts", "adv_ns3_attn_wts"
+        "adv_ns1_atk_wts", "adv_ns2_atk_wts", "adv_ns3_atk_wts"
     ]
 
     if config.attack_name == "suppress_rule":
         saveto_file = Path(config.output_dir, "theory_suppress_rule.csv")
         df = pd.DataFrame(columns=common_col_names + [
-            "adv_ns1_attn_ratio", "adv_ns2_attn_ratio", "adv_ns3_attn_ratio"
+            "adv_ns1_ab_wts", "adv_ns2_ab_wts", "adv_ns3_ab_wts",
+            "adv_ns1_ac_wts", "adv_ns2_ac_wts", "adv_ns3_ac_wts",
         ])
+
     elif config.attack_name == "knowledge_amnesia":
         saveto_file = Path(config.output_dir, "theory_knowledge_amnesia.csv")
         df = pd.DataFrame(columns=common_col_names)
+
     elif config.attack_name == "coerce_state":
         saveto_file = Path(config.output_dir, "theory_coerce_state.csv")
         df = pd.DataFrame(columns=common_col_names)
+
     else:
         raise ValueError(f"Unknown config.attack_name {config.attack_name}")
 
@@ -112,12 +116,13 @@ def run_theory_attack_common(config):
                 res_model.eval().to(device)
 
                 for k in config.num_repeats:
+                    # We repeat k times, but the number of attack tokens is k+1
                     if config.attack_name == "suppress_rule":
-                        atk_dataset = SuppressRuleDataset(res_dataset, k, config.num_samples)
+                        atk_dataset = SuppressRuleDataset(res_dataset, k+1, config.num_samples)
                     elif config.attack_name == "knowledge_amnesia":
-                        atk_dataset = KnowledgeAmnesiaDataset(res_dataset, k, config.num_samples)
+                        atk_dataset = KnowledgeAmnesiaDataset(res_dataset, k+1, config.num_samples)
                     elif config.attack_name == "coerce_state":
-                        atk_dataset = CoerceStateDataset(res_dataset, k, config.num_samples)
+                        atk_dataset = CoerceStateDataset(res_dataset, k+1, config.num_samples)
 
                     dataloader = DataLoader(atk_dataset, batch_size=config.batch_size)
 
@@ -126,15 +131,20 @@ def run_theory_attack_common(config):
                     adv_ns1_elems_hits, adv_ns1_state_hits = 0, 0
                     adv_ns2_elems_hits, adv_ns2_state_hits = 0, 0
                     adv_ns3_elems_hits, adv_ns3_state_hits = 0, 0
-                    adv_ns1_attn_wts, adv_ns2_attn_wts, adv_ns3_attn_wts = \
-                        torch.tensor([]).to(device), torch.tensor([]).to(device), torch.tensor([]).to(device)
-                    adv_ns1_suppd_wts, adv_ns2_suppd_wts, adv_ns3_suppd_wts = \
-                        torch.tensor([]).to(device), torch.tensor([]).to(device), torch.tensor([]).to(device)
+                    adv_ns1_atk_wts_total, adv_ns2_atk_wts_total, adv_ns3_atk_wts_total = 0., 0., 0.
+                    adv_ns1_ab_wts_total, adv_ns2_ab_wts_total, adv_ns3_ab_wts_total = 0., 0., 0.
+                    adv_ns1_ac_wts_total, adv_ns2_ac_wts_total, adv_ns3_ac_wts_total = 0., 0., 0.
 
                     pbar = tqdm(dataloader)
                     for i, batch in enumerate(pbar):
                         raw_tokens = batch["tokens"].to(device)
+                        N, r = raw_tokens.size(0), raw_tokens.size(1)
+
                         adv_labels = batch["labels"].to(device)
+                        if adv_labels.size(1) == 4:
+                            adv_labels = adv_labels[:,1:]
+                        assert adv_labels.shape == (N,3,n)  # (N,3,n)
+
                         infos = batch["infos"].to(device)
                         a, b, c, d, e, f, g, h = infos.chunk(infos.size(-1), dim=-1)
 
@@ -149,24 +159,35 @@ def run_theory_attack_common(config):
                         raw_pred = (raw_out.logits > 0).long()
 
                         # Now add the known adversarial rule form and run it through the model
+                        init_token = torch.cat([torch.zeros(N,1,n).to(device), hot(a,n)], dim=-1) # (N,2n)
+
                         if config.attack_name == "suppress_rule":
                             atk_rule = torch.cat([F.one_hot(a,n), -1*F.one_hot(b,n)], dim=-1)
-                            atk_rules = atk_rule.view(-1,1,2*n).repeat(1,k,1)
+                            atk_tokens = torch.cat([
+                                atk_rule.view(N,1,2*n).repeat(1,k,1),
+                                init_token.view(N,1,-1)
+                            ], dim=1)
+
                         elif config.attack_name == "knowledge_amnesia":
                             r = raw_tokens.size(1)
-                            atk_rule = torch.cat([F.one_hot(a,n), -r*F.one_hot(a,n)], dim=-1)
-                            atk_rules = atk_rule.view(-1,1,2*n).repeat(1,k,1)
+                            atk_rule = torch.cat([torch.zeros(N,1,n), -r*F.one_hot(a,n)], dim=-1)
+                            atk_tokens = torch.cat([
+                                atk_rule.view(N,1,-1).repeat(1,k,1),
+                                init_token.view(N,1,-1)
+                            ], dim=1)
+
                         elif config.attack_name == "coerce_state":
                             r = raw_tokens.size(1)
-                            atk_conseq = adv_labels[:,0:1].repeat(1,k,1) # (N,k,n)
-                            # atk_conseq = r * (2 * atk_conseq - 1)
+                            atk_conseq = adv_labels[:,-1]
                             atk_conseq = atk_conseq - r*(1 - atk_conseq)
-                            atk_ante = -1 * torch.ones_like(atk_conseq)
-                            # atk_ante = torch.zeros_like(atk_conseq)
-                            atk_rules = torch.cat([atk_ante, atk_conseq], dim=-1)
+                            atk_ante = torch.zeros(N,n).to(device)
+                            atk_rule = torch.cat([atk_ante, atk_conseq], dim=-1) # (N,2n)
+                            atk_tokens = torch.cat([
+                                atk_rule.view(N,1,-1).repeat(1,k,1),
+                                init_token.view(N,1,-1)
+                            ], dim=1)
 
-
-                        adv_tokens = torch.cat([atk_rules, raw_tokens], dim=1)
+                        adv_tokens = torch.cat([raw_tokens, atk_tokens], dim=1)
                         adv_out = res_model(tokens=adv_tokens, output_attentions=True)
                         adv_pred = (adv_out.logits > 0).long()
 
@@ -175,67 +196,76 @@ def run_theory_attack_common(config):
                         all_raw_hits = raw_pred == raw_labels   # (N,3,n)
                         raw_elems_hits += all_raw_hits.float().mean(dim=(1,2)).sum()
                         raw_state_hits += all_raw_hits.all(dim=-1).all(dim=-1).sum()
-                        raw_elems_acc = raw_elems_hits / num_dones
-                        raw_state_acc = raw_state_hits / num_dones
 
                         all_adv_hits = adv_pred == adv_labels   # (N,3,n)
                         adv_ns1_elems_hits += all_adv_hits[:,0:1].float().mean(dim=(1,2)).sum()
-                        adv_ns1_state_hits += all_adv_hits[:,0:1].all(dim=-1).all(dim=-1).sum()
-                        adv_ns1_elems_acc = adv_ns1_elems_hits / num_dones
-                        adv_ns1_state_acc = adv_ns1_state_hits / num_dones
-
                         adv_ns2_elems_hits += all_adv_hits[:,0:2].float().mean(dim=(1,2)).sum()
-                        adv_ns2_state_hits += all_adv_hits[:,0:2].all(dim=-1).all(dim=-1).sum()
-                        adv_ns2_elems_acc = adv_ns2_elems_hits / num_dones
-                        adv_ns2_state_acc = adv_ns2_state_hits / num_dones
-
                         adv_ns3_elems_hits += all_adv_hits[:,0:3].float().mean(dim=(1,2)).sum()
+
+                        adv_ns1_state_hits += all_adv_hits[:,0:1].all(dim=-1).all(dim=-1).sum()
+                        adv_ns2_state_hits += all_adv_hits[:,0:2].all(dim=-1).all(dim=-1).sum()
                         adv_ns3_state_hits += all_adv_hits[:,0:3].all(dim=-1).all(dim=-1).sum()
-                        adv_ns3_elems_acc = adv_ns3_elems_hits / num_dones
-                        adv_ns3_state_acc = adv_ns3_state_hits / num_dones
 
                         # Attention metrics
                         if reasoner_type == "learned":
                             adv_out1, adv_out2, adv_out3 = adv_out.all_seqcls_outputs
-                            adv_attn1 = adv_out1.attentions[0][:,0] # (N, r+k, r+k)
-                            adv_attn2 = adv_out2.attentions[0][:,0] # (N, r+k+1, r+k+1)
-                            adv_attn3 = adv_out3.attentions[0][:,0] # (N, r+k+2, r+k+2)
+                            adv_attn1 = adv_out1.attentions[0][:,0] # (N, r+k+1, r+k+1)
+                            adv_attn2 = adv_out2.attentions[0][:,0] # (N, r+k+2, r+k+2)
+                            adv_attn3 = adv_out3.attentions[0][:,0] # (N, r+k+3, r+k+3)
 
                         elif reasoner_type == "theory":
                             adv_attn1, adv_attn2, adv_attn3 = adv_out.attentions
 
-                        # Cumulative attention weight of the attack tokens
-                        adv_ns1_attn_wts = torch.cat([adv_ns1_attn_wts, adv_attn1[:,-1,:k].sum(dim=-1)])
-                        adv_ns2_attn_wts = torch.cat([adv_ns2_attn_wts, adv_attn2[:,-1,:k].sum(dim=-1)])
-                        adv_ns3_attn_wts = torch.cat([adv_ns3_attn_wts, adv_attn3[:,-1,:k].sum(dim=-1)])
+                        # Cumulative attention weight of the k+1 attack tokens
+                        adv_ns1_atk_wts_total += adv_attn1[:,-1,r:r+k+1].sum()
+                        adv_ns2_atk_wts_total += adv_attn2[:,-1,r:r+k+1].sum()
+                        adv_ns3_atk_wts_total += adv_attn3[:,-1,r:r+k+1].sum()
 
                         if config.attack_name == "suppress_rule":
-                            supp_idx = batch["supp_idx"].to(device)
-                            adv_ns1_suppd_wts = torch.cat([
-                                adv_ns1_suppd_wts,
-                                adv_attn1[:,-1].gather(1, k+supp_idx.view(-1,1)).view(-1)
-                            ])
+                            ab_idx = batch["ab_index"].to(device)
+                            ac_idx = batch["ac_index"].to(device)
+                            adv_ns1_ab_wts_total += adv_attn1[:,-1].gather(1, ab_idx.view(-1,1)).sum()
+                            adv_ns2_ab_wts_total += adv_attn2[:,-1].gather(1, ab_idx.view(-1,1)).sum()
+                            adv_ns3_ab_wts_total += adv_attn3[:,-1].gather(1, ab_idx.view(-1,1)).sum()
 
-                            adv_ns2_suppd_wts = torch.cat([
-                                adv_ns2_suppd_wts,
-                                adv_attn2[:,-1].gather(1, k+supp_idx.view(-1,1)).view(-1)
-                            ])
+                            adv_ns1_ac_wts_total += adv_attn1[:,-1].gather(1, ac_idx.view(-1,1)).sum()
+                            adv_ns2_ac_wts_total += adv_attn2[:,-1].gather(1, ac_idx.view(-1,1)).sum()
+                            adv_ns3_ac_wts_total += adv_attn3[:,-1].gather(1, ac_idx.view(-1,1)).sum()
 
-                            adv_ns3_suppd_wts = torch.cat([
-                                adv_ns3_suppd_wts,
-                                adv_attn3[:,-1].gather(1, k+supp_idx.view(-1,1)).view(-1)
-                            ])
+                        # Compute stats
+                        desc = f"{reasoner_type} ndk ({n},{embed_dim},{k}), N {num_dones}: "
 
-                        desc = f"{reasoner_type} "
-                        desc += f"ndk ({n},{embed_dim},{k}), N {num_dones}: "
+                        raw_elems_acc = raw_elems_hits / num_dones
+                        raw_state_acc = raw_state_hits / num_dones
                         desc += f"raw ({raw_elems_acc:.2f},{raw_state_acc:.2f}), "
-                        desc += f"adv ({adv_ns1_elems_acc:.2f},{adv_ns1_state_acc:.2f} # "
-                        desc += f"{adv_ns2_elems_acc:.2f},{adv_ns2_state_acc:.2f} # "
-                        desc += f"{adv_ns3_elems_acc:.2f},{adv_ns3_state_acc:.2f}), "
-                        desc += f"attn "
-                        desc += f"({adv_ns1_attn_wts.mean().item():.2f},"
-                        desc += f"{adv_ns2_attn_wts.mean().item():.2f},"
-                        desc += f"{adv_ns3_attn_wts.mean().item():.2f})"
+
+                        adv_ns1_elems_acc = adv_ns1_elems_hits / num_dones
+                        adv_ns2_elems_acc = adv_ns2_elems_hits / num_dones
+                        adv_ns3_elems_acc = adv_ns3_elems_hits / num_dones
+
+                        adv_ns1_state_acc = adv_ns1_state_hits / num_dones
+                        adv_ns2_state_acc = adv_ns2_state_hits / num_dones
+                        adv_ns3_state_acc = adv_ns3_state_hits / num_dones
+                        desc += f"adv ({adv_ns1_elems_acc:.2f},{adv_ns1_state_acc:.2f} # " + \
+                                    f"{adv_ns2_elems_acc:.2f},{adv_ns2_state_acc:.2f} # " + \
+                                    f"{adv_ns3_elems_acc:.2f},{adv_ns3_state_acc:.2f}), "
+
+                        adv_ns1_atk_wts = adv_ns1_atk_wts_total / num_dones
+                        adv_ns2_atk_wts = adv_ns2_atk_wts_total / num_dones
+                        adv_ns3_atk_wts = adv_ns3_atk_wts_total / num_dones
+                        desc += f"atk ({adv_ns1_atk_wts:.2f},{adv_ns2_atk_wts:.2f},{adv_ns3_atk_wts:.2f}), "
+
+                        if config.attack_name == "suppress_rule":
+                            adv_ns1_ab_wts = adv_ns1_ab_wts_total / num_dones
+                            adv_ns2_ab_wts = adv_ns2_ab_wts_total / num_dones
+                            adv_ns3_ab_wts = adv_ns3_ab_wts_total / num_dones
+                            desc += f"ab ({adv_ns1_ab_wts:.2f},{adv_ns2_ab_wts:.2f},{adv_ns3_ab_wts:.2f}), "
+
+                            adv_ns1_ac_wts = adv_ns1_ac_wts_total / num_dones
+                            adv_ns2_ac_wts = adv_ns2_ac_wts_total / num_dones
+                            adv_ns3_ac_wts = adv_ns3_ac_wts_total / num_dones
+                            desc += f"ac ({adv_ns1_ac_wts:.2f},{adv_ns2_ac_wts:.2f},{adv_ns3_ac_wts:.2f}), "
+
                         pbar.set_description(desc)
                         # End inner for loop
 
@@ -250,17 +280,20 @@ def run_theory_attack_common(config):
                         "adv_ns1_state_acc": adv_ns1_state_acc.item(),
                         "adv_ns2_state_acc": adv_ns2_state_acc.item(),
                         "adv_ns3_state_acc": adv_ns3_state_acc.item(),
-                        "adv_ns1_attn_wts": adv_ns1_attn_wts.mean().item(),
-                        "adv_ns2_attn_wts": adv_ns2_attn_wts.mean().item(),
-                        "adv_ns3_attn_wts": adv_ns3_attn_wts.mean().item(),
+                        "adv_ns1_atk_wts": adv_ns1_atk_wts.item(),
+                        "adv_ns2_atk_wts": adv_ns2_atk_wts.item(),
+                        "adv_ns3_atk_wts": adv_ns3_atk_wts.item(),
                     }
 
                     # Attack-specific additions
                     if config.attack_name == "suppress_rule":
                         other_dict = {
-                            "adv_ns1_attn_ratio": (adv_ns1_attn_wts/adv_ns1_suppd_wts).mean().item(),
-                            "adv_ns2_attn_ratio": (adv_ns2_attn_wts/adv_ns2_suppd_wts).mean().item(),
-                            "adv_ns3_attn_ratio": (adv_ns3_attn_wts/adv_ns3_suppd_wts).mean().item(),
+                            "adv_ns1_ab_wts": adv_ns1_ab_wts.item(),
+                            "adv_ns2_ab_wts": adv_ns2_ab_wts.item(),
+                            "adv_ns3_ab_wts": adv_ns3_ab_wts.item(),
+                            "adv_ns1_ac_wts": adv_ns1_ac_wts.item(),
+                            "adv_ns2_ac_wts": adv_ns2_ac_wts.item(),
+                            "adv_ns3_ac_wts": adv_ns3_ac_wts.item(),
                         }
                         save_dict = save_dict | other_dict
 
