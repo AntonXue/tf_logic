@@ -63,12 +63,11 @@ class AttackWrapperModel(nn.Module):
     def forward(
         self,
         tokens: torch.LongTensor,
-        labels: torch.LongTensor,
+        labels: Optional[torch.LongTensor] = None,
         target: Optional[None] = None,
         infos: Optional[torch.LongTensor] = None,
     ):
         N, L, _ = tokens.shape
-        tokens, labels = tokens.float(), labels.float()
         n = self.num_vars
 
         if self.attack_name == "suppress_rule":
@@ -82,14 +81,15 @@ class AttackWrapperModel(nn.Module):
             hint = F.one_hot(a,n)
 
         elif self.attack_name == "coerce_state":
-            hint = 2*target - 1
+            hint = target
 
         else:
             raise ValueError(f"Unknown attack_name {self.attack_name}")
 
         # Query the attacker model
+        hint, tokens = hint.float(), tokens.float()
         atk_inputs_embeds = torch.cat([
-            self.hint_embed_fn(hint.float()).view(N,1,-1),
+            self.hint_embed_fn(hint).view(N,1,-1),
             self.tokens_embed_fn(tokens).view(N,L,-1),
         ], dim=1)
 
@@ -97,7 +97,7 @@ class AttackWrapperModel(nn.Module):
         atk_logits = atk_logits.view(N, self.num_attack_tokens, self.token_dim)
 
         adv_tokens = torch.cat([tokens, atk_logits], dim=1)
-        res_out = reasoner_model.tokens(adv_tokens)
+        res_out = self.reasoner_model(tokens=adv_tokens)
         res_logits = res_out.logits
 
         loss = None
