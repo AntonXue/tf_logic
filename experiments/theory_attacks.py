@@ -84,8 +84,8 @@ def run_theory_attack_common(config):
     if config.attack_name == "suppress_rule":
         saveto_file = Path(config.output_dir, "theory_suppress_rule.csv")
         df = pd.DataFrame(columns=common_col_names + [
-            "adv_ns1_ab_wts", "adv_ns2_ab_wts", "adv_ns3_ab_wts",
-            "adv_ns1_ac_wts", "adv_ns2_ac_wts", "adv_ns3_ac_wts",
+            "adv_ns1_suppd_wts", "adv_ns2_suppd_wts", "adv_ns3_suppd_wts",
+            "adv_ns1_other_wts", "adv_ns2_other_wts", "adv_ns3_other_wts",
         ])
 
     elif config.attack_name == "knowledge_amnesia":
@@ -132,8 +132,8 @@ def run_theory_attack_common(config):
                     adv_ns2_elems_hits, adv_ns2_state_hits = 0, 0
                     adv_ns3_elems_hits, adv_ns3_state_hits = 0, 0
                     adv_ns1_atk_wts_total, adv_ns2_atk_wts_total, adv_ns3_atk_wts_total = 0., 0., 0.
-                    adv_ns1_ab_wts_total, adv_ns2_ab_wts_total, adv_ns3_ab_wts_total = 0., 0., 0.
-                    adv_ns1_ac_wts_total, adv_ns2_ac_wts_total, adv_ns3_ac_wts_total = 0., 0., 0.
+                    adv_ns1_suppd_wts_total, adv_ns2_suppd_wts_total, adv_ns3_suppd_wts_total = 0., 0., 0.
+                    adv_ns1_other_wts_total, adv_ns2_other_wts_total, adv_ns3_other_wts_total = 0., 0., 0.
 
                     pbar = tqdm(dataloader)
                     for i, batch in enumerate(pbar):
@@ -162,7 +162,8 @@ def run_theory_attack_common(config):
                         init_token = torch.cat([torch.zeros(N,1,n).to(device), hot(a,n)], dim=-1) # (N,2n)
 
                         if config.attack_name == "suppress_rule":
-                            atk_rule = torch.cat([F.one_hot(a,n), -1*F.one_hot(b,n)], dim=-1)
+                            # Try to suppress the rule c,d -> f
+                            atk_rule = torch.cat([hot(c,n) + hot(d,n), -1*hot(f,n)], dim=-1)
                             atk_tokens = torch.cat([
                                 atk_rule.view(N,1,2*n).repeat(1,k,1),
                                 init_token.view(N,1,-1)
@@ -170,7 +171,7 @@ def run_theory_attack_common(config):
 
                         elif config.attack_name == "knowledge_amnesia":
                             r = raw_tokens.size(1)
-                            atk_rule = torch.cat([torch.zeros(N,1,n), -r*F.one_hot(a,n)], dim=-1)
+                            atk_rule = torch.cat([torch.zeros(N,1,n), -r*hot(a,n)], dim=-1)
                             atk_tokens = torch.cat([
                                 atk_rule.view(N,1,-1).repeat(1,k,1),
                                 init_token.view(N,1,-1)
@@ -222,15 +223,16 @@ def run_theory_attack_common(config):
                         adv_ns3_atk_wts_total += adv_attn3[:,-1,r:r+k+1].sum()
 
                         if config.attack_name == "suppress_rule":
-                            ab_idx = batch["ab_index"].to(device)
-                            ac_idx = batch["ac_index"].to(device)
-                            adv_ns1_ab_wts_total += adv_attn1[:,-1].gather(1, ab_idx.view(-1,1)).sum()
-                            adv_ns2_ab_wts_total += adv_attn2[:,-1].gather(1, ab_idx.view(-1,1)).sum()
-                            adv_ns3_ab_wts_total += adv_attn3[:,-1].gather(1, ab_idx.view(-1,1)).sum()
+                            # Try to suppress the rule c,d -> f
+                            suppd_idx = batch["cdf_index"].to(device)
+                            other_idx = batch["bce_index"].to(device)
+                            adv_ns1_suppd_wts_total += adv_attn1[:,-1].gather(1, suppd_idx.view(-1,1)).sum()
+                            adv_ns2_suppd_wts_total += adv_attn2[:,-1].gather(1, suppd_idx.view(-1,1)).sum()
+                            adv_ns3_suppd_wts_total += adv_attn3[:,-1].gather(1, suppd_idx.view(-1,1)).sum()
 
-                            adv_ns1_ac_wts_total += adv_attn1[:,-1].gather(1, ac_idx.view(-1,1)).sum()
-                            adv_ns2_ac_wts_total += adv_attn2[:,-1].gather(1, ac_idx.view(-1,1)).sum()
-                            adv_ns3_ac_wts_total += adv_attn3[:,-1].gather(1, ac_idx.view(-1,1)).sum()
+                            adv_ns1_other_wts_total += adv_attn1[:,-1].gather(1, other_idx.view(-1,1)).sum()
+                            adv_ns2_other_wts_total += adv_attn2[:,-1].gather(1, other_idx.view(-1,1)).sum()
+                            adv_ns3_other_wts_total += adv_attn3[:,-1].gather(1, other_idx.view(-1,1)).sum()
 
                         # Compute stats
                         desc = f"{reasoner_type} ndk ({n},{embed_dim},{k}), N {num_dones}: "
@@ -256,15 +258,17 @@ def run_theory_attack_common(config):
                         desc += f"atk ({adv_ns1_atk_wts:.2f},{adv_ns2_atk_wts:.2f},{adv_ns3_atk_wts:.2f}), "
 
                         if config.attack_name == "suppress_rule":
-                            adv_ns1_ab_wts = adv_ns1_ab_wts_total / num_dones
-                            adv_ns2_ab_wts = adv_ns2_ab_wts_total / num_dones
-                            adv_ns3_ab_wts = adv_ns3_ab_wts_total / num_dones
-                            desc += f"ab ({adv_ns1_ab_wts:.2f},{adv_ns2_ab_wts:.2f},{adv_ns3_ab_wts:.2f}), "
+                            adv_ns1_suppd_wts = adv_ns1_suppd_wts_total / num_dones
+                            adv_ns2_suppd_wts = adv_ns2_suppd_wts_total / num_dones
+                            adv_ns3_suppd_wts = adv_ns3_suppd_wts_total / num_dones
+                            desc += f"suppd ({adv_ns1_suppd_wts:.2f}," + \
+                                        f"{adv_ns2_suppd_wts:.2f},{adv_ns3_suppd_wts:.2f}), "
 
-                            adv_ns1_ac_wts = adv_ns1_ac_wts_total / num_dones
-                            adv_ns2_ac_wts = adv_ns2_ac_wts_total / num_dones
-                            adv_ns3_ac_wts = adv_ns3_ac_wts_total / num_dones
-                            desc += f"ac ({adv_ns1_ac_wts:.2f},{adv_ns2_ac_wts:.2f},{adv_ns3_ac_wts:.2f}), "
+                            adv_ns1_other_wts = adv_ns1_other_wts_total / num_dones
+                            adv_ns2_other_wts = adv_ns2_other_wts_total / num_dones
+                            adv_ns3_other_wts = adv_ns3_other_wts_total / num_dones
+                            desc += f"other ({adv_ns1_other_wts:.2f}," + \
+                                        f"{adv_ns2_other_wts:.2f},{adv_ns3_other_wts:.2f}), "
 
                         pbar.set_description(desc)
                         # End inner for loop
@@ -288,12 +292,12 @@ def run_theory_attack_common(config):
                     # Attack-specific additions
                     if config.attack_name == "suppress_rule":
                         other_dict = {
-                            "adv_ns1_ab_wts": adv_ns1_ab_wts.item(),
-                            "adv_ns2_ab_wts": adv_ns2_ab_wts.item(),
-                            "adv_ns3_ab_wts": adv_ns3_ab_wts.item(),
-                            "adv_ns1_ac_wts": adv_ns1_ac_wts.item(),
-                            "adv_ns2_ac_wts": adv_ns2_ac_wts.item(),
-                            "adv_ns3_ac_wts": adv_ns3_ac_wts.item(),
+                            "adv_ns1_suppd_wts": adv_ns1_suppd_wts.item(),
+                            "adv_ns2_suppd_wts": adv_ns2_suppd_wts.item(),
+                            "adv_ns3_suppd_wts": adv_ns3_suppd_wts.item(),
+                            "adv_ns1_other_wts": adv_ns1_other_wts.item(),
+                            "adv_ns2_other_wts": adv_ns2_other_wts.item(),
+                            "adv_ns3_other_wts": adv_ns3_other_wts.item(),
                         }
                         save_dict = save_dict | other_dict
 

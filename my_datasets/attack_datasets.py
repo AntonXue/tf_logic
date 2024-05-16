@@ -59,10 +59,10 @@ def make_common_stuff(num_vars, num_rules, hot_prob):
 
 class SuppressRuleDataset(Dataset):
     """
-    The goal is to suppress a -> b
+    The goal is to suppress c,d -> f
 
     Proof states:
-        {a} -> {acd} -> {acdf} -> {acdf}
+        {a} -> {abcd} -> {abcde} -> {abcde}
     """
     def __init__(
         self,
@@ -92,20 +92,25 @@ class SuppressRuleDataset(Dataset):
 
         labels = torch.stack([
             hot(a,n),
-            hot(a,n) + hot(c,n) + hot(d,n),
-            hot(a,n) + hot(c,n) + hot(d,n) + hot(f,n),
-            hot(a,n) + hot(c,n) + hot(d,n) + hot(f,n),
+            hot(a,n) + hot(b,n) + hot(c,n) + hot(d,n),
+            hot(a,n) + hot(b,n) + hot(c,n) + hot(d,n) + hot(e,n),
+            hot(a,n) + hot(b,n) + hot(c,n) + hot(d,n) + hot(e,n),
         ])
 
         inv_perm = stuff["perm"].argsort()
-        ab_idx, ac_idx = inv_perm[0], inv_perm[1]
+        ab_idx, ac_idx, ad_idx, bce_idx, cdf_idx, efg_idx = inv_perm[:6]
+
         # Need to calculate the new label that's supposed to happen
         return {
             "tokens": stuff["tokens"],
             "labels": labels,
             "infos": stuff["infos"],
             "ab_index": ab_idx,
-            "ac_index": ac_idx
+            "ac_index": ac_idx,
+            "ad_index": ad_idx,
+            "bce_index": bce_idx,
+            "cdf_index": cdf_idx,
+            "efg_index": efg_idx,
         }
 
 

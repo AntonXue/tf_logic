@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 from transformers.utils import ModelOutput
 # from transformers import GPT2Config, GPT2Model
-from transformers import GPT2ForSequenceClassification
+from transformers import GPT2ForSequenceClassification, AutoModelForSequenceClassification
 
 from .common import *
 from .task_models import AutoregKStepsTaskModel
@@ -42,6 +42,16 @@ class AttackWrapperModel(nn.Module):
         assert attack_name in ["suppress_rule", "knowledge_amnesia", "coerce_state"]
         self.attack_name = attack_name
         self.num_attack_tokens = num_attack_tokens
+
+        """
+        self.attacker_model = AutoModelForSequenceClassification.from_pretrained(
+            "vicuna-13b-v1.5",
+            num_labels = self.num_attack_tokens * self.token_dim,
+            problem_type = "multi_label_classification",
+            torch_dtype = "auto"
+        )
+        """
+
         self.attacker_model = GPT2ForSequenceClassification.from_pretrained(
             "gpt2",
             num_labels = self.num_attack_tokens * self.token_dim,

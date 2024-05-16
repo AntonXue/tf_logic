@@ -4,7 +4,7 @@
     "reasoner_seed": [602, 603, 604, 605],
     "attacker_seed": [701],
     "nd_pairs": [
-        [64,128]
+        [48,96]
     ],
     "num_attack_tokens": [2],
     "train_len": [32768],

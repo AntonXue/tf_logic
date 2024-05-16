@@ -219,8 +219,8 @@ def eval_one_epoch(
     adv_ns2_elems_hits, adv_ns2_state_hits = 0, 0
     adv_ns3_elems_hits, adv_ns3_state_hits = 0, 0
     adv_ns1_atk_wts_total, adv_ns2_atk_wts_total, adv_ns3_atk_wts_total = 0., 0., 0.
-    adv_ns1_ab_wts_total, adv_ns2_ab_wts_total, adv_ns3_ab_wts_total = 0., 0., 0.
-    adv_ns1_ac_wts_total, adv_ns2_ac_wts_total, adv_ns3_ac_wts_total = 0., 0., 0.
+    adv_ns1_suppd_wts_total, adv_ns2_suppd_wts_total, adv_ns3_suppd_wts_total = 0., 0., 0.
+    adv_ns1_other_wts_total, adv_ns2_other_wts_total, adv_ns3_other_wts_total = 0., 0., 0.
     atk_ante_align_hits, atk_conseq_align_hits = 0, 0
     # atk_ante_rels, atk_conseq_rels = torch.tensor([]).to(device), torch.tensor([]).to(device)
 
@@ -288,15 +288,15 @@ def eval_one_epoch(
         adv_ns3_atk_wts_total += adv_attn3[:,-1,r:r+k+1].sum()
 
         if args.attack_name == "suppress_rule":
-            ab_idx = batch["ab_index"].to(device)
-            ac_idx = batch["ac_index"].to(device)
-            adv_ns1_ab_wts_total += adv_attn1[:,-1].gather(1, ab_idx.view(-1,1)).sum()
-            adv_ns2_ab_wts_total += adv_attn2[:,-1].gather(1, ab_idx.view(-1,1)).sum()
-            adv_ns3_ab_wts_total += adv_attn3[:,-1].gather(1, ab_idx.view(-1,1)).sum()
+            suppd_idx = batch["cdf_index"].to(device)
+            other_idx = batch["bce_index"].to(device)
+            adv_ns1_suppd_wts_total += adv_attn1[:,-1].gather(1, suppd_idx.view(-1,1)).sum()
+            adv_ns2_suppd_wts_total += adv_attn2[:,-1].gather(1, suppd_idx.view(-1,1)).sum()
+            adv_ns3_suppd_wts_total += adv_attn3[:,-1].gather(1, suppd_idx.view(-1,1)).sum()
 
-            adv_ns1_ac_wts_total += adv_attn1[:,-1].gather(1, ac_idx.view(-1,1)).sum()
-            adv_ns2_ac_wts_total += adv_attn2[:,-1].gather(1, ac_idx.view(-1,1)).sum()
-            adv_ns3_ac_wts_total += adv_attn3[:,-1].gather(1, ac_idx.view(-1,1)).sum()
+            adv_ns1_other_wts_total += adv_attn1[:,-1].gather(1, other_idx.view(-1,1)).sum()
+            adv_ns2_other_wts_total += adv_attn2[:,-1].gather(1, other_idx.view(-1,1)).sum()
+            adv_ns3_other_wts_total += adv_attn3[:,-1].gather(1, other_idx.view(-1,1)).sum()
 
         # Compute stats
         desc = f"{args.reasoner_type} ndk ({n},{embed_dim},{k}), N {num_dones}: "
@@ -322,15 +322,15 @@ def eval_one_epoch(
         desc += f"atk ({adv_ns1_atk_wts:.2f},{adv_ns2_atk_wts:.2f},{adv_ns3_atk_wts:.2f}), "
 
         if args.attack_name == "suppress_rule":
-            adv_ns1_ab_wts = adv_ns1_ab_wts_total / num_dones
-            adv_ns2_ab_wts = adv_ns2_ab_wts_total / num_dones
-            adv_ns3_ab_wts = adv_ns3_ab_wts_total / num_dones
-            desc += f"ab ({adv_ns1_ab_wts:.2f},{adv_ns2_ab_wts:.2f},{adv_ns3_ab_wts:.2f}), "
+            adv_ns1_suppd_wts = adv_ns1_suppd_wts_total / num_dones
+            adv_ns2_suppd_wts = adv_ns2_suppd_wts_total / num_dones
+            adv_ns3_suppd_wts = adv_ns3_suppd_wts_total / num_dones
+            desc += f"suppd ({adv_ns1_suppd_wts:.3f},{adv_ns2_suppd_wts:.3f},{adv_ns3_suppd_wts:.3f}), "
 
-            adv_ns1_ac_wts = adv_ns1_ac_wts_total / num_dones
-            adv_ns2_ac_wts = adv_ns2_ac_wts_total / num_dones
-            adv_ns3_ac_wts = adv_ns3_ac_wts_total / num_dones
-            desc += f"ac ({adv_ns1_ac_wts:.2f},{adv_ns2_ac_wts:.2f},{adv_ns3_ac_wts:.2f}), "
+            adv_ns1_other_wts = adv_ns1_other_wts_total / num_dones
+            adv_ns2_other_wts = adv_ns2_other_wts_total / num_dones
+            adv_ns3_other_wts = adv_ns3_other_wts_total / num_dones
+            desc += f"other ({adv_ns1_other_wts:.3f},{adv_ns2_other_wts:.3f},{adv_ns3_other_wts:.3f}), "
 
         pbar.set_description(desc)
         # End for loop
@@ -355,12 +355,12 @@ def eval_one_epoch(
     # Attack-specific additions
     if args.attack_name == "suppress_rule":
         other_dict = {
-            "adv_ns1_ab_wts": adv_ns1_ab_wts.item(),
-            "adv_ns2_ab_wts": adv_ns2_ab_wts.item(),
-            "adv_ns3_ab_wts": adv_ns3_ab_wts.item(),
-            "adv_ns1_ac_wts": adv_ns1_ac_wts.item(),
-            "adv_ns2_ac_wts": adv_ns2_ac_wts.item(),
-            "adv_ns3_ac_wts": adv_ns3_ac_wts.item(),
+            "adv_ns1_suppd_wts": adv_ns1_suppd_wts.item(),
+            "adv_ns2_suppd_wts": adv_ns2_suppd_wts.item(),
+            "adv_ns3_suppd_wts": adv_ns3_suppd_wts.item(),
+            "adv_ns1_other_wts": adv_ns1_other_wts.item(),
+            "adv_ns2_other_wts": adv_ns2_other_wts.item(),
+            "adv_ns3_other_wts": adv_ns3_other_wts.item(),
         }
         save_dict = save_dict | other_dict
 
