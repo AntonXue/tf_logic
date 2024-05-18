@@ -62,7 +62,7 @@ class AttackWrapperModel(nn.Module):
 
         # Special thing here
         self.tokens_embed_fn = nn.Linear(self.token_dim, self.atk_embed_dim)
-        self.hint_embed_fn = nn.Linear(self.num_vars, self.atk_embed_dim)
+        self.hints_embed_fn = nn.Linear(self.num_vars, self.atk_embed_dim)
         self.loss_fn = nn.BCEWithLogitsLoss()
 
     def train(self, mode=True):
@@ -74,34 +74,19 @@ class AttackWrapperModel(nn.Module):
         self,
         tokens: torch.LongTensor,
         labels: Optional[torch.LongTensor] = None,
-        target: Optional[None] = None,
-        infos: Optional[torch.LongTensor] = None,
+        hints: Optional[torch.Tensor] = None,
     ):
         N, L, _ = tokens.shape
-        n = self.num_vars
-
-        if self.attack_name == "suppress_rule":
-            # Our goal is to suppress the rule (a,b)
-            a, b = infos[:,0], infos[:,1]
-            hint = F.one_hot(a,n) - F.one_hot(b,n)
-
-        elif self.attack_name == "knowledge_amnesia":
-            # Our goal is to suppress the rule (a,b)
-            a = infos[:,0]
-            hint = F.one_hot(a,n)
-
-        elif self.attack_name == "coerce_state":
-            hint = target
-
-        else:
-            raise ValueError(f"Unknown attack_name {self.attack_name}")
+        tokens = tokens.float()
 
         # Query the attacker model
-        hint, tokens = hint.float(), tokens.float()
-        atk_inputs_embeds = torch.cat([
-            self.hint_embed_fn(hint).view(N,1,-1),
-            self.tokens_embed_fn(tokens).view(N,L,-1),
-        ], dim=1)
+        if hints is not None:
+            atk_inputs_embeds = torch.cat([
+                self.hints_embed_fn(hints.float()).view(N,-1,self.atk_embed_dim),
+                self.tokens_embed_fn(tokens).view(N,L,-1),
+            ], dim=1)
+        else:
+            atk_inputs_embeds = self.tokens_embed_fn(tokens)
 
         atk_logits = self.attacker_model(inputs_embeds=atk_inputs_embeds).logits
         atk_logits = atk_logits.view(N, self.num_attack_tokens, self.token_dim)
@@ -112,7 +97,7 @@ class AttackWrapperModel(nn.Module):
 
         loss = None
         if labels is not None:
-            # We need to also factor in the initial state's logits
+            # The final atk_logit's conseqs acted as the initial state
             all_logits = torch.cat([
                 atk_logits[:,-1,self.num_vars:].view(N,1,self.num_vars),
                 res_logits

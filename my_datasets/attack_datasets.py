@@ -99,6 +99,7 @@ class SuppressRuleDataset(Dataset):
 
         inv_perm = stuff["perm"].argsort()
         ab_idx, ac_idx, ad_idx, bce_idx, cdf_idx, efg_idx = inv_perm[:6]
+        hints = hot(c,n) + hot(d,n) - hot(f,n)
 
         # Need to calculate the new label that's supposed to happen
         return {
@@ -111,6 +112,7 @@ class SuppressRuleDataset(Dataset):
             "bce_index": bce_idx,
             "cdf_index": cdf_idx,
             "efg_index": efg_idx,
+            "hints": hints,
         }
 
 
@@ -155,10 +157,13 @@ class KnowledgeAmnesiaDataset(Dataset):
             hot(b,n) + hot(c,n) + hot(d,n) + hot(e,n) + hot(f,n) + hot(g,n),
         ])
 
+        hints = hot(a,n)
+
         return {
             "tokens": stuff["tokens"],
             "labels": labels,
             "infos": stuff["infos"],
+            "hints": hints,
         }
 
 
@@ -188,13 +193,14 @@ class CoerceStateDataset(Dataset):
         n, p = self.num_vars, self.hot_prob
         stuff = make_common_stuff(self.num_vars, self.num_rules, self.hot_prob)
         a = stuff["infos"][0]
-        target = (torch.rand(n) < p).long()
-        labels = torch.stack([hot(a,n), target, target, target])
+        target = (torch.rand(3,n) < p).long()
+        labels = torch.cat([hot(a,n).view(1,-1), target], dim=0)
 
         return {
             "tokens": stuff["tokens"],
             "labels": labels,
             "infos": stuff["infos"],
+            "hints": target,
         }
 
 

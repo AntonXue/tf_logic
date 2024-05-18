@@ -148,7 +148,9 @@ def append_to_csv(csv_file: str, row_dict: dict):
 
     new_df = pd.DataFrame(row_dict, index=[0])
     df = pd.concat([df, new_df], ignore_index=True).drop_duplicates(
-        subset = ["reasoner_type", "reasoner_seed", "attacker_seed", "num_vars", "embed_dim", "num_repeats"],
+        subset = [
+            "reasoner_type", "reasoner_seed", "attacker_seed", "num_vars", "embed_dim", "num_attack_tokens"
+        ],
         keep = "last"
     )
     df.to_csv(csv_file, index=False)
@@ -171,13 +173,8 @@ def train_one_epoch(
     for i, batch in enumerate(pbar):
         tokens = batch["tokens"].to(device)
         labels = batch["labels"].to(device)
-        infos = batch["infos"].to(device)
-
-        if args.attack_name in ["suppress_rule", "knowledge_amnesia"]:
-            out = atk_model(tokens=tokens, infos=infos, labels=labels)
-        elif args.attack_name == "coerce_state":
-            # the labels are [..., tgt, tgt]
-            out = atk_model(tokens=tokens, target=labels[:,-1], labels=labels)
+        hints = batch["hints"].to(device)
+        out = atk_model(tokens=tokens, labels=labels, hints=hints)
 
         loss = out.loss
         loss.backward()
@@ -221,19 +218,24 @@ def eval_one_epoch(
     adv_ns1_atk_wts_total, adv_ns2_atk_wts_total, adv_ns3_atk_wts_total = 0., 0., 0.
     adv_ns1_suppd_wts_total, adv_ns2_suppd_wts_total, adv_ns3_suppd_wts_total = 0., 0., 0.
     adv_ns1_other_wts_total, adv_ns2_other_wts_total, adv_ns3_other_wts_total = 0., 0., 0.
+
+    raw_ns1_suppd_wts_total, raw_ns2_suppd_wts_total, raw_ns3_suppd_wts_total = 0., 0., 0.
+    raw_ns1_other_wts_total, raw_ns2_other_wts_total, raw_ns3_other_wts_total = 0., 0., 0.
+
     atk_ante_align_hits, atk_conseq_align_hits = 0, 0
     # atk_ante_rels, atk_conseq_rels = torch.tensor([]).to(device), torch.tensor([]).to(device)
 
     pbar = tqdm(dataloader)
     for i, batch in enumerate(pbar):
         raw_tokens = batch["tokens"].to(device)
-        N, r = raw_tokens.size(0), raw_tokens.size(1)
+        N, L = raw_tokens.size(0), raw_tokens.size(1)
 
         adv_labels = batch["labels"].to(device)
         if adv_labels.size(1) == 4:
             adv_labels = adv_labels[:,1:]
         assert adv_labels.shape == (N,3,n)
 
+        hints = batch["hints"].to(device)
         infos = batch["infos"].to(device)
         a, b, c, d, e, f, g, h = infos.chunk(infos.size(-1), dim=-1)
 
@@ -247,12 +249,7 @@ def eval_one_epoch(
         raw_pred = (raw_out.logits > 0).long()
 
         # Check the adv states
-        if args.attack_name in ["suppress_rule", "knowledge_amnesia"]:
-            atk_out = atk_model(tokens=raw_tokens, infos=infos)
-        elif args.attack_name == "coerce_state":
-            # after splicing, the labels are [tgt, tgt, tgt]
-            atk_out = atk_model(tokens=raw_tokens, target=adv_labels[:,-1])
-
+        atk_out = atk_model(tokens=raw_tokens, hints=hints)
         adv_tokens = torch.cat([raw_tokens, atk_out.logits], dim=1)
         adv_out = res_model(tokens=adv_tokens, output_attentions=True)
         adv_pred = (adv_out.logits > 0).long()
@@ -274,22 +271,36 @@ def eval_one_epoch(
 
         # Attention metrics
         if args.reasoner_type == "learned":
+            raw_out1, raw_out2, raw_out3 = raw_out.all_seqcls_outputs
+            raw_attn1 = raw_out1.attentions[0][:,0] # (N, L+k+0, L+k+0)
+            raw_attn2 = raw_out2.attentions[0][:,0] # (N, L+k+1, L+k+1)
+            raw_attn3 = raw_out3.attentions[0][:,0] # (N, L+k+2, L+k+2)
+
             adv_out1, adv_out2, adv_out3 = adv_out.all_seqcls_outputs
-            adv_attn1 = adv_out1.attentions[0][:,0] # (N, r+k+1, r+k+1)
-            adv_attn2 = adv_out2.attentions[0][:,0] # (N, r+k+2, r+k+2)
-            adv_attn3 = adv_out3.attentions[0][:,0] # (N, r+k+3, r+k+3)
+            adv_attn1 = adv_out1.attentions[0][:,0] # (N, L+k+0, L+k+0)
+            adv_attn2 = adv_out2.attentions[0][:,0] # (N, L+k+1, L+k+1)
+            adv_attn3 = adv_out3.attentions[0][:,0] # (N, L+k+2, L+k+2)
 
         elif args.reasoner_type == "theory":
+            raw_attn1, raw_attn2, raw_attn3 = raw_out.attentions
             adv_attn1, adv_attn2, adv_attn3 = adv_out.attentions
 
         # Cumulative attention weight of the k+1 attack tokens
-        adv_ns1_atk_wts_total += adv_attn1[:,-1,r:r+k+1].sum()
-        adv_ns2_atk_wts_total += adv_attn2[:,-1,r:r+k+1].sum()
-        adv_ns3_atk_wts_total += adv_attn3[:,-1,r:r+k+1].sum()
+        adv_ns1_atk_wts_total += adv_attn1[:,-1,L:L+k].sum()
+        adv_ns2_atk_wts_total += adv_attn2[:,-1,L:L+k].sum()
+        adv_ns3_atk_wts_total += adv_attn3[:,-1,L:L+k].sum()
 
         if args.attack_name == "suppress_rule":
             suppd_idx = batch["cdf_index"].to(device)
             other_idx = batch["bce_index"].to(device)
+            raw_ns1_suppd_wts_total += raw_attn1[:,-1].gather(1, suppd_idx.view(-1,1)).sum()
+            raw_ns2_suppd_wts_total += raw_attn2[:,-1].gather(1, suppd_idx.view(-1,1)).sum()
+            raw_ns3_suppd_wts_total += raw_attn3[:,-1].gather(1, suppd_idx.view(-1,1)).sum()
+
+            raw_ns1_other_wts_total += raw_attn1[:,-1].gather(1, other_idx.view(-1,1)).sum()
+            raw_ns2_other_wts_total += raw_attn2[:,-1].gather(1, other_idx.view(-1,1)).sum()
+            raw_ns3_other_wts_total += raw_attn3[:,-1].gather(1, other_idx.view(-1,1)).sum()
+
             adv_ns1_suppd_wts_total += adv_attn1[:,-1].gather(1, suppd_idx.view(-1,1)).sum()
             adv_ns2_suppd_wts_total += adv_attn2[:,-1].gather(1, suppd_idx.view(-1,1)).sum()
             adv_ns3_suppd_wts_total += adv_attn3[:,-1].gather(1, suppd_idx.view(-1,1)).sum()
@@ -297,6 +308,7 @@ def eval_one_epoch(
             adv_ns1_other_wts_total += adv_attn1[:,-1].gather(1, other_idx.view(-1,1)).sum()
             adv_ns2_other_wts_total += adv_attn2[:,-1].gather(1, other_idx.view(-1,1)).sum()
             adv_ns3_other_wts_total += adv_attn3[:,-1].gather(1, other_idx.view(-1,1)).sum()
+
 
         # Compute stats
         desc = f"{args.reasoner_type} ndk ({n},{embed_dim},{k}), N {num_dones}: "
@@ -322,15 +334,25 @@ def eval_one_epoch(
         desc += f"atk ({adv_ns1_atk_wts:.2f},{adv_ns2_atk_wts:.2f},{adv_ns3_atk_wts:.2f}), "
 
         if args.attack_name == "suppress_rule":
+            raw_ns1_suppd_wts = raw_ns1_suppd_wts_total / num_dones
+            raw_ns2_suppd_wts = raw_ns2_suppd_wts_total / num_dones
+            raw_ns3_suppd_wts = raw_ns3_suppd_wts_total / num_dones
+            raw_ns1_other_wts = raw_ns1_other_wts_total / num_dones
+            raw_ns2_other_wts = raw_ns2_other_wts_total / num_dones
+            raw_ns3_other_wts = raw_ns3_other_wts_total / num_dones
+            desc += f"raw s/o ({raw_ns1_suppd_wts:.2f}/{raw_ns1_other_wts:.2f}, " + \
+                        f"{raw_ns2_suppd_wts:.2f}/{raw_ns2_other_wts:.2f}, " + \
+                        f"{raw_ns3_suppd_wts:.2f}/{raw_ns3_other_wts:.2f}), "
+
             adv_ns1_suppd_wts = adv_ns1_suppd_wts_total / num_dones
             adv_ns2_suppd_wts = adv_ns2_suppd_wts_total / num_dones
             adv_ns3_suppd_wts = adv_ns3_suppd_wts_total / num_dones
-            desc += f"suppd ({adv_ns1_suppd_wts:.3f},{adv_ns2_suppd_wts:.3f},{adv_ns3_suppd_wts:.3f}), "
-
             adv_ns1_other_wts = adv_ns1_other_wts_total / num_dones
             adv_ns2_other_wts = adv_ns2_other_wts_total / num_dones
             adv_ns3_other_wts = adv_ns3_other_wts_total / num_dones
-            desc += f"other ({adv_ns1_other_wts:.3f},{adv_ns2_other_wts:.3f},{adv_ns3_other_wts:.3f}), "
+            desc += f"adv s/o ({adv_ns1_suppd_wts:.2f}/{adv_ns1_other_wts:.2f}, " + \
+                        f"{adv_ns2_suppd_wts:.2f}/{adv_ns2_other_wts:.2f}, " + \
+                        f"{adv_ns3_suppd_wts:.2f}/{adv_ns3_other_wts:.2f}), "
 
         pbar.set_description(desc)
         # End for loop
@@ -342,7 +364,7 @@ def eval_one_epoch(
         "attacker_seed": args.attacker_seed,
         "num_vars": n,
         "embed_dim": embed_dim,
-        "num_repeats": k,
+        "num_attack_tokens": k,
         "raw_state_acc": raw_state_acc.item(),
         "adv_ns1_state_acc": adv_ns1_state_acc.item(),
         "adv_ns2_state_acc": adv_ns2_state_acc.item(),
@@ -355,6 +377,13 @@ def eval_one_epoch(
     # Attack-specific additions
     if args.attack_name == "suppress_rule":
         other_dict = {
+            "raw_ns1_suppd_wts": raw_ns1_suppd_wts.item(),
+            "raw_ns2_suppd_wts": raw_ns2_suppd_wts.item(),
+            "raw_ns3_suppd_wts": raw_ns3_suppd_wts.item(),
+            "raw_ns1_other_wts": raw_ns1_other_wts.item(),
+            "raw_ns2_other_wts": raw_ns2_other_wts.item(),
+            "raw_ns3_other_wts": raw_ns3_other_wts.item(),
+
             "adv_ns1_suppd_wts": adv_ns1_suppd_wts.item(),
             "adv_ns2_suppd_wts": adv_ns2_suppd_wts.item(),
             "adv_ns3_suppd_wts": adv_ns3_suppd_wts.item(),
@@ -448,7 +477,7 @@ def run_learned_attack(args: LearnedAttackExperimentsArguments):
         train_dict = {
             "epoch": epoch,
             "train_loss": this_loss,
-            "model_state_dict": {k: v.cpu() for (k,v) in atk_model.state_dict().items()},
+            "model_state_dict": {_k: v.cpu() for (_k,v) in atk_model.state_dict().items()},
             "optimizer_state_dict": optimizer.state_dict(),
             "lr_scheduler_state_dict": lr_scheduler.state_dict(),
             "all_losses": all_losses
