@@ -119,11 +119,11 @@ def run_theory_attack_common(config):
                     assert k >= 2
                     # We may repeat k-1 times
                     if config.attack_name == "suppress_rule":
-                        atk_dataset = SuppressRuleDataset(res_dataset, k+1, config.num_samples)
+                        atk_dataset = SuppressRuleDataset(res_dataset, k, config.num_samples)
                     elif config.attack_name == "knowledge_amnesia":
-                        atk_dataset = KnowledgeAmnesiaDataset(res_dataset, k+1, config.num_samples)
+                        atk_dataset = KnowledgeAmnesiaDataset(res_dataset, k, config.num_samples)
                     elif config.attack_name == "coerce_state":
-                        atk_dataset = CoerceStateDataset(res_dataset, k+1, config.num_samples)
+                        atk_dataset = CoerceStateDataset(res_dataset, 4, config.num_samples)
 
                     dataloader = DataLoader(atk_dataset, batch_size=config.batch_size)
 
@@ -139,7 +139,7 @@ def run_theory_attack_common(config):
                     pbar = tqdm(dataloader)
                     for i, batch in enumerate(pbar):
                         raw_tokens = batch["tokens"].to(device)
-                        N, r = raw_tokens.size(0), raw_tokens.size(1)
+                        N, L = raw_tokens.size(0), raw_tokens.size(1)
 
                         adv_labels = batch["labels"].to(device)
                         if adv_labels.size(1) == 4:
@@ -171,19 +171,22 @@ def run_theory_attack_common(config):
                             ], dim=1)
 
                         elif config.attack_name == "knowledge_amnesia":
-                            r = raw_tokens.size(1)
-                            atk_rule = torch.cat([torch.zeros(N,1,n), -r*hot(a,n)], dim=-1)
+                            atk_rule = torch.cat([torch.zeros(N,1,n), -L*hot(a,n)], dim=-1)
                             atk_tokens = torch.cat([
                                 atk_rule.view(N,1,-1).repeat(1,k-1,1),
                                 init_token.view(N,1,-1)
                             ], dim=1)
 
                         elif config.attack_name == "coerce_state":
-                            r = raw_tokens.size(1)
-                            tgt1, tgt2, tgt3= adv_labels.chunk(3, dim=1)
-                            atk_rule1 = torch.cat([hot(a,n), r*(2*tgt1 - 1)], dim=-1)
-                            atk_rule2 = torch.cat([tgt1, r*(2*tgt2 - 1)], dim=-1)
-                            atk_rule3 = torch.cat([tgt2, r*(2*tgt3 - 1)], dim=-1)
+                            tgt1, tgt2, tgt3 = batch["hints"].chunk(3, dim=1)
+                            atk_rule1 = torch.cat([hot(a,n), L*(tgt1 - 0.5)], dim=-1)
+                            atk_rule2 = torch.cat([tgt1, L*(tgt2 - 0.5)], dim=-1)
+                            atk_rule3 = torch.cat([tgt2, L*(tgt3 - 0.5)], dim=-1)
+
+                            # atk_rule1 = torch.cat([hot(a,n), L*(2*tgt1 - 1)], dim=-1)
+                            # atk_rule2 = torch.cat([tgt1, L*(2*tgt2 - 1)], dim=-1)
+                            # atk_rule3 = torch.cat([tgt2, L*(2*tgt3 - 1)], dim=-1)
+
                             atk_tokens = torch.cat([
                                 atk_rule1,
                                 atk_rule2,
@@ -213,17 +216,17 @@ def run_theory_attack_common(config):
                         # Attention metrics
                         if reasoner_type == "learned":
                             adv_out1, adv_out2, adv_out3 = adv_out.all_seqcls_outputs
-                            adv_attn1 = adv_out1.attentions[0][:,0] # (N, r+k, r+k+1)
-                            adv_attn2 = adv_out2.attentions[0][:,0] # (N, r+k+1, r+k+2)
-                            adv_attn3 = adv_out3.attentions[0][:,0] # (N, r+k+2, r+k+3)
+                            adv_attn1 = adv_out1.attentions[0][:,0] # (N, r+k, r+k)
+                            adv_attn2 = adv_out2.attentions[0][:,0] # (N, r+k+1, r+k+1)
+                            adv_attn3 = adv_out3.attentions[0][:,0] # (N, r+k+2, r+k+2)
 
                         elif reasoner_type == "theory":
                             adv_attn1, adv_attn2, adv_attn3 = adv_out.attentions
 
-                        # Cumulative attention weight of the k+1 attack tokens
-                        adv_ns1_atk_wts_total += adv_attn1[:,-1,r:r+k].sum()
-                        adv_ns2_atk_wts_total += adv_attn2[:,-1,r:r+k].sum()
-                        adv_ns3_atk_wts_total += adv_attn3[:,-1,r:r+k].sum()
+                        # Cumulative attention weight of the k attack tokens
+                        adv_ns1_atk_wts_total += adv_attn1[:,-1,L:L+k].sum()
+                        adv_ns2_atk_wts_total += adv_attn2[:,-1,L:L+k].sum()
+                        adv_ns3_atk_wts_total += adv_attn3[:,-1,L:L+k].sum()
 
                         if config.attack_name == "suppress_rule":
                             # Try to suppress the rule c,d -> f

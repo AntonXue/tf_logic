@@ -74,12 +74,7 @@ class SuppressRuleDataset(Dataset):
         self.reasoner_dataset = reasoner_dataset
         self.num_vars = reasoner_dataset.num_vars
         self.hot_prob = reasoner_dataset.exp_hots / self.num_vars
-
-        if hasattr(reasoner_dataset, "num_rules_range"):
-            self.num_rules = reasoner_dataset.num_rules_range[1] - num_attack_tokens
-        else:
-            self.num_rules = reasoner_dataset.num_rules - num_attack_tokens
-
+        self.num_rules = reasoner_dataset.num_rules - num_attack_tokens
         self.dataset_len = dataset_len
 
     def __len__(self):
@@ -133,14 +128,8 @@ class KnowledgeAmnesiaDataset(Dataset):
         self.reasoner_dataset = reasoner_dataset
         self.num_vars = reasoner_dataset.num_vars
         self.hot_prob = reasoner_dataset.exp_hots / self.num_vars
-
-        if hasattr(reasoner_dataset, "num_rules_range"):
-            self.num_rules = reasoner_dataset.num_rules_range[1] - num_attack_tokens
-        else:
-            self.num_rules = reasoner_dataset.num_rules - num_attack_tokens
-
+        self.num_rules = reasoner_dataset.num_rules - num_attack_tokens
         self.dataset_len = dataset_len
-
 
     def __len__(self):
         return self.dataset_len
@@ -178,12 +167,7 @@ class CoerceStateDataset(Dataset):
         self.reasoner_dataset = reasoner_dataset
         self.num_vars = reasoner_dataset.num_vars
         self.hot_prob = reasoner_dataset.exp_hots / self.num_vars
-
-        if hasattr(reasoner_dataset, "num_rules_range"):
-            self.num_rules = reasoner_dataset.num_rules_range[1] - num_attack_tokens
-        else:
-            self.num_rules = reasoner_dataset.num_rules - num_attack_tokens
-
+        self.num_rules = reasoner_dataset.num_rules - num_attack_tokens
         self.dataset_len = dataset_len
 
     def __len__(self):
@@ -192,15 +176,19 @@ class CoerceStateDataset(Dataset):
     def __getitem__(self, idx):
         n, p = self.num_vars, self.hot_prob
         stuff = make_common_stuff(self.num_vars, self.num_rules, self.hot_prob)
-        a = stuff["infos"][0]
-        target = (torch.rand(3,n) < p).long()
-        labels = torch.cat([hot(a,n).view(1,-1), target], dim=0)
+        infos = stuff["infos"]
+        a, b, c, d = infos[0], infos[1], infos[2], infos[3]
 
+        target1 = ((torch.rand(n) < p) + hot(b,n) - hot(a,n) - hot(c,n) - hot(d,n)).clamp(0,1)
+        target2 = ((torch.rand(n) < p) + hot(c,n) - hot(a,n) - hot(b,n) - hot(d,n)).clamp(0,1)
+        target3 = ((torch.rand(n) < p) + hot(d,n) - hot(a,n) - hot(c,n) - hot(c,n)).clamp(0,1)
+        targets = torch.stack([target1, target2, target3]).long()
+        labels = torch.cat([hot(a,n).view(1,-1), targets], dim=0).long()
         return {
             "tokens": stuff["tokens"],
             "labels": labels,
             "infos": stuff["infos"],
-            "hints": target,
+            "hints": targets,
         }
 
 
