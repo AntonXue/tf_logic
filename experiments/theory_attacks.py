@@ -57,13 +57,86 @@ def load_model_and_dataset(
         model.num_steps = num_reasoner_steps
 
     if reasoner_type == "theory":
-        model = TheoryAutoregKStepsModel(
-            num_vars = num_vars,
-            num_steps = model.num_steps,
-        )
+        model = TheoryAutoregKStepsModel(num_vars=num_vars, num_steps=model.num_steps)
 
     model.eval()
     return model, dataset
+
+
+@torch.no_grad()
+def run_coerce_state_variance_attack(config):
+    """ Coerce state attack gets its own thing """
+    assert config.attack_name == "coerce_state_variance"
+    device = config.device
+    bsz = config.batch_size
+
+    saveto_file = Path(config.output_dir, "theory_coerce_state_variance.csv")
+    df = pd.DataFrame(columns=[
+        "reasoner_type", "train_seed", "num_vars", "embed_dim", "kappa", "variance"
+    ])
+
+
+    for train_seed in config.train_seeds:
+        for reasoner_type in config.reasoner_types:
+            for (n, embed_dim) in config.nd_pairs:
+                res_model, res_dataset = load_model_and_dataset(
+                    num_vars = n,
+                    embed_dim = embed_dim,
+                    train_seed = train_seed,
+                    reasoner_type = reasoner_type,
+                )
+
+                res_model.eval().to(device)
+                N = config.num_samples
+                atk_dataset = CoerceStateDataset(res_dataset, 4, N)
+                hotp = atk_dataset.hot_prob
+
+                for kappa in config.kappas:
+                    pbar = tqdm(range(N))
+                    num_dones, total_var = 0, 0.
+                    for idx in pbar:
+                        item = atk_dataset[idx]
+                        # Make the attack suffix
+                        infos = item["infos"].to(device)
+                        targets = item["hints"].to(device)
+                        tgt1, tgt2, tgt3 = targets.chunk(3, dim=0) # (1,2n) each
+                        tgt0 = torch.zeros(1,n).long().to(device)
+                        atk_rule1 = torch.cat([tgt0, 2*kappa*(tgt1-0.5)], dim=-1)
+                        atk_rule2 = torch.cat([tgt1, 2*kappa*(tgt2-0.5)], dim=-1)
+                        atk_rule3 = torch.cat([tgt2, 2*kappa*(tgt3-0.5)], dim=-1)
+                        init_token = torch.cat([torch.zeros_like(tgt0), tgt0], dim=-1)
+                        atk_suffix = torch.cat([atk_rule1, atk_rule2, atk_rule3, init_token], dim=0) # (4,2n)
+
+                        # Make the other tokens and query the model
+                        other_tokens = (torch.rand(bsz, *item["tokens"].shape) < hotp).long().to(device)
+                        adv_tokens = torch.cat([
+                            other_tokens,
+                            atk_suffix.view(1,4,2*n).repeat(bsz,1,1)
+                        ], dim=1)
+
+                        adv_out = res_model(tokens=adv_tokens)
+                        var = adv_out.logits.var(dim=0).mean()
+
+                        # Some stats
+                        num_dones += 1
+                        total_var += var
+                        avg_var = total_var / num_dones
+                        desc = f"{reasoner_type} ndk ({n},{embed_dim},{kappa}), var {avg_var:.6f}"
+                        pbar.set_description(desc)
+
+                    # Done with this combination of (n,d,kappa), so save
+                    save_dict = {
+                        "reasoner_type": reasoner_type,
+                        "train_seed": train_seed,
+                        "num_vars": n,
+                        "embed_dim": embed_dim,
+                        "kappa": kappa,
+                        "variance": avg_var.item()
+                    }
+
+                    this_df = pd.DataFrame(save_dict, index=[0])
+                    df = pd.concat([df, this_df], ignore_index=True)
+                    df.to_csv(saveto_file, index=False)
 
 
 @torch.no_grad()
@@ -116,7 +189,6 @@ def run_theory_attack_common(config):
                 res_model.eval().to(device)
 
                 for k in config.num_attack_tokens:
-                    assert k >= 2
                     # We may repeat k-1 times
                     if config.attack_name == "suppress_rule":
                         atk_dataset = SuppressRuleDataset(res_dataset, k, config.num_samples)
@@ -165,21 +237,22 @@ def run_theory_attack_common(config):
                         if config.attack_name == "suppress_rule":
                             # Try to suppress the rule c,d -> f
                             atk_rule = torch.cat([hot(c,n) + hot(d,n), -1*hot(f,n)], dim=-1)
-                            atk_tokens = torch.cat([
+                            adv_suffix = torch.cat([
                                 atk_rule.view(N,1,2*n).repeat(1,k-1,1),
                                 init_token.view(N,1,-1)
                             ], dim=1)
 
                         elif config.attack_name == "knowledge_amnesia":
                             atk_rule = torch.cat([torch.zeros(N,1,n), -L*hot(a,n)], dim=-1)
-                            atk_tokens = torch.cat([
+                            adv_suffix = torch.cat([
                                 atk_rule.view(N,1,-1).repeat(1,k-1,1),
                                 init_token.view(N,1,-1)
                             ], dim=1)
 
                         elif config.attack_name == "coerce_state":
                             tgt1, tgt2, tgt3 = batch["hints"].chunk(3, dim=1)
-                            atk_rule1 = torch.cat([hot(a,n), L*(tgt1 - 0.5)], dim=-1)
+                            tgt0 = hot(a,n).view(-1,1,n)
+                            atk_rule1 = torch.cat([tgt0, L*(tgt1 - 0.5)], dim=-1)
                             atk_rule2 = torch.cat([tgt1, L*(tgt2 - 0.5)], dim=-1)
                             atk_rule3 = torch.cat([tgt2, L*(tgt3 - 0.5)], dim=-1)
 
@@ -187,14 +260,14 @@ def run_theory_attack_common(config):
                             # atk_rule2 = torch.cat([tgt1, L*(2*tgt2 - 1)], dim=-1)
                             # atk_rule3 = torch.cat([tgt2, L*(2*tgt3 - 1)], dim=-1)
 
-                            atk_tokens = torch.cat([
+                            adv_suffix = torch.cat([
                                 atk_rule1,
                                 atk_rule2,
                                 atk_rule3,
                                 init_token.view(N,1,-1)
                             ], dim=1)
 
-                        adv_tokens = torch.cat([raw_tokens, atk_tokens], dim=1)
+                        adv_tokens = torch.cat([raw_tokens, adv_suffix], dim=1)
                         adv_out = res_model(tokens=adv_tokens, output_attentions=True)
                         adv_pred = (adv_out.logits > 0).long()
 
@@ -322,7 +395,10 @@ if __name__ == "__main__":
     config.output_dir = args.output_dir
     config.device = args.device
 
-    if config.attack_name in ["suppress_rule", "knowledge_amnesia", "coerce_state"]:
+    if config.attack_name == "coerce_state_variance":
+        ret = run_coerce_state_variance_attack(config)
+
+    elif config.attack_name in ["suppress_rule", "knowledge_amnesia", "coerce_state"]:
         ret = run_theory_attack_common(config)
 
     else:
