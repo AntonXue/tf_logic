@@ -72,6 +72,7 @@ def run_coerce_state_variance_attack(config):
 
     saveto_file = Path(config.output_dir, "theory_coerce_state_variance.csv")
     df = pd.DataFrame(columns=[
+        "num_samples",
         "reasoner_type", "train_seed", "num_vars", "embed_dim", "kappa", "variance"
     ])
 
@@ -87,12 +88,12 @@ def run_coerce_state_variance_attack(config):
                 )
 
                 res_model.eval().to(device)
-                N = config.num_samples
-                atk_dataset = CoerceStateDataset(res_dataset, 4, N)
+                num_samples = config.num_samples
+                atk_dataset = CoerceStateDataset(res_dataset, 4, num_samples)
                 hotp = atk_dataset.hot_prob
 
                 for kappa in config.kappas:
-                    pbar = tqdm(range(N))
+                    pbar = tqdm(range(num_samples))
                     num_dones, total_var = 0, 0.
                     for idx in pbar:
                         item = atk_dataset[idx]
@@ -100,12 +101,26 @@ def run_coerce_state_variance_attack(config):
                         infos = item["infos"].to(device)
                         targets = item["hints"].to(device)
                         tgt1, tgt2, tgt3 = targets.chunk(3, dim=0) # (1,2n) each
-                        tgt0 = torch.zeros(1,n).long().to(device)
+                        # tgt0 = torch.zeros(1,n).long().to(device)
+                        tgt0 = (torch.rand(1,n) < hotp).long().to(device)
+
                         atk_rule1 = torch.cat([tgt0, 2*kappa*(tgt1-0.5)], dim=-1)
                         atk_rule2 = torch.cat([tgt1, 2*kappa*(tgt2-0.5)], dim=-1)
                         atk_rule3 = torch.cat([tgt2, 2*kappa*(tgt3-0.5)], dim=-1)
-                        init_token = torch.cat([torch.zeros_like(tgt0), tgt0], dim=-1)
-                        atk_suffix = torch.cat([atk_rule1, atk_rule2, atk_rule3, init_token], dim=0) # (4,2n)
+
+                        # atk_rule1 = torch.cat([tgt0, tgt1 - kappa*(1-tgt1)], dim=-1)
+                        # atk_rule2 = torch.cat([tgt1, tgt2 - kappa*(1-tgt2)], dim=-1)
+                        # atk_rule3 = torch.cat([tgt2, tgt3 - kappa*(1-tgt3)], dim=-1)
+
+                        # atk_rule1 = torch.cat([tgt0 - kappa*(1-tgt0), tgt1 - kappa*(1-tgt1)], dim=-1)
+                        # atk_rule2 = torch.cat([tgt1 - kappa*(1-tgt1), tgt2 - kappa*(1-tgt2)], dim=-1)
+                        # atk_rule3 = torch.cat([tgt2 - kappa*(1-tgt2), tgt3 - kappa*(1-tgt3)], dim=-1)
+
+
+                        init_token = torch.cat([torch.zeros_like(tgt0), 2*kappa*(tgt0-0.5)], dim=-1)
+                        # atk_suffix = torch.cat([atk_rule1, atk_rule2, atk_rule3, init_token], dim=0) # (4,2n)
+                        # atk_suffix = kappa * torch.randn(4,2*n).to(device)
+                        atk_suffix = kappa * (2*torch.randint(0,2,(4,2*n)) - 1).float().to(device)
 
                         # Make the other tokens and query the model
                         other_tokens = (torch.rand(bsz, *item["tokens"].shape) < hotp).long().to(device)
@@ -115,7 +130,12 @@ def run_coerce_state_variance_attack(config):
                         ], dim=1)
 
                         adv_out = res_model(tokens=adv_tokens)
-                        var = adv_out.logits.var(dim=0).mean()
+                        adv_pred = (adv_out.logits > 0).long()
+                        # var = adv_pred[:,0].float().var(dim=0).mean()
+                        var = adv_pred.float().var(dim=0).mean()
+                        # var = adv_out.logits[:,0].var(dim=0).mean()
+
+                        # return adv_out
 
                         # Some stats
                         num_dones += 1
@@ -126,6 +146,7 @@ def run_coerce_state_variance_attack(config):
 
                     # Done with this combination of (n,d,kappa), so save
                     save_dict = {
+                        "num_samples": num_samples,
                         "reasoner_type": reasoner_type,
                         "train_seed": train_seed,
                         "num_vars": n,
@@ -148,6 +169,7 @@ def run_theory_attack_common(config):
     assert config.num_samples % config.batch_size == 0
 
     common_col_names = [
+        "num_samples",
         "reasoner_type", "train_seed", "num_vars", "embed_dim", "num_attack_tokens",
         "raw_state_acc",
         "adv_ns1_state_acc", "adv_ns2_state_acc", "adv_ns3_state_acc",
@@ -354,6 +376,7 @@ def run_theory_attack_common(config):
 
                     # Things to save that are common to all attacks
                     save_dict = {
+                        "num_samples": config.num_samples,
                         "reasoner_type": reasoner_type,
                         "train_seed": train_seed,
                         "num_vars": n,
