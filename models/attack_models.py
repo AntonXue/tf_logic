@@ -99,9 +99,11 @@ class AttackWrapperModel(nn.Module):
         if labels is not None:
             # The final atk_logit's conseqs acted as the initial state
             all_logits = torch.cat([
-                atk_logits[:,-1,self.num_vars:].view(N,1,self.num_vars),
+                # atk_logits[:,-1:,self.num_vars:],
                 res_logits
             ], dim=1)
+
+            labels = labels[:,1:]
 
             loss = self.loss_fn(all_logits, labels.float())
 

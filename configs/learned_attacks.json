@@ -1,18 +1,19 @@
 [{
-    "attack_name": ["suppress_rule"],
+    "attack_name": ["coerce_state", "suppress_rule", "knowledge_amnesia"],
     "reasoner_type": ["learned"],
     "reasoner_seed": [601],
     "attacker_seed": [701],
     "nd_pairs": [
-        [48,128],
-        [32,128],
+        [64,128],
         [48,96],
-        [32,64]
+        [32,64],
+        [16,32]
     ],
-    "num_attack_tokens": [2,4,8],
-    "train_len": [2048],
-    "eval_len": [1024],
+    "num_attack_tokens": [2],
+    "train_len": [131072],
+    "eval_len": [16384],
     "batch_size": [256],
     "num_epochs": [8],
-    "learning_rate": [0.0001]
+    "learning_rate": [0.0001],
+    "run_mode": ["only_eval"]
 }]

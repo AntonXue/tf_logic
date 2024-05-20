@@ -108,12 +108,9 @@ class LearnedAttackExperimentsArguments:
         metadata = {"help": "The type (learned/theory) of reasoner that we use."}
     )
 
-    only_run_eval: int = field(
-        default = 0,
-        metadata = {"help": (
-            "Whether to only dump the statistics without training. "
-            )
-        }
+    run_mode: Optional[str] = field(
+        default = None,
+        metadata = {"help": "The mode to run with."}
     )
 
 
@@ -165,8 +162,8 @@ def train_one_epoch(
     args: LearnedAttackExperimentsArguments
 ):
     """ The train function for all attacks basically looks the same """
-    optimizer.zero_grad()
     atk_model.train()
+    optimizer.zero_grad()
     device = next(atk_model.parameters()).device
     num_dones, all_losses = 0, []
     pbar = tqdm(dataloader)
@@ -188,7 +185,7 @@ def train_one_epoch(
         sma_loss = torch.tensor(all_losses[-16:]).mean().item() # Smooth-moving average
         lr = lr_scheduler.get_last_lr()[0]
 
-        desc = ""
+        desc = f"{args.reasoner_type}, ndk ({args.num_vars},{args.embed_dim},{args.num_attack_tokens}), "
         desc += f"N {num_dones}, lr {lr:.6f}, loss {sma_loss:.4f} (first {all_losses[0]:.4f})"
         pbar.set_description(desc)
 
@@ -212,34 +209,32 @@ def eval_one_epoch(
 
     num_dones = 0
     raw_elems_hits, raw_state_hits = 0, 0
+    adv_ns0_elems_hits, adv_ns0_state_hits = 0, 0
     adv_ns1_elems_hits, adv_ns1_state_hits = 0, 0
     adv_ns2_elems_hits, adv_ns2_state_hits = 0, 0
     adv_ns3_elems_hits, adv_ns3_state_hits = 0, 0
     adv_ns1_atk_wts_total, adv_ns2_atk_wts_total, adv_ns3_atk_wts_total = 0., 0., 0.
+
+    # Things special to suppress rule
     adv_ns1_suppd_wts_total, adv_ns2_suppd_wts_total, adv_ns3_suppd_wts_total = 0., 0., 0.
     adv_ns1_other_wts_total, adv_ns2_other_wts_total, adv_ns3_other_wts_total = 0., 0., 0.
-
     raw_ns1_suppd_wts_total, raw_ns2_suppd_wts_total, raw_ns3_suppd_wts_total = 0., 0., 0.
     raw_ns1_other_wts_total, raw_ns2_other_wts_total, raw_ns3_other_wts_total = 0., 0., 0.
 
-    atk_ante_align_hits, atk_conseq_align_hits = 0, 0
-    # atk_ante_rels, atk_conseq_rels = torch.tensor([]).to(device), torch.tensor([]).to(device)
+    # Things special to knowledge amnesia (consequents)
+    adv_suffix_conseq_amnesia_avg_total, adv_suffix_conseq_others_avg_total = 0., 0.
+
+    # Things special to state coercion
+    adv_suffix_size_avg_total, raw_tokens_size_avg_total = 0., 0.
 
     pbar = tqdm(dataloader)
     for i, batch in enumerate(pbar):
         raw_tokens = batch["tokens"].to(device)
         N, L = raw_tokens.size(0), raw_tokens.size(1)
 
-        adv_labels = batch["labels"].to(device)
-        if adv_labels.size(1) == 4:
-            adv_labels = adv_labels[:,1:]
-        assert adv_labels.shape == (N,3,n)
-
-        hints = batch["hints"].to(device)
+        # Check the raw stats
         infos = batch["infos"].to(device)
         a, b, c, d, e, f, g, h = infos.chunk(infos.size(-1), dim=-1)
-
-        # Check the raw stats
         raw_labels = torch.cat([
             hot(a,n) + hot(b,n) + hot(c,n) + hot(d,n),
             hot(a,n) + hot(b,n) + hot(c,n) + hot(d,n) + hot(e,n) + hot(f,n),
@@ -248,26 +243,30 @@ def eval_one_epoch(
         raw_out = res_model(tokens=raw_tokens, output_attentions=True)
         raw_pred = (raw_out.logits > 0).long()
 
-        # Check the adv states
-        atk_out = atk_model(tokens=raw_tokens, hints=hints)
-        adv_tokens = torch.cat([raw_tokens, atk_out.logits], dim=1)
-        adv_out = res_model(tokens=adv_tokens, output_attentions=True)
-        adv_pred = (adv_out.logits > 0).long()
-
-        # Now compute some metrics
         num_dones += raw_tokens.size(0)
         all_raw_hits = raw_pred == raw_labels   # (N,3,n)
         raw_elems_hits += all_raw_hits.float().mean(dim=(1,2)).sum()
         raw_state_hits += all_raw_hits.all(dim=-1).all(dim=-1).sum()
 
-        all_adv_hits = adv_pred == adv_labels   # (N,3,n)
-        adv_ns1_elems_hits += all_adv_hits[:,0:1].float().mean(dim=(1,2)).sum()
-        adv_ns2_elems_hits += all_adv_hits[:,0:2].float().mean(dim=(1,2)).sum()
-        adv_ns3_elems_hits += all_adv_hits[:,0:3].float().mean(dim=(1,2)).sum()
+        # Check the adversarial stats
+        hints = batch["hints"].to(device)
+        atk_out = atk_model(tokens=raw_tokens, hints=hints)
+        adv_tokens = torch.cat([raw_tokens, atk_out.logits], dim=1)
+        adv_out = res_model(tokens=adv_tokens, output_attentions=True)
+        adv_pred = (torch.cat([atk_out.logits[:,-1:,n:], adv_out.logits], dim=1) > 0).long()
 
-        adv_ns1_state_hits += all_adv_hits[:,0:1].all(dim=-1).all(dim=-1).sum()
-        adv_ns2_state_hits += all_adv_hits[:,0:2].all(dim=-1).all(dim=-1).sum()
-        adv_ns3_state_hits += all_adv_hits[:,0:3].all(dim=-1).all(dim=-1).sum()
+        # The adv stuff requires 4 states (s0, s1, s2, s3)
+        adv_labels = batch["labels"].to(device) # (N,4,n)
+        all_adv_hits = adv_pred == adv_labels
+        adv_ns0_elems_hits += all_adv_hits[:,0:1].float().mean(dim=(1,2)).sum()
+        adv_ns1_elems_hits += all_adv_hits[:,1:2].float().mean(dim=(1,2)).sum()
+        adv_ns2_elems_hits += all_adv_hits[:,1:3].float().mean(dim=(1,2)).sum()
+        adv_ns3_elems_hits += all_adv_hits[:,1:4].float().mean(dim=(1,2)).sum()
+
+        adv_ns0_state_hits += all_adv_hits[:,0:1].all(dim=-1).all(dim=-1).sum()
+        adv_ns1_state_hits += all_adv_hits[:,1:2].all(dim=-1).all(dim=-1).sum()
+        adv_ns2_state_hits += all_adv_hits[:,1:3].all(dim=-1).all(dim=-1).sum()
+        adv_ns3_state_hits += all_adv_hits[:,1:4].all(dim=-1).all(dim=-1).sum()
 
         # Attention metrics
         if args.reasoner_type == "learned":
@@ -309,29 +308,48 @@ def eval_one_epoch(
             adv_ns2_other_wts_total += adv_attn2[:,-1].gather(1, other_idx.view(-1,1)).sum()
             adv_ns3_other_wts_total += adv_attn3[:,-1].gather(1, other_idx.view(-1,1)).sum()
 
+        elif args.attack_name == "knowledge_amnesia":
+            _, atk_conseq = atk_out.logits.chunk(2, dim=-1)  # (N,k,n) each
+            amns_hots = hints.view(-1,1,n).repeat(1,k,1) # (N,n). The suppression should happen where it's hot.
+            other_hots = 1 - amns_hots
+            adv_suffix_conseq_amnesia_avg_total += \
+                (atk_conseq * amns_hots / amns_hots.sum(dim=2, keepdim=True)).abs().sum() / k
+            adv_suffix_conseq_others_avg_total += \
+                (atk_conseq * other_hots / other_hots.sum(dim=2, keepdim=True)).abs().sum() / k
+
+            # adv_suffix_conseq_amnesia_avg_total += \
+            #     (atk_conseq * amns_hots / amns_hots.sum(dim=(1,2)).view(-1,1,1)).abs().sum()
+
+        elif args.attack_name == "coerce_state":
+            adv_suffix_size_avg_total += atk_out.logits.abs().mean(dim=(1,2)).sum()
+            raw_tokens_size_avg_total += raw_tokens.abs().mean(dim=(1,2)).sum()
+
 
         # Compute stats
         desc = f"{args.reasoner_type} ndk ({n},{embed_dim},{k}), N {num_dones}: "
 
         raw_elems_acc = raw_elems_hits / num_dones
         raw_state_acc = raw_state_hits / num_dones
-        desc += f"raw ({raw_elems_acc:.2f},{raw_state_acc:.2f}), "
+        desc += f"raw {raw_state_acc:.2f}, "
 
+        adv_ns0_elems_acc = adv_ns0_elems_hits / num_dones
         adv_ns1_elems_acc = adv_ns1_elems_hits / num_dones
         adv_ns2_elems_acc = adv_ns2_elems_hits / num_dones
         adv_ns3_elems_acc = adv_ns3_elems_hits / num_dones
 
+        adv_ns0_state_acc = adv_ns0_state_hits / num_dones
         adv_ns1_state_acc = adv_ns1_state_hits / num_dones
         adv_ns2_state_acc = adv_ns2_state_hits / num_dones
         adv_ns3_state_acc = adv_ns3_state_hits / num_dones
-        desc += f"adv ({adv_ns1_elems_acc:.2f},{adv_ns1_state_acc:.2f} # " + \
-                    f"{adv_ns2_elems_acc:.2f},{adv_ns2_state_acc:.2f} # " + \
-                    f"{adv_ns3_elems_acc:.2f},{adv_ns3_state_acc:.2f}), "
+        desc += f"adv ([{adv_ns0_elems_acc:.2f}/{adv_ns0_state_acc:.2f}], " + \
+                    f"{adv_ns1_elems_acc:.2f}/{adv_ns1_state_acc:.2f}, " + \
+                    f"{adv_ns2_elems_acc:.2f}/{adv_ns2_state_acc:.2f}, " + \
+                    f"{adv_ns3_elems_acc:.2f}/{adv_ns3_state_acc:.2f}), "
 
         adv_ns1_atk_wts = adv_ns1_atk_wts_total / num_dones
         adv_ns2_atk_wts = adv_ns2_atk_wts_total / num_dones
         adv_ns3_atk_wts = adv_ns3_atk_wts_total / num_dones
-        desc += f"atk ({adv_ns1_atk_wts:.2f},{adv_ns2_atk_wts:.2f},{adv_ns3_atk_wts:.2f}), "
+        desc += f"atk e/s ({adv_ns1_atk_wts:.2f},{adv_ns2_atk_wts:.2f},{adv_ns3_atk_wts:.2f}), "
 
         if args.attack_name == "suppress_rule":
             raw_ns1_suppd_wts = raw_ns1_suppd_wts_total / num_dones
@@ -354,6 +372,16 @@ def eval_one_epoch(
                         f"{adv_ns2_suppd_wts:.2f}/{adv_ns2_other_wts:.2f}, " + \
                         f"{adv_ns3_suppd_wts:.2f}/{adv_ns3_other_wts:.2f}), "
 
+
+        elif args.attack_name == "knowledge_amnesia":
+            adv_suffix_conseq_amnesia_avg = adv_suffix_conseq_amnesia_avg_total / num_dones
+            adv_suffix_conseq_others_avg = adv_suffix_conseq_others_avg_total / num_dones
+            desc += f"amns/conseq ({adv_suffix_conseq_amnesia_avg:.2f}/{adv_suffix_conseq_others_avg:.2f}), "
+
+        elif args.attack_name == "coerce_state":
+            adv_suffix_size_avg = adv_suffix_size_avg_total / num_dones
+            raw_tokens_size_avg = raw_tokens_size_avg_total / num_dones
+
         pbar.set_description(desc)
         # End for loop
 
@@ -366,6 +394,7 @@ def eval_one_epoch(
         "embed_dim": embed_dim,
         "num_attack_tokens": k,
         "raw_state_acc": raw_state_acc.item(),
+        "adv_ns0_state_acc": adv_ns0_state_acc.item(),
         "adv_ns1_state_acc": adv_ns1_state_acc.item(),
         "adv_ns2_state_acc": adv_ns2_state_acc.item(),
         "adv_ns3_state_acc": adv_ns3_state_acc.item(),
@@ -391,7 +420,22 @@ def eval_one_epoch(
             "adv_ns2_other_wts": adv_ns2_other_wts.item(),
             "adv_ns3_other_wts": adv_ns3_other_wts.item(),
         }
-        save_dict = save_dict | other_dict
+
+    elif args.attack_name == "knowledge_amnesia":
+        other_dict = {
+            "adv_suffix_conseq_amnesia_avg": adv_suffix_conseq_amnesia_avg.item(),
+            "adv_suffix_conseq_others_avg": adv_suffix_conseq_others_avg.item()
+        }
+
+    elif args.attack_name == "coerce_state":
+        other_dict = {
+            "adv_suffix_size_avg": adv_suffix_size_avg.item(),
+            "raw_tokens_size_avg": raw_tokens_size_avg.item(),
+        }
+
+    else:
+        other_dict = {}
+    save_dict = save_dict | other_dict
 
 
     if do_save:
@@ -462,11 +506,14 @@ def run_learned_attack(args: LearnedAttackExperimentsArguments):
     info_strs = get_info_strings(args)
     print(f"run name: {info_strs['run_name']}")
 
-    # Do one eval at the start just for reference
-    eval_one_epoch(atk_model, eval_dataloader, args)
+    if args.run_mode == "only_eval":
+        num_epochs = 0
+    else:
+        num_epochs = args.num_epochs
+
     all_losses, best_loss = [], None
-    print(f"{args.reasoner_type}, n {args.num_vars}, d {args.embed_dim}")
-    for epoch in range(1, args.num_epochs+1):
+    print(f"{args.reasoner_type}, n {args.num_vars}, d {args.embed_dim}, k {args.num_attack_tokens}")
+    for epoch in range(1, num_epochs+1):
         print(f"epoch {epoch}/{args.num_epochs}, lr {lr_scheduler.get_last_lr()[0]:.6f}")
         train_stats = train_one_epoch(atk_model, train_dataloader, optimizer, lr_scheduler, args)
         this_loss = train_stats["loss"]
@@ -492,7 +539,11 @@ def run_learned_attack(args: LearnedAttackExperimentsArguments):
             best_loss = this_loss
             torch.save(train_dict, info_strs["best_saveto"])
 
-    # Do a CSV dump on the last one
+    # Load the best state dict, then run and save the eval
+
+    # Load the best state dict from file
+    best_train_dict = torch.load(info_strs["best_saveto"])
+    atk_model.load_state_dict(best_train_dict["model_state_dict"])
     eval_stats = eval_one_epoch(atk_model, eval_dataloader, args, do_save=True)
 
     # eval_one_epoch(atk_model, eval_dataloader, args)
@@ -506,6 +557,5 @@ if __name__ == "__main__":
 
     torch.manual_seed(args.attacker_seed)
     run_learned_attack(args)
-
 
 

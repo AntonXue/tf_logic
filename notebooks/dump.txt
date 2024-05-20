@@ -121,3 +121,43 @@
 [I 2024-05-19 05:19:12.535 ServerApp] Connecting to kernel 13159ce6-aa75-44dc-af9c-87af4c36f479.
 [I 2024-05-19 05:19:12.535 ServerApp] Restoring connection for 13159ce6-aa75-44dc-af9c-87af4c36f479:0c1b9de5-0927-4280-b333-503c9dcda3e1
 [I 2024-05-19 05:19:27.083 ServerApp] Saving file at /experiments/exp2_theory_attacks.ipynb
+[I 2024-05-19 05:22:43.804 ServerApp] Starting buffering for 13159ce6-aa75-44dc-af9c-87af4c36f479:0c1b9de5-0927-4280-b333-503c9dcda3e1
+[I 2024-05-19 18:21:04.197 ServerApp] 302 GET / (@127.0.0.1) 0.73ms
+[W 2024-05-19 18:21:08.745 ServerApp] Notebook experiments/exp3_learned_attacks.ipynb is not trusted
+[W 2024-05-19 18:21:10.265 ServerApp] Notebook experiments/exp3_learned_attacks.ipynb is not trusted
+[I 2024-05-19 18:21:10.485 ServerApp] Kernel started: b8d0a792-0591-4d7d-93b0-58a7160a4ab6
+[I 2024-05-19 18:21:10.985 ServerApp] Connecting to kernel b8d0a792-0591-4d7d-93b0-58a7160a4ab6.
+[I 2024-05-19 19:54:26.308 ServerApp] 302 GET / (@127.0.0.1) 0.73ms
+[W 2024-05-19 19:54:45.856 ServerApp] Notebook experiments/exp3_learned_attacks.ipynb is not trusted
+[W 2024-05-19 19:54:47.623 ServerApp] Notebook experiments/exp3_learned_attacks.ipynb is not trusted
+[I 2024-05-19 19:54:47.823 ServerApp] Connecting to kernel b8d0a792-0591-4d7d-93b0-58a7160a4ab6.
+[I 2024-05-19 19:58:47.694 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
+[W 2024-05-19 19:58:47.695 ServerApp] Notebook experiments/exp3_learned_attacks.ipynb is not trusted
+[I 2024-05-19 20:00:47.746 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
+[W 2024-05-19 20:00:47.746 ServerApp] Notebook experiments/exp3_learned_attacks.ipynb is not trusted
+[I 2024-05-19 20:02:47.796 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
+[W 2024-05-19 20:02:47.797 ServerApp] Notebook experiments/exp3_learned_attacks.ipynb is not trusted
+[I 2024-05-19 20:04:47.848 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
+[I 2024-05-19 20:06:47.911 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
+[I 2024-05-19 23:04:32.274 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
+[I 2024-05-19 23:06:32.450 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
+[I 2024-05-19 23:17:06.954 ServerApp] Connecting to kernel 13159ce6-aa75-44dc-af9c-87af4c36f479.
+[I 2024-05-19 23:23:08.506 ServerApp] Saving file at /experiments/exp2_theory_attacks.ipynb
+[I 2024-05-19 23:59:53.686 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
+[W 2024-05-19 23:59:53.687 ServerApp] Notebook experiments/exp3_learned_attacks.ipynb is not trusted
+[I 2024-05-20 00:00:03.086 ServerApp] Kernel restarted: 13159ce6-aa75-44dc-af9c-87af4c36f479
+[I 2024-05-20 00:00:03.186 ServerApp] Starting buffering for 13159ce6-aa75-44dc-af9c-87af4c36f479:925cf182-ffee-40cc-a935-597e55cbe04e
+[I 2024-05-20 00:00:03.194 ServerApp] Connecting to kernel 13159ce6-aa75-44dc-af9c-87af4c36f479.
+[I 2024-05-20 00:00:03.194 ServerApp] Restoring connection for 13159ce6-aa75-44dc-af9c-87af4c36f479:925cf182-ffee-40cc-a935-597e55cbe04e
+[I 2024-05-20 00:00:07.179 ServerApp] Kernel restarted: b8d0a792-0591-4d7d-93b0-58a7160a4ab6
+[I 2024-05-20 00:00:07.198 ServerApp] Connecting to kernel b8d0a792-0591-4d7d-93b0-58a7160a4ab6.
+[I 2024-05-20 00:00:21.553 ServerApp] Saving file at /experiments/exp2_theory_attacks.ipynb
+[I 2024-05-20 00:00:31.698 ServerApp] Kernel restarted: b8d0a792-0591-4d7d-93b0-58a7160a4ab6
+[I 2024-05-20 00:00:31.715 ServerApp] Connecting to kernel b8d0a792-0591-4d7d-93b0-58a7160a4ab6.
+[I 2024-05-20 00:00:33.255 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
+[I 2024-05-20 00:00:33.879 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
+[I 2024-05-20 00:02:33.935 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
+[I 2024-05-20 00:06:40.325 ServerApp] Kernel restarted: b8d0a792-0591-4d7d-93b0-58a7160a4ab6
+[I 2024-05-20 00:06:40.403 ServerApp] Connecting to kernel b8d0a792-0591-4d7d-93b0-58a7160a4ab6.
+[I 2024-05-20 00:07:06.515 ServerApp] Kernel restarted: b8d0a792-0591-4d7d-93b0-58a7160a4ab6
+[I 2024-05-20 00:07:06.530 ServerApp] Connecting to kernel b8d0a792-0591-4d7d-93b0-58a7160a4ab6.

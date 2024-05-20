@@ -1,21 +1,19 @@
 [{
     "attack_name": ["coerce_state"],
-    "reasoner_seed": [571],
+    "reasoner_type": ["learned"],
+    "reasoner_seed": [601],
     "attacker_seed": [701],
     "nd_pairs": [
-        [64, 128],
-        [56, 112],
-        [48, 96],
-        [40, 80],
-        [32, 64],
-        [24, 48],
-        [16, 32]
+        [64,128],
+        [48,96],
+        [32,64],
+        [16,32]
     ],
-    "num_attack_tokens": [1,2,4,8,16],
-    "token_range": ["unbounded"],
-    "train_len": [65536],
-    "eval_len": [65536],
-    "batch_size": [64],
-    "num_epochs": [16],
-    "learning_rate": [0.0001]
+    "num_attack_tokens": [2],
+    "train_len": [131072],
+    "eval_len": [16384],
+    "batch_size": [256],
+    "num_epochs": [8],
+    "learning_rate": [0.0001],
+    "run_mode": ["AAAAA"]
 }]
