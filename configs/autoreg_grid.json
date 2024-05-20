@@ -1,7 +1,7 @@
 [{
 	"model_name": ["gpt2"],
     "dataset_name": ["autoreg_custom"],
-    "seed": [601, 602, 603],
+    "seed": [601, 602, 603, 604, 605],
     "num_vars": [64, 56, 48, 40, 32, 24, 16],
     "embed_dim": [128, 112, 96, 80, 64, 48, 32],
     "num_layers": [1],
