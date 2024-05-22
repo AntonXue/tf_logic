@@ -201,3 +201,24 @@
 [I 2024-05-21 03:53:09.478 ServerApp] Restoring connection for b8d0a792-0591-4d7d-93b0-58a7160a4ab6:b6f1b226-bc8a-470a-9c33-78d8242d7b5a
 [I 2024-05-21 04:25:26.323 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
 [I 2024-05-21 05:56:41.507 ServerApp] Starting buffering for b8d0a792-0591-4d7d-93b0-58a7160a4ab6:b6f1b226-bc8a-470a-9c33-78d8242d7b5a
+[I 2024-05-22 12:50:55.907 ServerApp] 302 GET / (@127.0.0.1) 0.88ms
+[I 2024-05-22 12:51:02.564 ServerApp] Connecting to kernel 94110dfe-2da1-4771-b3c2-2ee55eec72c0.
+[I 2024-05-22 12:51:12.818 ServerApp] Connecting to kernel 13159ce6-aa75-44dc-af9c-87af4c36f479.
+[I 2024-05-22 12:53:12.774 ServerApp] Saving file at /experiments/exp2_theory_attacks.ipynb
+[I 2024-05-22 12:55:12.906 ServerApp] Saving file at /experiments/exp2_theory_attacks.ipynb
+[I 2024-05-22 12:56:42.285 ServerApp] Kernel restarted: 13159ce6-aa75-44dc-af9c-87af4c36f479
+[I 2024-05-22 12:56:42.295 ServerApp] Starting buffering for 13159ce6-aa75-44dc-af9c-87af4c36f479:e6336434-a11c-44be-b90b-8c8549bf8123
+[I 2024-05-22 12:56:42.303 ServerApp] Connecting to kernel 13159ce6-aa75-44dc-af9c-87af4c36f479.
+[I 2024-05-22 12:56:42.303 ServerApp] Restoring connection for 13159ce6-aa75-44dc-af9c-87af4c36f479:e6336434-a11c-44be-b90b-8c8549bf8123
+[I 2024-05-22 12:57:04.332 ServerApp] Saving file at /experiments/exp2_theory_attacks.ipynb
+[I 2024-05-22 12:58:13.489 ServerApp] Saving file at /experiments/exp2_theory_attacks.ipynb
+[I 2024-05-22 12:58:13.646 ServerApp] Saving file at /experiments/exp2_theory_attacks.ipynb
+[I 2024-05-22 12:58:15.334 ServerApp] Saving file at /experiments/exp2_theory_attacks.ipynb
+[I 2024-05-22 12:58:15.468 ServerApp] Saving file at /experiments/exp2_theory_attacks.ipynb
+[I 2024-05-22 12:58:20.745 ServerApp] Kernel restarted: 13159ce6-aa75-44dc-af9c-87af4c36f479
+[I 2024-05-22 12:58:20.755 ServerApp] Starting buffering for 13159ce6-aa75-44dc-af9c-87af4c36f479:e6336434-a11c-44be-b90b-8c8549bf8123
+[I 2024-05-22 12:58:20.763 ServerApp] Connecting to kernel 13159ce6-aa75-44dc-af9c-87af4c36f479.
+[I 2024-05-22 12:58:20.763 ServerApp] Restoring connection for 13159ce6-aa75-44dc-af9c-87af4c36f479:e6336434-a11c-44be-b90b-8c8549bf8123
+[I 2024-05-22 13:00:15.582 ServerApp] Saving file at /experiments/exp2_theory_attacks.ipynb
+[I 2024-05-22 13:22:19.235 ServerApp] Saving file at /experiments/exp2_theory_attacks.ipynb
+[I 2024-05-22 13:24:19.352 ServerApp] Saving file at /experiments/exp2_theory_attacks.ipynb
