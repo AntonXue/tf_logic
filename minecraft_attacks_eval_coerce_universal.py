@@ -4,7 +4,7 @@ PROJ_ROOT = str(Path(__file__).parent.parent.resolve())
 sys.path.insert(0, PROJ_ROOT)
 
 from argparse import ArgumentParser
-from minecraft.dataset import MinecraftAutoregKStepsNVarsSupressAttackDataset
+from minecraft.dataset import MinecraftAutoregKStepsNVarsCoerceAttackDataset
 import json
 import itertools
 import os
@@ -141,7 +141,19 @@ def get_param_dict_list_from_config_file(config_file) -> list:
     return config
 
 def generate(model, tokenizer, input_ids, assistant_role_slice, gen_config=None):
+    # if gen_config.max_new_tokens > 50:
+    #     print('WARNING: max_new_tokens > 32 may cause testing to slow down.')
+        
     input_ids = input_ids[:assistant_role_slice.stop].to(model.device).unsqueeze(0)
+
+    # if gen_config is None:
+    #     gen_config = model.generation_config
+    #     # gen_config.max_length = 1024
+    #     gen_config.max_new_tokens = 1024 - input_ids.shape[1]
+
+    # print(f"Input ids: {input_ids}")
+    # print(f"Input ids shape: {input_ids.shape}")
+    # print(f"pad token id: {tokenizer.pad_token_id}")
 
     attn_masks = torch.ones_like(input_ids).to(model.device)
     try:
@@ -168,7 +180,15 @@ def check_for_attack_success(model, tokenizer, input_ids, assistant_role_slice, 
                                         input_ids, 
                                         assistant_role_slice, 
                                         gen_config=gen_config)).strip()
-    jailbroken = generation_matches_label(target, gen_str)
+    # jailbroken = not any([prefix in gen_str for prefix in test_prefixes])
+    # print(f"Target: {target}")
+    # print(f"Generated: {gen_str}")
+    # jailbroken = target in gen_str
+    # print(f"Generated str: {gen_str.split('I cannot')[0]}")
+    # print(f"Target: {target}")
+    # print(f"\n------------------\n")
+    jailbroken = generation_matches_label(target, gen_str.split("I cannot")[0])
+    # jailbroken = generation_matches_label(target, gen_str)
     return jailbroken
 
 def get_allowed_tokens(tokenizer, dataset):
@@ -187,6 +207,7 @@ def run_gcg_attack(args, model, tokenizer, user_prompt, label, not_allowed_token
     num_steps = args.num_steps
     batch_size = args.batch_size
     topk = args.top_k
+    # allow_non_ascii = args.allow_non_ascii
     adv_string_init = args.adv_init
     target = args.adv_target
     device = args.device
@@ -202,12 +223,24 @@ def run_gcg_attack(args, model, tokenizer, user_prompt, label, not_allowed_token
     current_loss = torch.tensor(float('inf')).to(device)
     best_new_adv_suffix = adv_suffix
 
+    # for i in tqdm(range(num_steps), desc=f"\nPassed:{is_success}\nCurrent Loss:{current_loss.detach().cpu().numpy()}\nCurrent Suffix:{best_new_adv_suffix}"):
+    # for step in range(num_steps):
     tns_bar = trange(num_steps)
     for step in tns_bar:
+        # tns_bar.set_description(f"Passed:{is_success} | Loss:{current_loss.detach().cpu().numpy()} | Suffix:{best_new_adv_suffix}", refresh=True)
         # Step 1. Encode user prompt (behavior + adv suffix) as tokens and return token ids.
         input_ids = suffix_manager.get_input_ids(adv_string=adv_suffix)
 
+        # print(f"Size of input ids: {input_ids.shape}")
         input_ids = input_ids.to(device)
+
+
+        # Resize the input_ids to 1024 and append 220 to match that length if it is less than 1024
+        # if input_ids.shape[0] < 1024:
+        #     input_ids = torch.cat([input_ids, torch.ones(1024 - input_ids.shape[0], dtype=torch.long, device=device) * 220], dim=0)
+
+        
+        # print(f"Size of input ids: {input_ids.shape}")
 
         # # If input_ids is longer than 1024, just terminate the attack
         if input_ids.shape[0] > 1024:
@@ -261,6 +294,10 @@ def run_gcg_attack(args, model, tokenizer, user_prompt, label, not_allowed_token
             best_new_adv_suffix_id = losses.argmin()
             best_new_adv_suffix = new_adv_suffix[best_new_adv_suffix_id]
 
+            print(f"Best new adv suffix: {best_new_adv_suffix}")
+            # # Check number of tokens in the best new adv suffix
+            # print(f"Number of tokens in best new adv suffix: {len(tokenizer(best_new_adv_suffix, add_special_tokens=False).input_ids)}")
+
             current_loss = losses[best_new_adv_suffix_id]
 
             # Update the running adv_suffix with the best candidate
@@ -271,15 +308,31 @@ def run_gcg_attack(args, model, tokenizer, user_prompt, label, not_allowed_token
                                     suffix_manager._control_slice, 
                                     target)
             
+            # Check if the original conclusion is not present in the generated string
+            # is_success = is_success and not check_for_attack_success(model,
+            #                                                             tokenizer,
+            #                                                             suffix_manager.get_input_ids(adv_string=adv_suffix).to(device),
+            #                                                             suffix_manager._control_slice,
+            #                                                             target.replace("cannot", "can"))
+            
 
         tns_bar.set_description(f"Passed:{is_success} | Loss:{current_loss.detach().cpu().numpy():.3f} | Inp size:{input_ids.shape[0]}", refresh=True)
-        
+        # print(f"\nPassed:{is_success}\nCurrent Loss:{current_loss.detach().cpu().numpy()}\nCurrent Suffix:{best_new_adv_suffix}", end='\r')
+
         if is_success:
             break
+        # if strict_is_success:
+        #     break
 
         # (Optional) Clean up the cache.
         del coordinate_grad, adv_suffix_tokens ; gc.collect()
         torch.cuda.empty_cache()
+
+    # input_ids = suffix_manager.get_input_ids(adv_string=best_new_adv_suffix).to(device)
+    # gen_config = model.generation_config
+    # gen_config.max_length = 1024
+        
+    # is_success = strict_is_success
 
     return is_success, {
         "original_prompt": user_prompt,
@@ -291,6 +344,7 @@ def run_gcg_attack(args, model, tokenizer, user_prompt, label, not_allowed_token
         "target": target,
         "batch_size": batch_size,
         "topk": topk,
+        # "allow_non_ascii": allow_non_ascii,
     }
 
 def generation_matches_label(label, generation):
@@ -309,15 +363,15 @@ def serialize_recipe(recipe):
     recipe = tuple((tuple(sorted(antecedents)), consequent, depth) for (antecedents, consequent, depth) in recipe)
     return recipe                
 
-def get_samples_from_dataset(eval_dataset, num_samples, target_depth, model, tokenizer, device="cuda", prompts=[], recipes_to_ignore=[]):
+def get_samples_from_dataset(eval_dataset, num_samples, target_depth, model, tokenizer, device="cuda", prompts=[], targets_to_ignore=[]):
     samples = []
     example_idx = 0
-    example_idxs_to_ignore = [eval_dataset.recipe_to_idx[r] for r in recipes_to_ignore]
+    example_idxs_to_ignore = [eval_dataset.target_to_idx[r] for r in targets_to_ignore]
     print(f"Number of idxs to ignore: {len(example_idxs_to_ignore)}")
     print(f"First 10 idxs to ignore: {example_idxs_to_ignore[:10]}")
     while len(samples) < num_samples and example_idx < len(eval_dataset):
         if example_idx in example_idxs_to_ignore:
-            print(f"Recipe in recipes to ignore... skipping...")
+            print(f"Sample in targets to ignore... skipping...")
             example_idx += 1
             continue
         recipes = eval_dataset[example_idx]
@@ -349,6 +403,8 @@ def generate_text(model, tokenizer, prompt, max_length=1024, device="cuda", defa
     tokenized_prompt = tokenizer(prompt, return_tensors="pt").to(device)
     if tokenized_prompt.input_ids.shape[1] > model.config.max_position_embeddings:
         return default_response
+    # Stop generating when "I cannot create any other items." is generated
+    # generation = model.generate(input_ids, max_length=max_length)
     with torch.no_grad():
         generation = model.generate(**tokenized_prompt, max_new_tokens=256)
     generation = tokenizer.decode(generation[0], skip_special_tokens=True)
@@ -473,18 +529,6 @@ if __name__ == "__main__":
         help="Only consider the qed value for the attack",
     )
     parser.add_argument(
-        "--amnesia_rule_depth",
-        type=int,
-        default=-1,
-        help="Depth of the rules to remove for amnesia (if multiple rules as depth, one with randomly be chosen). Default (-1) is the general suppress rule attack"
-    )
-    parser.add_argument(
-        "--suppression_rule_depth",
-        type=int,
-        default=-1,
-        help="Depth of the rules to start suppressing from. Default (-1) is the general suppress rule attack"
-    )
-    parser.add_argument(
         "--reload",
         action="store_true",
         help="Reload existing results from directory",
@@ -519,11 +563,6 @@ if __name__ == "__main__":
             tokenizer = AutoTokenizer.from_pretrained("gpt2")
             tokenizer.pad_token = tokenizer.eos_token
 
-            if args.amnesia_rule_depth >= 0:
-                exp_id = exp_id + f"_amnesia_depth{args.amnesia_rule_depth}"
-            elif args.suppression_rule_depth > 0:
-                exp_id = exp_id + f"_suppression_depth{args.suppression_rule_depth}"
-
             model.to(args.device)
             model.eval()
             print(f"Length of model embeddings: {model.get_input_embeddings().weight.shape[0]}")
@@ -531,7 +570,7 @@ if __name__ == "__main__":
             print(f"Length of model embeddings after resizing: {model.get_input_embeddings().weight.shape[0]}")
             print(f"Model vocab size: {model.config.vocab_size}")
 
-            eval_dataset = MinecraftAutoregKStepsNVarsSupressAttackDataset(
+            eval_dataset = MinecraftAutoregKStepsNVarsCoerceAttackDataset(
                                 num_steps=param_instance["num_steps"],
                                 num_vars_range=(param_instance["min_num_vars"], param_instance["max_num_vars"]),
                                 max_num_distractors_triggerable=param_instance.get("max_num_distractors_triggerable", 3),
@@ -540,7 +579,7 @@ if __name__ == "__main__":
                                 seed=param_instance["seed"],
                                 tokenizer=tokenizer,
                                 task_type="next_token_prediction",
-                                num_samples_per_recipe=args.num_train_samples_per_rule,
+                                num_samples_per_target=args.num_train_samples_per_rule,
                                 only_qed=args.only_qed,
                             )
             
@@ -555,7 +594,7 @@ if __name__ == "__main__":
                 print(f"Number of non-ascii tokens: {len(not_allowed_tokens)}")
 
             results = []
-            recipes_to_ignore = []
+            targets_to_ignore = []
             if args.reload:
                 reload_path = os.path.join(args.output_dir, f"{exp_id}.json")
                 print(f"Loading existing results from {reload_path}")
@@ -566,11 +605,10 @@ if __name__ == "__main__":
                     print(f"Coudn't load from file {reload_path} with Exception: {e}. Starting from scratch.")
                 if data and len(data) > 0:
                     results = data
-                    key = 'recipe_suppressed' if 'original_recipe' not in results[0] else 'original_recipe' 
-                    recipes_to_ignore = [serialize_recipe(r[key]) for r in results]
-                    print(f"Found {len(recipes_to_ignore)} recipes in existing results...")
+                    targets_to_ignore = [r['attack_target'] for r in results]
+                    print(f"Found {len(targets_to_ignore)} targets in existing results...")
 
-            samples, prompts = get_samples_from_dataset(eval_dataset, args.num_eval_examples - len(recipes_to_ignore), param_instance["num_steps"] - 1, model, tokenizer, device=args.device, recipes_to_ignore=recipes_to_ignore)
+            samples, prompts = get_samples_from_dataset(eval_dataset, args.num_eval_examples - len(targets_to_ignore), param_instance["num_steps"] - 1, model, tokenizer, device=args.device, targets_to_ignore=targets_to_ignore)
             start_idx = len(results)
                 
             for epoch in range(args.num_epochs):
@@ -603,14 +641,15 @@ if __name__ == "__main__":
                     for recipe in recipes:
                         prompt, label = get_prompt_and_label(recipe['data'])
                         generation = generate_text(model, tokenizer, prompt, device=args.device)
-                        original_recipe_from_idx = recipe['recipe_from_idx']
-                        if args.amnesia_rule_depth >= 0:
-                            recipe['recipe_from_idx'] = [r for r in recipe['recipe_from_idx'] if r[2] == args.amnesia_rule_depth]
-                            recipe['recipe_from_idx'] = [recipe['recipe_from_idx'][0]]
-                        elif args.suppression_rule_depth > 0:
-                            recipe['recipe_from_idx'] = [r for r in recipe['recipe_from_idx'] if r[2] < args.suppression_rule_depth]
-                        args.adv_target, recipe_suppressed = get_rule_suppressed_adv_target(generation, recipe['recipe_from_idx'])
+                        args.adv_target = recipe["attack_target"].strip()
+                        args.adv_target += "\nI cannot create any other items."
+                        # args.adv_target += "\nI cannot create any other items."
+                        
                         generation = generation.split("I cannot create any other items.")[0]
+
+                        print(f"Generation: {generation}")
+                        print(f"Adv init: {args.adv_init}")
+                        print(f"Adv target: {args.adv_target}")
                         
                         attack_result = {}
                         success = False
@@ -643,7 +682,6 @@ if __name__ == "__main__":
                         attack_result["attack_generation"] = generate_text(model, tokenizer, attack_result["attack_prompt"], device=args.device)
                         attack_result["attack_generation_matches_label"] = generation_matches_label(label, attack_result["attack_generation"])
                         attack_result["attack_success"] = success
-                        attack_result["recipe_suppressed"] = recipe_suppressed
                         attack_result["qed"] = recipe["labels"].item()
                         idx_results.append(attack_result)
 
@@ -663,19 +701,13 @@ if __name__ == "__main__":
                         "adversarial_suffix": args.adv_init,
                         "attack_success": success and len(idx_results) == len(recipes),
                         "attack_success_percentage": sum([r["attack_success"] for r in idx_results]) / len(idx_results),
-                        "recipe_suppressed": [(list(antecedents), consequent, depth) for (antecedents, consequent, depth) in recipe["recipe_from_idx"]],
+                        # "recipe_suppressed": [(list(antecedents), consequent, depth) for (antecedents, consequent, depth) in recipe["recipe_from_idx"]],
+                        # "num_steps": total_num_steps - args.num_steps,
                         "num_steps": sum([r["num_steps"] for r in idx_results]),
                         "total_attack_time": sum([r["attack_time"] for r in idx_results]),
                         "train_sample_results": idx_results,
                         "train_running_accuracy": acc,
                     }
-
-                    if args.amnesia_rule_depth >= 0:
-                        final_idx_results["original_recipe"] = [(list(antecedents), consequent, depth) for (antecedents, consequent, depth) in original_recipe_from_idx]
-                        final_idx_results["amnesia_depth"] = args.amnesia_rule_depth
-                    elif args.suppression_rule_depth > 0:
-                        final_idx_results["original_recipe"] = [(list(antecedents), consequent, depth) for (antecedents, consequent, depth) in original_recipe_from_idx]
-                        final_idx_results["suppression_depth"] = args.suppression_rule_depth
 
                     results.append(final_idx_results)
 

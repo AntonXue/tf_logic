@@ -99,6 +99,11 @@ class MinecraftExperimentsArguments:
         metadata = {"help": "The maximum number of distractors that can be triggerable."}
     )
 
+    depth_parallel: Optional[bool] = field(
+        default = True,
+        metadata = {"help": "If the text should reflect parallel processing of facts at a given depth."}
+    )
+
     """ Training details """
 
     train_batch_size: Optional[int] = field(
@@ -149,12 +154,14 @@ def minecraftexp_args_to_wandb_run_name(args: MinecraftExperimentsArguments):
 
     elif args.syn_exp_name == "autoreg_ksteps":
         # MinecraftNTP: Next Token Prediction
-        return f"MinecraftNTP_{model_str}__" + \
+        # return f"MinecraftNTP_{model_str}__" + \
+        return f"MinecraftNTP_LMEval_{model_str}__" + \
             f"_ef{args.example_format}" + \
             f"_msl{args.max_sequence_length}" + \
             f"_ns{args.num_steps}" + \
             f"_nv{args.min_num_vars}-{args.max_num_vars}" + \
             f"_mndt{args.max_num_distractors_triggerable}" + \
+            f"_dp{args.depth_parallel}" + \
             f"_tbs{args.train_batch_size}_ebs{args.eval_batch_size}" + \
             f"_ntr{args.train_len}_ntt{args.eval_len}_seed{args.seed}"
     
@@ -485,7 +492,8 @@ def make_trainer_for_synthetic(
             tokenizer=tokenizer,
             task_type="next_token_prediction",
             example_format=args.example_format,
-            max_num_distractors_triggerable=args.max_num_distractors_triggerable)
+            max_num_distractors_triggerable=args.max_num_distractors_triggerable,
+            depth_parallel=args.depth_parallel)
         
         train_len, eval_len = args.train_len, args.eval_len
         if len(big_dataset) < args.train_len + args.eval_len:
@@ -502,24 +510,29 @@ def make_trainer_for_synthetic(
             # "data": [train_dataset[i]['data'] for i in range(len(train_dataset))],
         }).with_format("torch")
 
-        # TODO: Move the labels logic to the dataset
-        if args.example_format == "tags":
-            eval_hf_dataset = Dataset.from_dict({
-                "data": [eval_dataset[i]['data'].split("[STATES_START]")[0].strip() + "[STATES_START]" for i in range(len(eval_dataset))],
-                "labels": [eval_dataset[i]['data'].split("[STATES_START]")[1] for i in range(len(eval_dataset))],
-                "target": [eval_dataset[i]["target"] for i in range(len(eval_dataset))],
-                "qed": [eval_dataset[i]["labels"] for i in range(len(eval_dataset))],
-            }).with_format("torch")
-        else:
-            eval_hf_dataset = Dataset.from_dict({
-                "data": ["\n".join(eval_dataset[i]['data'].split("\n")[:5]) for i in range(len(eval_dataset))],
-                "labels": ["\n".join(eval_dataset[i]['data'].split("\n")[5:]) for i in range(len(eval_dataset))],
-                "target": [eval_dataset[i]["target"] for i in range(len(eval_dataset))],
-                "qed": [eval_dataset[i]["labels"] for i in range(len(eval_dataset))],
-            }).with_format("torch")
+        eval_hf_dataset = Dataset.from_dict({
+            "data": [eval_dataset[i]['data'] + tokenizer.eos_token for i in range(len(eval_dataset))],
+            # "data": [eval_dataset[i]['data'] for i in range(len(eval_dataset))],
+        }).with_format("torch")
 
-        # Print qed distribution for the eval dataset
-        print("Eval dataset qed distribution: ", eval_hf_dataset["qed"].numpy().tolist().count(1) / len(eval_hf_dataset))
+        # # TODO: Move the labels logic to the dataset
+        # if args.example_format == "tags":
+        #     eval_hf_dataset = Dataset.from_dict({
+        #         "data": [eval_dataset[i]['data'].split("[STATES_START]")[0].strip() + "[STATES_START]" for i in range(len(eval_dataset))],
+        #         "labels": [eval_dataset[i]['data'].split("[STATES_START]")[1] for i in range(len(eval_dataset))],
+        #         "target": [eval_dataset[i]["target"] for i in range(len(eval_dataset))],
+        #         "qed": [eval_dataset[i]["labels"] for i in range(len(eval_dataset))],
+        #     }).with_format("torch")
+        # else:
+        #     eval_hf_dataset = Dataset.from_dict({
+        #         "data": ["\n".join(eval_dataset[i]['data'].split("\n")[:5]) for i in range(len(eval_dataset))],
+        #         "labels": ["\n".join(eval_dataset[i]['data'].split("\n")[5:]) for i in range(len(eval_dataset))],
+        #         "target": [eval_dataset[i]["target"] for i in range(len(eval_dataset))],
+        #         "qed": [eval_dataset[i]["labels"] for i in range(len(eval_dataset))],
+        #     }).with_format("torch")
+
+        # # Print qed distribution for the eval dataset
+        # print("Eval dataset qed distribution: ", eval_hf_dataset["qed"].numpy().tolist().count(1) / len(eval_hf_dataset))
 
         print("Created HF datasets")
 
@@ -539,7 +552,7 @@ def make_trainer_for_synthetic(
         print("Tokenized HF datasets")
         
         train_dataset = train_dataset.map(add_labels_to_examples, batched=True)
-        # eval_dataset = eval_dataset.map(add_labels_to_examples, batched=True)
+        eval_dataset = eval_dataset.map(add_labels_to_examples, batched=True)
 
         tfl_model = AutoModelForCausalLM.from_pretrained(args.model_name, pad_token_id=tokenizer.eos_token_id)
         tfl_model.resize_token_embeddings(len(tokenizer))
@@ -560,13 +573,22 @@ def make_trainer_for_synthetic(
             save_total_limit = 2,
             save_safetensors = False)
         
-        return TrainerForNextTokenPrediction(
+        return Trainer(
             tfl_model,
             training_args,
             train_dataset = train_dataset,
             eval_dataset = eval_dataset,
             tokenizer = tokenizer,
-            data_collator = data_collator)
+            data_collator = data_collator,
+        )
+        
+        # return TrainerForNextTokenPrediction(
+        #     tfl_model,
+        #     training_args,
+        #     train_dataset = train_dataset,
+        #     eval_dataset = eval_dataset,
+        #     tokenizer = tokenizer,
+        #     data_collator = data_collator)
 
     
     elif args.syn_exp_name == "seq2seq":
@@ -674,7 +696,11 @@ if __name__ == "__main__":
         baseline_eval_results = trainer.evaluate()
         wandb.run.summary["eval_before_train"] = baseline_eval_results
         trainer.train()
+
+    # Compute the evaluation metrics for the last checkpoint
+    eval_results = trainer.evaluate()
+    print(f"Eval results: {eval_results}")
+    
     
     wandb.run.summary["trainer_stats"] = trainer_stats
     wandb.finish()
-
