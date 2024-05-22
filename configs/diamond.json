@@ -1,0 +1,19 @@
+[{
+	"model_name": ["gpt2"],
+    "dataset_name": ["diamond"],
+    "seed": [801],
+    "min_chain_len": [3],
+    "max_chain_len": [5],
+    "embed_dim": [64],
+    "num_vars": [32, 16],
+    "num_layers": [1],
+    "num_heads": [1],
+    "min_num_rules": [16],
+    "max_num_rules": [32],
+    "train_len": [262144],
+    "eval_len": [65536],
+    "num_epochs": [16],
+    "batch_size": [256],
+    "learning_rate": [0.0005]
+}]
+

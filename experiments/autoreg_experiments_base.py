@@ -59,6 +59,11 @@ class AutoregExperimentsArguments:
 
     """ Dataset details """
 
+    dataset_name: Optional[str] = field(
+        default = None,
+        metadata = {"help": "The dataset to use."}
+    )
+
     num_rules: Optional[int] = field(
         default = None,
         metadata = {"help": "The number of rules to use."}
@@ -89,43 +94,28 @@ class AutoregExperimentsArguments:
         metadata = {"help": "The probability of a variable in the antecedent being true."}
     )
 
-    min_ante_prob: Optional[float] = field(
-        default = 0.25,
-        metadata = {"help": "The minimum probability of a variable in the antecedent being true."}
-    )
-
-    max_ante_prob: Optional[float] = field(
-        default = 0.25,
-        metadata = {"help": "The maximum probability of a variable in the antecedent being true."}
-    )
-
     conseq_prob: Optional[float] = field(
         default = None,
         metadata = {"help": "The probability of a variable in the consequent being true."}
     )
 
-    min_conseq_prob: Optional[float] = field(
-        default = 0.25,
-        metadata = {"help": "The minimum probability of a variable in the consequent being true."}
+    state_prob: Optional[float] = field(
+        default = None,
+        metadata = {"help": "The probability of a variable in the consequent being true."}
     )
 
-    max_conseq_prob: Optional[float] = field(
-        default = 0.25,
-        metadata = {"help": "The maximum probability of a variable in the consequent being true."}
-    )
-
-    chain_len: Optional[int] = field(
-        default = 3,
-        metadata = {"help": "The attmepted length of the deduction chain for a random dataset."}
+    exp_hots: Optional[float] = field(
+        default = None,
+        metadata = {"help": "The number of expected hot bits in the scaled prob setting."}
     )
 
     min_chain_len: Optional[int] = field(
-        default = 2,
+        default = None,
         metadata = {"help": "The minimum attmepted length of the deduction chain for a random dataset."}
     )
 
     max_chain_len: Optional[int] = field(
-        default = 5,
+        default = None,
         metadata = {"help": "The maximum attmepted length of the deduction chain for a random dataset."}
     )
 
@@ -167,7 +157,7 @@ class AutoregExperimentsArguments:
     )
 
     logging_steps: int = field(
-        default = 64,
+        default = 16,
         metadata = {"help": "How often the HF's Trainer logs."}
     )
 
@@ -180,41 +170,49 @@ def synexp_args_to_wandb_run_name(args: AutoregExperimentsArguments):
                 (f"_L{args.num_layers}" if args.num_layers is not None else "") + \
                 (f"_H{args.num_heads}" if args.num_heads is not None else "")
 
-    return f"SynSAR_{model_str}_" + \
-        f"_nv{args.num_vars}" + \
-        f"_ns{args.num_steps}" + \
-        f"_nr{args.min_num_rules}-{args.max_num_rules}" + \
-        f"_ap{args.min_ante_prob:.2f}-{args.max_ante_prob:.2f}" + \
-        f"_bp{args.min_conseq_prob:.2f}-{args.max_conseq_prob:.2f}" + \
-        f"_cl{args.min_chain_len}-{args.max_chain_len}" + \
-        f"_ntr{args.train_len}_ntt{args.eval_len}_bsz{args.batch_size}" + \
-        f"_lr{args.learning_rate:.5f}" + \
-        f"_seed{args.seed}"
+    if args.dataset_name == "autoreg_fixed_prob":
+        dataset_str = f"DAF_nv{args.num_vars}" + \
+            f"_ns{args.num_steps}_nr{args.min_num_rules}-{args.max_num_rules}" + \
+            f"_ap{args.ante_prob:.3f}_bp{args.conseq_prob:.3f}_sp{args.state_prob:.3f}" + \
+            f"_cl{args.min_chain_len}-{args.max_chain_len}"
+
+    elif args.dataset_name == "autoreg_scaled_prob":
+        dataset_str = f"DAS_nv{args.num_vars}" + \
+            f"_ns{args.num_steps}_nr{args.min_num_rules}-{args.max_num_rules}" + \
+            f"_exph{args.exp_hots:.3f}" + \
+            f"_cl{args.min_chain_len}-{args.max_chain_len}"
+
+    elif args.dataset_name == "autoreg_custom":
+        dataset_str = f"DMY_nv{args.num_vars}_nr{args.num_rules}_exph{args.exp_hots:.3f}"
+
+    else:
+        raise ValueError(f"Unknown dataset name {args.dataset_name}")
+
+    train_steps = args.train_len * args.num_epochs // args.batch_size
+
+    train_str = f"ntr{args.train_len}_ntt{args.eval_len}_bsz{args.batch_size}" + \
+            f"_steps{train_steps}_lr{args.learning_rate:.5f}_seed{args.seed}"
+
+    return f"SynSAR_{model_str}__{dataset_str}__{train_str}"
 
 
 def autoreg_ksteps_metrics(eval_preds):
-    if isinstance(eval_preds.predictions, tuple):
-        logits = eval_preds.predictions[0]
-    else:
-        logits = eval_preds.predictions
+    logits, labels = eval_preds
+    logits = logits[0] if isinstance(logits, tuple) else logits
+    _, num_steps, num_vars = logits.shape
     preds = (logits > 0).astype(np.int64)
-    avg_ones = np.mean(preds)
-
-    # Element-wise comparison of everything
-    elems_acc = np.mean(preds == eval_preds.label_ids)
-    states_acc = np.mean(np.mean(preds == eval_preds.label_ids, axis=2) > 1 - 1e-5)
-
-    # Only do accuracy check on the final state
-    target_elems_acc = np.mean(preds[:,-1] == eval_preds.label_ids[:,-1])
-    target_states_acc = np.mean(np.mean(preds[:,-1] == eval_preds.label_ids[:,-1], axis=1) > 1 - 1e-5)
-
-    return {
-        "ElemsAcc": elems_acc,
-        "StatesAcc": states_acc,
-        "TargetElemsAcc": target_elems_acc,
-        "TargetStatesAcc": target_states_acc,
-        "AvgOnes": avg_ones,
+    # Get an accuracy for each step
+    metrics = {
+        "AvgOnes": np.mean(preds),
     }
+
+    for k in range(num_steps):
+        this_state_acc = np.mean(np.sum(preds[:,k] == labels[:,k], axis=-1) == num_vars)
+        upto_state_acc = np.mean(np.sum(preds[:,0:k+1] == labels[:,0:k+1], axis=(-1,-2)) == (k+1) * num_vars)
+        metrics[f"AtStep{k+1}Acc"] = this_state_acc
+        metrics[f"UpToStep{k+1}Acc"] = upto_state_acc
+
+    return metrics
 
 
 def make_trainer_for_autoreg(
@@ -222,27 +220,6 @@ def make_trainer_for_autoreg(
     report_to: str = "wandb"
 ):
     """ Make a Hugging Face Trainer object """
-    train_dataset = AutoregKStepsTokensDataset(
-        num_vars = args.num_vars,
-        num_rules_range = (args.min_num_rules, args.max_num_rules),
-        ante_prob_range = (args.min_ante_prob, args.max_ante_prob),
-        conseq_prob_range = (args.min_conseq_prob, args.max_conseq_prob),
-        chain_len_range = (args.min_chain_len, args.max_chain_len),
-        num_prevs_range = (1, args.min_chain_len),
-        num_steps = args.num_steps,
-        dataset_len = args.train_len
-    )
-
-    eval_dataset = AutoregKStepsTokensDataset(
-        num_vars = args.num_vars,
-        num_rules_range = (args.min_num_rules, args.max_num_rules),
-        ante_prob_range = (args.min_ante_prob, args.max_ante_prob),
-        conseq_prob_range = (args.min_conseq_prob, args.max_conseq_prob),
-        chain_len_range = (args.min_chain_len, args.max_chain_len),
-        num_prevs_range = (1, args.min_chain_len),
-        num_steps = args.num_steps,
-        dataset_len = args.eval_len
-    )
 
     seqcls_model = MyGPT2SeqClsModel(MyGPT2Config(
         input_dim = 2 * args.num_vars,
@@ -253,21 +230,110 @@ def make_trainer_for_autoreg(
         use_positional_embedding = False
     ))
 
-    task_model = AutoregKStepsTaskModel(
-        seqcls_model = seqcls_model,
-        num_steps = args.num_steps,
-        train_supervision_mode = "all"
-    )
+    if args.dataset_name == "autoreg_fixed_prob":
+        train_dataset = AutoregFixedProbTokensDataset(
+            num_vars = args.num_vars,
+            num_rules_range = (args.min_num_rules, args.max_num_rules),
+            ante_prob = args.ante_prob,
+            conseq_prob = args.conseq_prob,
+            state_prob = args.state_prob,
+            chain_len_range = (args.min_chain_len, args.max_chain_len),
+            num_prevs_range = (1, args.min_chain_len),
+            num_steps = args.num_steps,
+            dataset_len = args.train_len
+        )
 
+        eval_datasets = {
+            f"ap{p:.3f}_bp{p:.3f}_sp{p:.3f}":
+                AutoregFixedProbTokensDataset(
+                    num_vars = args.num_vars,
+                    num_rules_range = (args.min_num_rules, args.max_num_rules),
+                    ante_prob = p,
+                    conseq_prob = p,
+                    state_prob = p,
+                    chain_len_range = (args.min_chain_len, args.max_chain_len),
+                    num_prevs_range = (1, args.min_chain_len),
+                    num_steps = args.num_steps,
+                    dataset_len = args.eval_len
+                )
+            for p in [0.1, 0.2, 0.3, 0.4, 0.5]
+        }
+
+        task_model = AutoregKStepsTaskModel(
+            seqcls_model = seqcls_model,
+            num_steps = args.num_steps,
+            train_supervision_mode = "all"
+        )
+
+    elif args.dataset_name == "autoreg_scaled_prob":
+        train_dataset = AutoregScaledProbTokensDataset(
+            num_vars = args.num_vars,
+            num_rules_range = (args.min_num_rules, args.max_num_rules),
+            exp_hots = args.exp_hots,
+            chain_len_range = (args.min_chain_len, args.max_chain_len),
+            num_prevs_range = (1, args.min_chain_len),
+            num_steps = args.num_steps,
+            dataset_len = args.train_len
+        )
+        
+        eval_datasets = {
+            f"exph{h:.3f}":
+                AutoregScaledProbTokensDataset(
+                    num_vars = args.num_vars,
+                    num_rules_range = (args.min_num_rules, args.max_num_rules),
+                    exp_hots = h,
+                    chain_len_range = (args.min_chain_len, args.max_chain_len),
+                    num_prevs_range = (1, args.min_chain_len),
+                    num_steps = args.num_steps,
+                    dataset_len = args.eval_len
+                )
+            for h in [0.5, 1.0, 2.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+        }
+
+        task_model = AutoregKStepsTaskModel(
+            seqcls_model = seqcls_model,
+            num_steps = args.num_steps,
+            train_supervision_mode = "all"
+        )
+
+    elif args.dataset_name == "autoreg_custom":
+        train_dataset = AutoregCustomTokensDataset(
+            num_vars = args.num_vars,
+            num_rules = args.num_rules,
+            exp_hots = args.exp_hots,
+            dataset_len = args.train_len
+        )
+
+        eval_datasets = {
+            f"exph{h:.3f}":
+                AutoregCustomTokensDataset(
+                    num_vars = args.num_vars,
+                    num_rules = args.num_rules,
+                    exp_hots = args.exp_hots,
+                    dataset_len = args.eval_len
+                )
+            for h in [0.5, 1.0, 2.0, 3.0, 4.0]
+        }
+
+        task_model = AutoregKStepsTaskModel(
+            seqcls_model = seqcls_model,
+            num_steps = 3,
+            train_supervision_mode = "all"
+        )
+
+    else:
+        raise ValueError(f"Unknown dataset name {args.dataset_name}")
+
+    run_name = synexp_args_to_wandb_run_name(args)
     training_args = TrainingArguments(
-        str(Path(args.output_dir, synexp_args_to_wandb_run_name(args))),
+        str(Path(args.output_dir, run_name)),
         num_train_epochs = args.num_epochs,
         per_device_train_batch_size = args.batch_size,
         per_device_eval_batch_size = args.batch_size,
         auto_find_batch_size = args.auto_find_batch_size,
         evaluation_strategy = "epoch",
         report_to = report_to,
-        run_name = synexp_args_to_wandb_run_name(args),
+        run_name = run_name,
         logging_steps = args.logging_steps,
         learning_rate = args.learning_rate,
         warmup_ratio = 0.10,
@@ -279,10 +345,9 @@ def make_trainer_for_autoreg(
         task_model,
         training_args,
         train_dataset = train_dataset,
-        eval_dataset = eval_dataset,
+        eval_dataset = eval_datasets,
         compute_metrics = autoreg_ksteps_metrics
     )
-
 
 """ Main stuff """
 

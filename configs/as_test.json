@@ -1,0 +1,17 @@
+[{
+	"model_name": ["gpt2"],
+    "dataset_name": ["autoreg_custom"],
+    "num_vars": [48],
+    "embed_dim": [128, 112, 96, 80, 64, 48, 32],
+    "num_layers": [1],
+    "num_heads": [1],
+    "num_rules": [32],
+    "exp_hots": [3.0],
+    "train_len": [262144],
+    "eval_len": [65536],
+    "num_epochs": [16],
+    "batch_size": [512],
+    "learning_rate": [0.0005],
+    "seed": [604, 605]
+}]
+
