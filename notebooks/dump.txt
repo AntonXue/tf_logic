@@ -165,3 +165,60 @@
 [I 2024-05-20 00:22:37.451 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
 [I 2024-05-20 01:23:32.352 ServerApp] Starting buffering for b8d0a792-0591-4d7d-93b0-58a7160a4ab6:8afdb3b3-53e9-432a-98b6-2c772a46e18b
 [I 2024-05-20 01:23:32.352 ServerApp] Starting buffering for 13159ce6-aa75-44dc-af9c-87af4c36f479:925cf182-ffee-40cc-a935-597e55cbe04e
+[I 2024-05-20 13:30:23.635 ServerApp] 302 GET / (@127.0.0.1) 0.92ms
+[I 2024-05-20 13:30:30.241 ServerApp] Connecting to kernel 13159ce6-aa75-44dc-af9c-87af4c36f479.
+[I 2024-05-20 13:30:35.703 ServerApp] Connecting to kernel b8d0a792-0591-4d7d-93b0-58a7160a4ab6.
+[I 2024-05-20 13:30:38.783 ServerApp] Kernel restarted: b8d0a792-0591-4d7d-93b0-58a7160a4ab6
+[I 2024-05-20 13:30:38.817 ServerApp] Starting buffering for b8d0a792-0591-4d7d-93b0-58a7160a4ab6:b14e31bb-e960-440f-9f96-151eddbb9425
+[I 2024-05-20 13:30:38.826 ServerApp] Connecting to kernel b8d0a792-0591-4d7d-93b0-58a7160a4ab6.
+[I 2024-05-20 13:30:38.826 ServerApp] Restoring connection for b8d0a792-0591-4d7d-93b0-58a7160a4ab6:b14e31bb-e960-440f-9f96-151eddbb9425
+[I 2024-05-20 13:32:35.615 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
+[I 2024-05-20 14:17:50.421 ServerApp] Kernel restarted: 13159ce6-aa75-44dc-af9c-87af4c36f479
+[I 2024-05-20 14:17:50.479 ServerApp] Starting buffering for 13159ce6-aa75-44dc-af9c-87af4c36f479:65166a3c-b421-46c9-ba37-0360e520d99a
+[I 2024-05-20 14:17:50.486 ServerApp] Connecting to kernel 13159ce6-aa75-44dc-af9c-87af4c36f479.
+[I 2024-05-20 14:17:50.486 ServerApp] Restoring connection for 13159ce6-aa75-44dc-af9c-87af4c36f479:65166a3c-b421-46c9-ba37-0360e520d99a
+[I 2024-05-20 14:18:01.078 ServerApp] Kernel restarted: b8d0a792-0591-4d7d-93b0-58a7160a4ab6
+[I 2024-05-20 14:18:01.087 ServerApp] Starting buffering for b8d0a792-0591-4d7d-93b0-58a7160a4ab6:b14e31bb-e960-440f-9f96-151eddbb9425
+[I 2024-05-20 14:18:01.095 ServerApp] Connecting to kernel b8d0a792-0591-4d7d-93b0-58a7160a4ab6.
+[I 2024-05-20 14:18:01.095 ServerApp] Restoring connection for b8d0a792-0591-4d7d-93b0-58a7160a4ab6:b14e31bb-e960-440f-9f96-151eddbb9425
+[I 2024-05-20 14:18:49.448 ServerApp] Saving file at /experiments/exp2_theory_attacks.ipynb
+[I 2024-05-20 14:19:49.398 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
+[I 2024-05-20 15:36:52.810 ServerApp] Starting buffering for 13159ce6-aa75-44dc-af9c-87af4c36f479:65166a3c-b421-46c9-ba37-0360e520d99a
+[I 2024-05-20 15:36:52.811 ServerApp] Starting buffering for b8d0a792-0591-4d7d-93b0-58a7160a4ab6:b14e31bb-e960-440f-9f96-151eddbb9425
+[I 2024-05-20 16:56:16.297 ServerApp] 302 GET / (@127.0.0.1) 0.90ms
+[I 2024-05-20 16:56:21.666 ServerApp] Connecting to kernel 94110dfe-2da1-4771-b3c2-2ee55eec72c0.
+[I 2024-05-20 16:56:22.162 ServerApp] Starting buffering for 94110dfe-2da1-4771-b3c2-2ee55eec72c0:cb8af8c6-8a3d-4fdb-a712-1a3685b96cbc
+[I 2024-05-20 16:56:25.932 ServerApp] Connecting to kernel b8d0a792-0591-4d7d-93b0-58a7160a4ab6.
+[I 2024-05-20 16:56:28.614 ServerApp] Kernel restarted: b8d0a792-0591-4d7d-93b0-58a7160a4ab6
+[I 2024-05-20 16:56:28.623 ServerApp] Starting buffering for b8d0a792-0591-4d7d-93b0-58a7160a4ab6:b6f1b226-bc8a-470a-9c33-78d8242d7b5a
+[I 2024-05-20 16:56:28.632 ServerApp] Connecting to kernel b8d0a792-0591-4d7d-93b0-58a7160a4ab6.
+[I 2024-05-20 16:56:28.632 ServerApp] Restoring connection for b8d0a792-0591-4d7d-93b0-58a7160a4ab6:b6f1b226-bc8a-470a-9c33-78d8242d7b5a
+[I 2024-05-20 16:58:25.784 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
+[I 2024-05-20 16:59:55.859 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
+[W 2024-05-21 03:52:58.633 ServerApp] WebSocket ping timeout after 119995 ms.
+[I 2024-05-21 03:53:03.636 ServerApp] Starting buffering for b8d0a792-0591-4d7d-93b0-58a7160a4ab6:b6f1b226-bc8a-470a-9c33-78d8242d7b5a
+[I 2024-05-21 03:53:09.478 ServerApp] Connecting to kernel b8d0a792-0591-4d7d-93b0-58a7160a4ab6.
+[I 2024-05-21 03:53:09.478 ServerApp] Restoring connection for b8d0a792-0591-4d7d-93b0-58a7160a4ab6:b6f1b226-bc8a-470a-9c33-78d8242d7b5a
+[I 2024-05-21 04:25:26.323 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
+[I 2024-05-21 05:56:41.507 ServerApp] Starting buffering for b8d0a792-0591-4d7d-93b0-58a7160a4ab6:b6f1b226-bc8a-470a-9c33-78d8242d7b5a
+[I 2024-05-22 12:50:55.907 ServerApp] 302 GET / (@127.0.0.1) 0.88ms
+[I 2024-05-22 12:51:02.564 ServerApp] Connecting to kernel 94110dfe-2da1-4771-b3c2-2ee55eec72c0.
+[I 2024-05-22 12:51:12.818 ServerApp] Connecting to kernel 13159ce6-aa75-44dc-af9c-87af4c36f479.
+[I 2024-05-22 12:53:12.774 ServerApp] Saving file at /experiments/exp2_theory_attacks.ipynb
+[I 2024-05-22 12:55:12.906 ServerApp] Saving file at /experiments/exp2_theory_attacks.ipynb
+[I 2024-05-22 12:56:42.285 ServerApp] Kernel restarted: 13159ce6-aa75-44dc-af9c-87af4c36f479
+[I 2024-05-22 12:56:42.295 ServerApp] Starting buffering for 13159ce6-aa75-44dc-af9c-87af4c36f479:e6336434-a11c-44be-b90b-8c8549bf8123
+[I 2024-05-22 12:56:42.303 ServerApp] Connecting to kernel 13159ce6-aa75-44dc-af9c-87af4c36f479.
+[I 2024-05-22 12:56:42.303 ServerApp] Restoring connection for 13159ce6-aa75-44dc-af9c-87af4c36f479:e6336434-a11c-44be-b90b-8c8549bf8123
+[I 2024-05-22 12:57:04.332 ServerApp] Saving file at /experiments/exp2_theory_attacks.ipynb
+[I 2024-05-22 12:58:13.489 ServerApp] Saving file at /experiments/exp2_theory_attacks.ipynb
+[I 2024-05-22 12:58:13.646 ServerApp] Saving file at /experiments/exp2_theory_attacks.ipynb
+[I 2024-05-22 12:58:15.334 ServerApp] Saving file at /experiments/exp2_theory_attacks.ipynb
+[I 2024-05-22 12:58:15.468 ServerApp] Saving file at /experiments/exp2_theory_attacks.ipynb
+[I 2024-05-22 12:58:20.745 ServerApp] Kernel restarted: 13159ce6-aa75-44dc-af9c-87af4c36f479
+[I 2024-05-22 12:58:20.755 ServerApp] Starting buffering for 13159ce6-aa75-44dc-af9c-87af4c36f479:e6336434-a11c-44be-b90b-8c8549bf8123
+[I 2024-05-22 12:58:20.763 ServerApp] Connecting to kernel 13159ce6-aa75-44dc-af9c-87af4c36f479.
+[I 2024-05-22 12:58:20.763 ServerApp] Restoring connection for 13159ce6-aa75-44dc-af9c-87af4c36f479:e6336434-a11c-44be-b90b-8c8549bf8123
+[I 2024-05-22 13:00:15.582 ServerApp] Saving file at /experiments/exp2_theory_attacks.ipynb
+[I 2024-05-22 13:22:19.235 ServerApp] Saving file at /experiments/exp2_theory_attacks.ipynb
+[I 2024-05-22 13:24:19.352 ServerApp] Saving file at /experiments/exp2_theory_attacks.ipynb

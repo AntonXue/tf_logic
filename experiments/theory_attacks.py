@@ -251,7 +251,7 @@ def run_theory_attack_common(config):
                             ], dim=1)
 
                         elif config.attack_name == "knowledge_amnesia":
-                            atk_rule = torch.cat([torch.zeros(N,1,n), -L*hot(a,n)], dim=-1)
+                            atk_rule = torch.cat([torch.zeros(N,1,n).to(device), -L*hot(a,n)], dim=-1)
                             adv_suffix = torch.cat([
                                 atk_rule.view(N,1,-1).repeat(1,k-1,1),
                                 init_token.view(N,1,-1)
