@@ -43,10 +43,12 @@ def heatmap(data, row_labels, col_labels, row_title, col_title, ax=None,
     # Create colorbar
     cbar = ax.figure.colorbar(im, ax=ax, **cbar_kw)
     cbar.ax.set_ylabel(cbarlabel, rotation=-90, va="bottom")
+    cbar.ax.set_ylim(0.0, 1.0)
+    cbar.ax.tick_params(labelsize=16)
 
     # Show all ticks and label them with the respective list entries.
-    ax.set_xticks(np.arange(data.shape[1]), labels=col_labels)
-    ax.set_yticks(np.arange(data.shape[0]), labels=row_labels)
+    ax.set_xticks(np.arange(data.shape[1]), labels=col_labels, fontsize=18)
+    ax.set_yticks(np.arange(data.shape[0]), labels=row_labels, fontsize=18)
 
     # Let the horizontal axes labeling appear on top.
     ax.tick_params(top=False, bottom=True,
@@ -64,8 +66,8 @@ def heatmap(data, row_labels, col_labels, row_title, col_title, ax=None,
     ax.set_yticks(np.arange(data.shape[0]+1)-.5, minor=True)
     ax.grid(which="minor", color="w", linestyle='-', linewidth=3)
     ax.tick_params(which="minor", bottom=False, left=False)
-    ax.set_xlabel(col_title)
-    ax.set_ylabel(row_title)
+    ax.set_xlabel(col_title, fontsize=18)
+    ax.set_ylabel(row_title, fontsize=18)
 
     ax.xaxis.set_tick_params(size=0)
     ax.yaxis.set_tick_params(size=0)
@@ -126,7 +128,7 @@ def annotate_heatmap(im, data=None, valfmt="{x:.2f}",
     for i in range(data.shape[0]):
         for j in range(data.shape[1]):
             kw.update(color=textcolors[int(im.norm(data[i, j]) > threshold)])
-            text = im.axes.text(j, i, valfmt(data[i, j], None), **kw)
+            text = im.axes.text(j, i, valfmt(data[i, j], None), fontsize=14, **kw)
             texts.append(text)
 
     return texts
