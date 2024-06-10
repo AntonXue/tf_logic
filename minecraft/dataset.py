@@ -23,7 +23,8 @@ class MinecraftAutoregKStepsBaseDataset(Dataset):
         padding: str = "longest",
         task_type: str = "binary_classification",    # Binary classification or Next Token Prediction
         example_format: str = "text",                 # Text or Tags  
-        shuffle: bool = True
+        shuffle: bool = True,
+        depth_parallel: bool = False,
     ):
         assert task_type in ["binary_classification", "next_token_prediction"], "Task type should be either 'binary_classification' or 'next_token_prediction'"
         assert example_format in ["text", "tags"], "Example format should be either 'text' or 'tags'"
@@ -40,6 +41,7 @@ class MinecraftAutoregKStepsBaseDataset(Dataset):
         self.base_dataset = self.dataset.copy()
         self.dataset = self._generate_dataset_with_distractions()
         self.dataset_len = len(self.dataset)
+        self.depth_parallel = depth_parallel
         # Shuffle the dataset
         if shuffle:
             random.seed(seed)
@@ -49,9 +51,7 @@ class MinecraftAutoregKStepsBaseDataset(Dataset):
         return self.dataset_len
 
     def _get_minecraft_rules(self):
-        dataset_dir = (
-            r"/home/akhare/repos/Minecraft-Crafting-Web/minecraft-data/recipes"
-        )
+        dataset_dir = "minecraft/recipes"
         raw_rule_files = os.listdir(dataset_dir)
         raw_rule_files = [
             os.path.join(dataset_dir, f) for f in raw_rule_files if f.endswith(".json")
@@ -317,8 +317,9 @@ class MinecraftAutoregKStepsBaseDataset(Dataset):
 
         base_facts = recipe["facts"]
         rules = recipe["rules"]
-        derivable_facts = [{"antedecents": [], "fact": fact} for fact in base_facts]
+        derivable_facts = [{"antedecents": [], "fact": fact, "depth": -1} for fact in base_facts]
         can_derive = True
+        reasoning_depth = 0
 
         while can_derive:
             new_facts = []
@@ -334,7 +335,11 @@ class MinecraftAutoregKStepsBaseDataset(Dataset):
                 # If the fact is already derivable, skip
                 if fact in [fact["fact"] for fact in derivable_facts]:
                     continue
-                derivable_facts.append({"antecedents": antecedents, "fact": fact})
+                derivable_facts.append({"antecedents": antecedents, "fact": fact, "depth": reasoning_depth})
+            reasoning_depth += 1
+
+        # if len(derivable_facts) > 0:
+        #     print(f"Reasoning depth: {derivable_facts[-1]['depth']}")
 
         return derivable_facts[len(base_facts):]
 
@@ -412,7 +417,7 @@ class MinecraftAutoregKStepsBaseDataset(Dataset):
         if self.example_format == "tags":
             item = stringify_recipe_with_tags(recipe, self.task_type, cot_states)
         elif self.example_format == "text":
-            item = stringify_recipe_with_text(recipe, self.task_type, cot_states)
+            item = stringify_recipe_with_text(recipe, self.task_type, cot_states, depth_parallel=self.depth_parallel)
         else:
             raise Exception("Example format not supported. Supported example formats: text, tags")
         if not self.tokenizer:
@@ -448,6 +453,7 @@ class MinecraftAutoregKStepsNVarsDataset(MinecraftAutoregKStepsBaseDataset):
         task_type: str = "next_token_prediction",    # Binary classification or Next Token Prediction
         example_format: str = "text",                 # Text or Tags
         shuffle: bool = True,
+        depth_parallel: bool = False,
         calculate_num_vars_stats: bool = False
     ):
         assert (
@@ -465,7 +471,8 @@ class MinecraftAutoregKStepsNVarsDataset(MinecraftAutoregKStepsBaseDataset):
             padding=padding,
             task_type=task_type,
             example_format=example_format,
-            shuffle=shuffle
+            shuffle=shuffle,
+            depth_parallel=depth_parallel
         )
         if calculate_num_vars_stats:
             self.num_vars_histogram = [k["num_vars"] for k in self.dataset]
@@ -585,14 +592,18 @@ class MinecraftAutoregKStepsNVarsSupressAttackDataset(MinecraftAutoregKStepsNVar
         adv_params: dict = None,
         model: torch.nn.Module = None,          # Model to be attacked
         num_samples_per_recipe: int = 2,
-        shuffle: bool = True
+        shuffle: bool = True,
+        depth_parallel: bool = False,
+        only_qed: bool = False,                 # Only use qed recipes
     ):
         
         self.model = model
         self.adv_params = adv_params
         self.idx_to_recipe = {}
+        self.recipe_to_idx = {}
         self.num_samples_per_recipe = num_samples_per_recipe
         self.shuffle_dataset = shuffle
+        self.only_qed = only_qed
         super().__init__(
             num_steps=num_steps,
             num_vars_range=num_vars_range,
@@ -604,7 +615,8 @@ class MinecraftAutoregKStepsNVarsSupressAttackDataset(MinecraftAutoregKStepsNVar
             padding=padding,
             task_type=task_type,
             example_format=example_format,
-            shuffle=False       # Do not shuffle the dataset initially, to retain the idx to recipe mapping
+            shuffle=False,       # Do not shuffle the dataset initially, to retain the idx to recipe mapping
+            depth_parallel=depth_parallel
         )
 
     def _generate_dataset_with_distractions(self):
@@ -624,7 +636,10 @@ class MinecraftAutoregKStepsNVarsSupressAttackDataset(MinecraftAutoregKStepsNVar
         # TODO: Add support for num_samples_per_recipe < 2
         if num_samples_per_recipe < 2:
             raise Exception("Number of samples per recipe should be at least 2.")
-        num_qed_samples = num_samples_per_recipe // 2
+        if self.only_qed:
+            num_qed_samples = num_samples_per_recipe
+        else:
+            num_qed_samples = num_samples_per_recipe // 2
         for recipe in self.dataset:
             qed_samples = [
                 self._get_components_with_distrations(recipe, qed=True)
@@ -634,14 +649,23 @@ class MinecraftAutoregKStepsNVarsSupressAttackDataset(MinecraftAutoregKStepsNVar
                 self._get_components_with_distrations(recipe, qed=False)
                 for _ in range(num_samples_per_recipe - num_qed_samples)
             ]
-            # Alternate between qed and non-qed samples
-            dataset[idx] = []
-            for i in range(num_samples_per_recipe):
-                if i % 2 == 0:
-                    dataset[idx].append(qed_samples[i // 2])
-                else:
-                    dataset[idx].append(non_qed_samples[i // 2])
+            if self.only_qed:
+                dataset[idx] = qed_samples
+            else:
+                # Alternate between qed and non-qed samples
+                dataset[idx] = []
+                for i in range(num_samples_per_recipe):
+                    if i % 2 == 0:
+                        dataset[idx].append(qed_samples[i // 2])
+                    else:
+                        dataset[idx].append(non_qed_samples[i // 2])
             self.idx_to_recipe[idx] = recipe
+
+            rule_supressed_in_recipe = ((tuple(antecedents), consequent, depth) for (antecedents, consequent, depth) in recipe)
+            # sort the rules in the recipe and the rules in the sample
+            rule_supressed_in_recipe = sorted(rule_supressed_in_recipe, key=lambda x: (x[2], x[1]))
+            rule_supressed_in_recipe = tuple((tuple(sorted(antecedents)), consequent, depth) for (antecedents, consequent, depth) in rule_supressed_in_recipe)
+            self.recipe_to_idx[rule_supressed_in_recipe] = idx
             idx += 1
         print(f"Found {len(dataset)} recipes.")
         return dataset
@@ -669,8 +693,8 @@ class MinecraftAutoregKStepsNVarsSupressAttackDataset(MinecraftAutoregKStepsNVar
                 item = stringify_recipe_with_tags(recipe, self.task_type, cot_states)
                 adv_item = stringify_recipe_with_tags(recipe, self.task_type, adv_cot_states)
             elif self.example_format == "text":
-                item = stringify_recipe_with_text(recipe, self.task_type, cot_states)
-                adv_item = stringify_recipe_with_text(recipe, self.task_type, adv_cot_states)
+                item = stringify_recipe_with_text(recipe, self.task_type, cot_states, depth_parallel=self.depth_parallel)
+                adv_item = stringify_recipe_with_text(recipe, self.task_type, adv_cot_states, depth_parallel=self.depth_parallel)
             else:
                 raise Exception("Example format not supported. Supported example formats: text, tags")
             if not self.tokenizer:
@@ -691,6 +715,171 @@ class MinecraftAutoregKStepsNVarsSupressAttackDataset(MinecraftAutoregKStepsNVar
                 "recipe_rules": original_rules,
                 "distractor_rules": recipe["distractor_rules"],
                 "recipe_from_idx": self.idx_to_recipe[idx],
+                "facts": recipe["facts"],
+                "depth": recipe["depth"],
+            })
+
+        return items
+    
+class MinecraftAutoregKStepsNVarsCoerceAttackDataset(MinecraftAutoregKStepsNVarsDataset):
+    """Dataset for generating recipes with a specified number of variables."""
+
+    def __init__(
+        self,
+        num_steps: int,
+        num_vars_range: tuple[int, int],
+        dataset_len: int,
+        max_num_distractors: int = 2,  # Not used
+        max_num_distractors_triggerable: int = 99999,
+        seed: int = 101,
+        tokenizer=None,
+        padding: str = "longest",
+        task_type: str = "next_token_prediction",    # Binary classification or Next Token Prediction
+        example_format: str = "text",                 # Text or Tags
+        adv_params: dict = None,
+        model: torch.nn.Module = None,          # Model to be attacked
+        num_samples_per_target: int = 2,
+        shuffle: bool = True,
+        only_qed: bool = False,                 # Only use qed recipes
+    ):
+        
+        self.model = model
+        self.adv_params = adv_params
+        self.idx_to_target = {}
+        self.target_to_idx = {}
+        self.num_samples_per_target = num_samples_per_target
+        self.shuffle_dataset = shuffle
+        self.only_qed = only_qed
+        super().__init__(
+            num_steps=num_steps,
+            num_vars_range=num_vars_range,
+            dataset_len=dataset_len,
+            max_num_distractors=max_num_distractors,
+            max_num_distractors_triggerable=max_num_distractors_triggerable,
+            seed=seed,
+            tokenizer=tokenizer,
+            padding=padding,
+            task_type=task_type,
+            example_format=example_format,
+            shuffle=False       # Do not shuffle the dataset initially, to retain the idx to recipe mapping
+        )
+
+    def _generate_dataset_with_distractions(self):
+        """Generate the dataset with distractors.
+        The dataset is generated by taking the original dataset and adding distractors to it.
+        The size of the new dataset matches the requirement by creating multiple copies of the samples from the original dataset and randomly adding distractions.
+        The dataset is balanced with half the samples being qed and the other half being non-qed.
+        """
+
+        if self.shuffle_dataset:
+            random.seed(self.seed)
+            random.shuffle(self.dataset)
+
+        dataset = {}
+        idx = 0
+        num_samples_per_target = self.num_samples_per_target
+
+        # TODO: Add support for num_samples_per_recipe < 2
+        # if num_samples_per_target < 2:
+        #     raise Exception("Number of samples per recipe should be at least 2.")
+        if self.only_qed:
+            num_qed_samples = num_samples_per_target
+        else:
+            num_qed_samples = num_samples_per_target // 2
+        qed_samples, non_qed_samples, targets = [], [], []
+        facts = []
+        for recipe in self.dataset:
+            qed_samples.extend(
+                self._get_components_with_distrations(recipe, qed=True)
+                for _ in range(num_qed_samples)
+            )
+            non_qed_samples.extend(
+                self._get_components_with_distrations(recipe, qed=False)
+                for _ in range(num_samples_per_target - num_qed_samples)
+            )
+            recipe_components = self._get_components(recipe)
+            facts.extend(recipe_components['facts'])
+            # if len(recipe_components["facts"]) > 1:
+            #     # print("More than one fact")
+            #     # print(f"Facts: {recipe_components['facts']}")
+            #     targets.append((recipe_components["facts"][1], recipe_components["facts"][0]))
+            # else:
+            #     print("No 2 facts")
+            #     targets.append((recipe_components["target"], recipe_components["facts"][0]))
+
+        # Create random batches of qed and non-qed samples of size num_samples_per_target
+        random.shuffle(targets)
+        random.shuffle(qed_samples)
+        random.shuffle(non_qed_samples)
+
+        facts = set(facts)
+
+        # print(targets)
+        for i in range(len(self.dataset)):
+            target = random.sample(facts, 2)
+            if self.only_qed:
+                dataset[idx] = qed_samples[i * num_samples_per_target: (i + 1) * num_samples_per_target]
+            else:
+                dataset[idx] = []
+                for j in range(num_samples_per_target):
+                    if j % 2 == 0:
+                        dataset[idx].append(qed_samples[i * num_samples_per_target + j])
+                    else:
+                        dataset[idx].append(non_qed_samples[i * num_samples_per_target + j])
+            target[0] = target[0].replace("minecraft:", "").replace("_", " ")
+            target[1] = target[1].replace("minecraft:", "").replace("_", " ")
+            self.idx_to_target[idx] = (target[0], target[1])
+            self.target_to_idx[(target[0], target[1])] = idx
+            # self.idx_to_target[idx] = targets[i]
+            # self.target_to_idx[targets[i]] = idx
+            idx += 1
+
+        print(f"Found {len(dataset)} recipes.")
+        return dataset
+    
+    def __getitem__(self, idx):
+        recipes = self.dataset[idx]
+        items = []
+
+        for recipe in recipes:
+            # Use getitem from the parent class
+            qed = recipe["qed"]
+            if qed:
+                labels = torch.tensor(1).long()
+            else:
+                labels = torch.tensor(0).long()
+
+            cot_states = self._get_chain_of_thought_for_recipe_with_antecedents(recipe)
+
+            if self.example_format == "tags":
+                item = stringify_recipe_with_tags(recipe, self.task_type, cot_states)
+            elif self.example_format == "text":
+                item = stringify_recipe_with_text(recipe, self.task_type, cot_states)
+            else:
+                raise Exception("Example format not supported. Supported example formats: text, tags")
+            if not self.tokenizer:
+                return Exception("Tokenizer not provided.")
+            encoding = self.tokenizer(item, truncation=True, padding=self.padding)
+
+            # print(f"Recipe: {recipe}")
+            # print(f"Coerced: ", self.idx_to_target[idx])
+            
+            _, target = stringify_recipe_with_text({"rules": [], "facts": []}, self.task_type, cot_states=[{"antecedents": [self.idx_to_target[idx][0]], "fact": self.idx_to_target[idx][1]}], return_states=True)
+
+            items.append({
+                "data": item,
+                "attack_target_from_idx": self.idx_to_target[idx],
+                "attack_target": target.replace("minecraft:", "").replace("_", " "),
+                "labels": labels,
+                "input_ids": encoding.input_ids,
+                "attention_mask": encoding.attention_mask,
+                "recipe": recipe,
+                "cot_states": cot_states,
+                "num_vars": recipe["num_vars"] if "num_vars" in recipe else None,
+                "target": recipe["target"].replace("minecraft:", "").replace("_", " ") if self.example_format == "text"
+                        else recipe["target"].replace("minecraft:", ""),
+                "recipe_rules": recipe["rules"],
+                "distractor_rules": recipe["distractor_rules"],
                 "facts": recipe["facts"],
                 "depth": recipe["depth"],
             })
