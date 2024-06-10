@@ -94,6 +94,7 @@ if __name__ == "__main__":
         default="test_autoreg_experiments_config.json",
         help="Path to JSON config file.",
     )
+
     parser.add_argument(
         "--log_file",
         type=str,

@@ -1,0 +1,28 @@
+[{
+	"model_name": ["gpt2"],
+    "dataset_name": ["autoreg_scaled_prob"],
+    "seed": [571],
+    "num_steps": [3],
+    "min_chain_len": [3],
+    "max_chain_len": [5],
+    "nd_pairs": [
+        [64, 128],
+        [56, 112],
+        [48, 96],
+        [40, 80],
+        [32, 64],
+        [24, 48],
+        [16, 32]
+    ],
+    "num_layers": [2],
+    "num_heads": [2],
+    "min_num_rules": [16],
+    "max_num_rules": [32],
+    "exp_hots": [4.0],
+    "train_len": [524288],
+    "eval_len": [65536],
+    "num_epochs": [16],
+    "batch_size": [512],
+    "learning_rate": [0.0005]
+}]
+

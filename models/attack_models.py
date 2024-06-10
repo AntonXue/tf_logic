@@ -1,14 +1,14 @@
 import copy
 from typing import Optional
 from dataclasses import dataclass
-from models.__init__ import AutoSeqClsModel
 import torch
 import torch.nn as nn
 from transformers.utils import ModelOutput
-from transformers import GPT2Model
+# from transformers import GPT2Config, GPT2Model
+from transformers import GPT2ForSequenceClassification, AutoModelForSequenceClassification
 
 from .common import *
-# from models import AutoTaskModel, AutoSeqClsModel
+from .task_models import AutoregKStepsTaskModel
 
 
 """ Different attacker models """
@@ -17,22 +17,17 @@ from .common import *
 class AttackerModelOutput(ModelOutput):
     loss: Optional[torch.FloatTensor] = None
     logits: Optional[torch.FloatTensor] = None
-    attack_tokens: Optional[torch.FloatTensor] = None
-    bin_attack_tokens: Optional[torch.LongTensor] = None
+    others: Optional[dict] = None
 
 
 class AttackWrapperModel(nn.Module):
     def __init__(
         self,
-        reasoner_model: SeqClsModel,
-        num_attack_tokens: int,
-        token_range: str = "unbounded",
+        reasoner_model: AutoregKStepsTaskModel,
+        attack_name: str,
+        num_attack_tokens: int = 1,
     ):
         super().__init__()
-        assert token_range in ["unbounded", "clamped"]
-        self.token_range = token_range
-        self.num_attack_tokens = num_attack_tokens
-
         # Set up the reasoner model
         reasoner_model = copy.deepcopy(reasoner_model)
         for p in reasoner_model.parameters():
@@ -41,13 +36,34 @@ class AttackWrapperModel(nn.Module):
         self.reasoner_model = reasoner_model
 
         self.num_vars = reasoner_model.num_labels
-        self.attacker_model = GPT2Model.from_pretrained("gpt2")
-        self.embed_dim = self.attacker_model.embed_dim
+        self.token_dim = 2 * self.num_vars
 
-        self.tokens_embed_fn = nn.Linear(2 * self.num_vars, self.embed_dim)
-        self.labels_embed_fn = nn.Linear(self.num_vars, self.embed_dim)
-        self.cls_head = nn.Linear(self.embed_dim, 2 * self.num_vars)
+        # Set up the attacker model
+        assert attack_name in ["suppress_rule", "knowledge_amnesia", "coerce_state"]
+        self.attack_name = attack_name
+        self.num_attack_tokens = num_attack_tokens
 
+        """
+        self.attacker_model = AutoModelForSequenceClassification.from_pretrained(
+            "vicuna-13b-v1.5",
+            num_labels = self.num_attack_tokens * self.token_dim,
+            problem_type = "multi_label_classification",
+            torch_dtype = "auto"
+        )
+        """
+
+        self.attacker_model = GPT2ForSequenceClassification.from_pretrained(
+            "gpt2",
+            num_labels = self.num_attack_tokens * self.token_dim,
+            problem_type = "multi_label_classification",
+            pad_token_id = -1
+        )
+        self.atk_embed_dim = self.attacker_model.transformer.embed_dim
+
+        # Special thing here
+        self.tokens_embed_fn = nn.Linear(self.token_dim, self.atk_embed_dim)
+        self.hints_embed_fn = nn.Linear(self.num_vars, self.atk_embed_dim)
+        self.loss_fn = nn.BCEWithLogitsLoss()
 
     def train(self, mode=True):
         """ We don't want the seqcls_model under attack to be in training mode """
@@ -57,47 +73,46 @@ class AttackWrapperModel(nn.Module):
     def forward(
         self,
         tokens: torch.LongTensor,
-        labels: torch.LongTensor,   # The adversarial target
+        labels: Optional[torch.LongTensor] = None,
+        hints: Optional[torch.Tensor] = None,
     ):
-
         N, L, _ = tokens.shape
-        tokens, labels = tokens.float(), labels.float()
+        tokens = tokens.float()
 
         # Query the attacker model
-        atk_inputs_embeds = torch.cat([
+        if hints is not None:
+            atk_inputs_embeds = torch.cat([
+                self.hints_embed_fn(hints.float()).view(N,-1,self.atk_embed_dim),
                 self.tokens_embed_fn(tokens).view(N,L,-1),
-                self.labels_embed_fn(labels).view(N,1,-1),
-            ], dim=1
-        )
-
-        atk_hidden_state = self.attacker_model(inputs_embeds=atk_inputs_embeds).last_hidden_state
-        atk_logits = self.cls_head(atk_hidden_state)[:,:self.num_attack_tokens]
-
-        # Depending on the token mode, clamp if necessary and binarize accordingly
-        if self.token_range == "clamped":
-            atk_tokens = (atk_logits*0.5 + 0.5).clamp(0,1)
-            bin_atk_tokens = (atk_tokens > 0.5).long()
+            ], dim=1)
         else:
-            atk_tokens = atk_logits
-            bin_atk_tokens = (atk_tokens > 0.0).long()
+            atk_inputs_embeds = self.tokens_embed_fn(tokens)
 
-        # Adversarial (and its binary version) to the reasoner model and query it
-        adv_inputs = torch.cat([tokens, atk_tokens], dim=1)
-        res_out = self.reasoner_model(adv_inputs)
-        res_logits = res_out.logits[:,0] # The first item of the autoreg sequence
+        atk_logits = self.attacker_model(inputs_embeds=atk_inputs_embeds).logits
+        atk_logits = atk_logits.view(N, self.num_attack_tokens, self.token_dim)
 
-        with torch.no_grad():
-            # Don't apply grad here because binarization as we wrote is not differentiable
-            bin_adv_inputs = torch.cat([tokens, bin_atk_tokens], dim=1)
-            bin_res_out = self.reasoner_model(bin_adv_inputs)
-            bin_res_logits = bin_res_out.logits[:,0]
+        adv_tokens = torch.cat([tokens, atk_logits], dim=1)
+        res_out = self.reasoner_model(tokens=adv_tokens)
+        res_logits = res_out.logits
 
-        loss = nn.BCEWithLogitsLoss()(res_logits, labels.float())
+        loss = None
+        if labels is not None:
+            # The final atk_logit's conseqs acted as the initial state
+            all_logits = torch.cat([
+                # atk_logits[:,-1:,self.num_vars:],
+                res_logits
+            ], dim=1)
+
+            labels = labels[:,1:]
+
+            loss = self.loss_fn(all_logits, labels.float())
+
         return AttackerModelOutput(
             loss = loss,
-            logits = torch.stack([res_logits, bin_res_logits], dim=1), # (N,2,n),
-            attack_tokens = atk_tokens,
-            bin_attack_tokens = bin_atk_tokens
+            logits = atk_logits,
+            others = {
+                "reasoner_output": res_out,
+            }
         )
 
 

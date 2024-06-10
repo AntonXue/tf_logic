@@ -16,6 +16,10 @@ import pandas as pd
 from common import *
 from utils.model_loader_utils import *
 
+sys.path.insert(0, PROJ_ROOT)
+print(sys.path)
+from my_datasets.utils.logic_utils import step_rules
+
 
 @dataclass
 class TheoryAttackExperimentsArguments:
@@ -24,182 +28,404 @@ class TheoryAttackExperimentsArguments:
         metadata = {"help": "Output directory for theory attacks."}
     )
 
-    attack_name: Optional[str] = field(
-        default = None,
-        metadata = {"help": "The experiment to run."}
-    )
-
     config_file: Optional[str] = field(
         default = None,
         metadata = {"help": "Where the config file is."}
     )
 
-    experiment_seed: int = field(
-        default = 1234,
-        metadata = {"help": "The seed to use for initializing stuff."}
-    )
-
-    batch_size: int = field(
-        default = 256,
-        metadata = {"help": "The batch size for evaluating stuff."}
-    )
-
     device: str = field(
-        default = "cuda",
+        default = "cpu",
     )
 
+def hot(i, n):
+    return F.one_hot(i, n)
 
-@torch.no_grad()
-def run_big_token_attack(args):
-    config = Namespace(**json.load(open(args.config_file)))
-    assert config.num_samples % args.batch_size == 0
+def load_model_and_dataset(
+    num_vars: int,
+    embed_dim: int,
+    train_seed: int,
+    reasoner_type: str,
+    num_reasoner_steps: int = 3,    # Default number of steps
+):
+    model, dataset = load_model_and_dataset_from_big_grid(
+        embed_dim = embed_dim,
+        num_vars = num_vars,
+        seed = train_seed
+    )
 
-    saveto_file = Path(args.output_dir, "theory_attack_big_token.csv")
-    print(f"Will save to: {saveto_file}")
+    if num_reasoner_steps is not None:
+        model.num_steps = num_reasoner_steps
 
-    df = pd.DataFrame(columns=[
-        "train_seed", "num_vars", "embed_dim", "kappa_power", "elems_acc", "states_acc"
-    ])
+    if reasoner_type == "theory":
+        model = TheoryAutoregKStepsModel(num_vars=num_vars, num_steps=model.num_steps)
 
-    df_idx = 0
-
-    for train_seed in config.train_seeds:
-        for nd_pair in config.nd_pairs:
-            n, d = nd_pair
-            model, dataset = load_model_and_dataset_from_big_grid(
-                embed_dim = d,
-                num_vars = n,
-                num_steps = 3, # TODO: change
-                seed = train_seed,
-                dataset_len = config.num_samples,
-            )
-
-            model.eval().to(args.device)
-            dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
-
-            for kappa_power in config.kappa_powers:
-                kappa = torch.tensor(10. ** kappa_power)
-                num_dones, acc_elem_hits, acc_state_hits = 0, 0, 0
-                pbar = tqdm(dataloader)
-
-                for batch in pbar:
-                    batch_tokens = batch["tokens"].to(args.device)
-                    # Slice out the first rule to make the length correct
-                    batch_tokens = batch_tokens[:,1:]
-                    tgt_state = (torch.rand(args.batch_size, n) < 0.5).long().to(args.device)
-                    tgt_scaled = tgt_state - kappa * (1 - tgt_state)
-
-                    adv_token = torch.cat([torch.zeros_like(tgt_scaled), tgt_scaled.float()], dim=1)
-                    all_tokens = torch.cat([batch_tokens, adv_token.view(-1,1,2*n)], dim=1)
-                    out = model(all_tokens)
-                    pred = (out.logits[:,0] > 0).long()
-                    num_dones += batch_tokens.size(0)
-                    acc_elem_hits += (tgt_state == pred).float().mean(dim=1).sum()
-                    acc_state_hits += ((tgt_state == pred).sum(dim=1) == n).sum()
-                    elems_acc = acc_elem_hits / num_dones
-                    states_acc = acc_state_hits / num_dones
-
-                    desc_str = f"n {n}, d {d}, log(k) {kappa_power:.3f}: "
-                    desc_str += f"N {num_dones}, elems {elems_acc:.3f}, states {states_acc:.3f}"
-                    pbar.set_description(desc_str)
-
-                this_df = pd.DataFrame({
-                    "train_seed": train_seed,
-                    "num_vars": n,
-                    "embed_dim": d,
-                    "kappa_power": kappa_power,
-                    "elems_acc": elems_acc.item(),
-                    "states_acc": states_acc.item(),
-                }, index=[df_idx])
-
-                df_idx += 1
-
-                df = pd.concat([df, this_df])
-                df.to_csv(saveto_file)
-
-            print(f"Done with: trseed {train_seed}, n {n}, d {d}")
+    model.eval()
+    return model, dataset
 
 
 @torch.no_grad()
-def run_repeat_token_attack(args):
-    config = Namespace(**json.load(open(args.config_file)))
-    assert config.num_samples % args.batch_size == 0
+def run_coerce_state_variance_attack(config):
+    """ Coerce state attack gets its own thing """
+    assert config.attack_name == "coerce_state_variance"
+    device = config.device
+    bsz = config.batch_size
 
-    saveto_file = Path(args.output_dir, "theory_attack_repeat_token.csv")
-    print(f"Will save to: {saveto_file}")
-
+    saveto_file = Path(config.output_dir, "theory_coerce_state_variance.csv")
     df = pd.DataFrame(columns=[
-        "train_seed", "num_vars", "embed_dim", "elems_acc", "states_acc"
+        "num_samples",
+        "reasoner_type", "train_seed", "num_vars", "embed_dim", "num_copies", "variance"
     ])
 
-    df_idx = 0
 
     for train_seed in config.train_seeds:
-        for nd_pair in config.nd_pairs:
-            n, d = nd_pair
-            model, dataset = load_model_and_dataset_from_big_grid(
-                embed_dim = d,
-                num_vars = n,
-                num_steps = 3, # TODO: change
-                seed = train_seed,
-                dataset_len = config.num_samples,
-                max_test_seq_len = 2**16,
-            )
+        for reasoner_type in config.reasoner_types:
+            for (n, embed_dim) in config.nd_pairs:
+                res_model, res_dataset = load_model_and_dataset(
+                    num_vars = n,
+                    embed_dim = embed_dim,
+                    train_seed = train_seed,
+                    reasoner_type = reasoner_type,
+                )
 
-            # We need to make the context length very big
+                res_model.eval().to(device)
+                num_samples = config.num_samples
+                atk_dataset = CoerceStateDataset(res_dataset, 4, num_samples)
+                L = atk_dataset[0]["tokens"].size(0)
+                hotp = atk_dataset.hot_prob
 
-            model.eval().to(args.device)
-            dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
+                for k in config.num_copies:
+                    pbar = tqdm(range(num_samples))
+                    num_dones, total_var = 0, 0.
+                    for idx in pbar:
+                        item = atk_dataset[idx]
 
-            for repeat_power in config.repeat_powers:
-                num_repeats = 2 ** repeat_power
-                num_dones, acc_elem_hits, acc_state_hits = 0, 0, 0
-                pbar = tqdm(dataloader)
+                        # Make the attack suffix
+                        infos = item["infos"].to(device)
+                        targets = item["hints"].to(device)
+                        tgt1, tgt2, tgt3 = targets.chunk(3, dim=0) # (1,2n) each
+                        tgt0 = (torch.rand(1,n) < hotp).long().to(device)
 
-                for batch in pbar:
-                    batch_tokens = batch["tokens"].to(args.device)
-                    tgt_state = (torch.rand(args.batch_size, n) < 0.5).long().to(args.device)
-                    tgt_repeated = tgt_state.view(-1,1,n).repeat(1,num_repeats,1)
-                    adv_tokens = torch.cat([torch.zeros_like(tgt_repeated), tgt_repeated], dim=2)
-                    all_tokens = torch.cat([batch_tokens, adv_tokens.float()], dim=1)
-                    out = model(all_tokens)
-                    pred = (out.logits[:,0] > 0).long()
-                    num_dones += batch_tokens.size(0)
-                    acc_elem_hits += (tgt_state == pred).float().mean(dim=1).sum()
-                    acc_state_hits += ((tgt_state == pred).sum(dim=1) == n).sum()
-                    elems_acc = acc_elem_hits / num_dones
-                    states_acc = acc_state_hits / num_dones
+                        atk_rule1 = torch.cat([tgt0, 2*L*(tgt1-0.5)], dim=-1)
+                        atk_rule2 = torch.cat([tgt1, 2*L*(tgt2-0.5)], dim=-1)
+                        atk_rule3 = torch.cat([tgt2, 2*L*(tgt3-0.5)], dim=-1)
+                        atk_rules = torch.cat([atk_rule1, atk_rule2, atk_rule3], dim=0).repeat(k,1)
+                        init_token = torch.cat([torch.zeros_like(tgt0), 2*L*(tgt0-0.5)], dim=-1)
+                        adv_suffix = torch.cat([atk_rules, init_token], dim=0)
 
-                    desc_str = f"n {n}, d {d}, nr {num_repeats}: "
-                    desc_str += f"N {num_dones}, elems {elems_acc:.3f}, states {states_acc:.3f}"
-                    pbar.set_description(desc_str)
+                        # Make the other tokens and query the model
+                        other_tokens = (torch.rand(bsz, *item["tokens"].shape) < hotp).long().to(device)
+                        adv_tokens = torch.cat([
+                            other_tokens,
+                            adv_suffix.view(1,-1,2*n).repeat(bsz,1,1)
+                        ], dim=1)
 
-                this_df = pd.DataFrame({
-                    "train_seed": train_seed,
-                    "num_vars": n,
-                    "embed_dim": d,
-                    "repeat_power": int(repeat_power),
-                    "elems_acc": elems_acc.item(),
-                    "states_acc": states_acc.item(),
-                }, index=[df_idx])
+                        adv_out = res_model(tokens=adv_tokens)
+                        adv_pred = (adv_out.logits > 0).long()
+                        var = adv_pred.float().var(dim=0).mean()
 
-                df_idx += 1
+                        # Some stats
+                        num_dones += 1
+                        total_var += var
+                        avg_var = total_var / num_dones
+                        desc = f"{reasoner_type} ndk ({n},{embed_dim},{k}), var {avg_var:.6f}"
+                        pbar.set_description(desc)
 
-                df = pd.concat([df, this_df])
-                df.to_csv(saveto_file)
+                    # Done with this combination of (n,d,k), so save
+                    save_dict = {
+                        "num_samples": num_samples,
+                        "reasoner_type": reasoner_type,
+                        "train_seed": train_seed,
+                        "num_vars": n,
+                        "embed_dim": embed_dim,
+                        "num_copies": k,
+                        "variance": avg_var.item()
+                    }
 
-            print(f"Done with: trseed {train_seed}, n {n}, d {d}")
+                    this_df = pd.DataFrame(save_dict, index=[0])
+                    df = pd.concat([df, this_df], ignore_index=True)
+                    df.to_csv(saveto_file, index=False)
+
+
+@torch.no_grad()
+def run_theory_attack_common(config):
+    """ We can only do this because there's lots of similarities between the
+        suppress rule and amnesia attacks
+    """
+    assert config.attack_name in ["suppress_rule", "knowledge_amnesia", "coerce_state"]
+    assert config.num_samples % config.batch_size == 0
+
+    common_col_names = [
+        "num_samples",
+        "reasoner_type", "train_seed", "num_vars", "embed_dim", "num_attack_tokens",
+        "raw_state_acc",
+        "adv_ns1_state_acc", "adv_ns2_state_acc", "adv_ns3_state_acc",
+        "adv_ns1_atk_wts", "adv_ns2_atk_wts", "adv_ns3_atk_wts"
+    ]
+
+    if config.attack_name == "suppress_rule":
+        saveto_file = Path(config.output_dir, "theory_suppress_rule.csv")
+        df = pd.DataFrame(columns=common_col_names + [
+            "adv_ns1_suppd_wts", "adv_ns2_suppd_wts", "adv_ns3_suppd_wts",
+            "adv_ns1_other_wts", "adv_ns2_other_wts", "adv_ns3_other_wts",
+        ])
+
+    elif config.attack_name == "knowledge_amnesia":
+        saveto_file = Path(config.output_dir, "theory_knowledge_amnesia.csv")
+        df = pd.DataFrame(columns=common_col_names)
+
+    elif config.attack_name == "coerce_state":
+        saveto_file = Path(config.output_dir, "theory_coerce_state.csv")
+        df = pd.DataFrame(columns=common_col_names)
+
+    else:
+        raise ValueError(f"Unknown config.attack_name {config.attack_name}")
+
+    device = config.device
+
+    print(f"Will save to: {saveto_file}")
+
+    for train_seed in config.train_seeds:
+        for reasoner_type in config.reasoner_types:
+            for (n, embed_dim) in config.nd_pairs:
+                res_model, res_dataset = load_model_and_dataset(
+                    num_vars = n,
+                    embed_dim = embed_dim,
+                    train_seed = train_seed,
+                    reasoner_type = reasoner_type,
+                )
+
+                res_model.eval().to(device)
+
+                for k in config.num_attack_tokens:
+                    # We may repeat k-1 times
+                    if config.attack_name == "suppress_rule":
+                        atk_dataset = SuppressRuleDataset(res_dataset, k, config.num_samples)
+                    elif config.attack_name == "knowledge_amnesia":
+                        atk_dataset = KnowledgeAmnesiaDataset(res_dataset, k, config.num_samples)
+                    elif config.attack_name == "coerce_state":
+                        atk_dataset = CoerceStateDataset(res_dataset, 4, config.num_samples)
+
+                    dataloader = DataLoader(atk_dataset, batch_size=config.batch_size)
+
+                    num_dones = 0
+                    raw_elems_hits, raw_state_hits = 0, 0
+                    adv_ns1_elems_hits, adv_ns1_state_hits = 0, 0
+                    adv_ns2_elems_hits, adv_ns2_state_hits = 0, 0
+                    adv_ns3_elems_hits, adv_ns3_state_hits = 0, 0
+                    adv_ns1_atk_wts_total, adv_ns2_atk_wts_total, adv_ns3_atk_wts_total = 0., 0., 0.
+                    adv_ns1_suppd_wts_total, adv_ns2_suppd_wts_total, adv_ns3_suppd_wts_total = 0., 0., 0.
+                    adv_ns1_other_wts_total, adv_ns2_other_wts_total, adv_ns3_other_wts_total = 0., 0., 0.
+
+                    pbar = tqdm(dataloader)
+                    for i, batch in enumerate(pbar):
+                        raw_tokens = batch["tokens"].to(device)
+                        N, L = raw_tokens.size(0), raw_tokens.size(1)
+
+                        adv_labels = batch["labels"].to(device)
+                        if adv_labels.size(1) == 4:
+                            adv_labels = adv_labels[:,1:]
+                        assert adv_labels.shape == (N,3,n)  # (N,3,n)
+
+                        infos = batch["infos"].to(device)
+                        a, b, c, d, e, f, g, h = infos.chunk(infos.size(-1), dim=-1)
+
+                        # Output of the raw token sequence (i.e., without attacks)
+                        raw_labels = torch.cat([
+                            hot(a,n) + hot(b,n) + hot(c,n) + hot(d,n),
+                            hot(a,n) + hot(b,n) + hot(c,n) + hot(d,n) + hot(e,n) + hot(f,n),
+                            hot(a,n) + hot(b,n) + hot(c,n) + hot(d,n) + hot(e,n) + hot(f,n) + hot(g,n)
+                        ], dim=1)
+
+                        raw_out = res_model(tokens=raw_tokens, output_attentions=True)
+                        raw_pred = (raw_out.logits > 0).long()
+
+                        # Now add the known adversarial rule form and run it through the model
+                        init_token = torch.cat([torch.zeros(N,1,n).to(device), hot(a,n)], dim=-1) # (N,2n)
+
+                        if config.attack_name == "suppress_rule":
+                            # Try to suppress the rule c,d -> f
+                            atk_rule = torch.cat([hot(c,n) + hot(d,n), -1*hot(f,n)], dim=-1)
+                            adv_suffix = torch.cat([
+                                atk_rule.view(N,1,2*n).repeat(1,k-1,1),
+                                init_token.view(N,1,-1)
+                            ], dim=1)
+
+                        elif config.attack_name == "knowledge_amnesia":
+                            atk_rule = torch.cat([torch.zeros(N,1,n).to(device), -L*hot(a,n)], dim=-1)
+                            adv_suffix = torch.cat([
+                                atk_rule.view(N,1,-1).repeat(1,k-1,1),
+                                init_token.view(N,1,-1)
+                            ], dim=1)
+
+                        elif config.attack_name == "coerce_state":
+                            """
+                            hotp = atk_dataset.hot_prob
+                            atk_ante = hot(a,n).view(N,1,n)
+                            atk_conseq = (torch.rand(N,1,n) < hotp).long().to(device)
+                            atk_conseq = atk_conseq - L*(1 - atk_conseq)
+                            atk_rule = torch.cat([atk_ante, atk_conseq], dim=-1)
+                            adv_suffix = torch.cat([
+                                atk_rule.repeat(1,k-1,1),
+                                init_token
+                            ], dim=1)
+                            adv_labels = (atk_conseq > 0).long()
+                            """
+
+                            tgt1, tgt2, tgt3 = batch["hints"].chunk(3, dim=1)
+                            tgt0 = hot(a,n).view(-1,1,n)
+                            atk_rule1 = torch.cat([tgt0, L*(tgt1 - 0.5)], dim=-1)
+                            atk_rule2 = torch.cat([tgt1, L*(tgt2 - 0.5)], dim=-1)
+                            atk_rule3 = torch.cat([tgt2, L*(tgt3 - 0.5)], dim=-1)
+
+                            # atk_rule1 = torch.cat([hot(a,n), L*(2*tgt1 - 1)], dim=-1)
+                            # atk_rule2 = torch.cat([tgt1, L*(2*tgt2 - 1)], dim=-1)
+                            # atk_rule3 = torch.cat([tgt2, L*(2*tgt3 - 1)], dim=-1)
+
+                            adv_suffix = torch.cat([
+                                atk_rule1,
+                                atk_rule2,
+                                atk_rule3,
+                                init_token.view(N,1,-1)
+                            ], dim=1)
+
+
+                        adv_tokens = torch.cat([raw_tokens, adv_suffix], dim=1)
+                        adv_out = res_model(tokens=adv_tokens, output_attentions=True)
+                        adv_pred = (adv_out.logits > 0).long()
+
+                        # Now compute some metrics
+                        num_dones += raw_tokens.size(0)
+                        all_raw_hits = raw_pred == raw_labels   # (N,3,n)
+                        raw_elems_hits += all_raw_hits.float().mean(dim=(1,2)).sum()
+                        raw_state_hits += all_raw_hits.all(dim=-1).all(dim=-1).sum()
+
+                        all_adv_hits = adv_pred == adv_labels   # (N,3,n)
+                        adv_ns1_elems_hits += all_adv_hits[:,0:1].float().mean(dim=(1,2)).sum()
+                        adv_ns2_elems_hits += all_adv_hits[:,0:2].float().mean(dim=(1,2)).sum()
+                        adv_ns3_elems_hits += all_adv_hits[:,0:3].float().mean(dim=(1,2)).sum()
+
+                        adv_ns1_state_hits += all_adv_hits[:,0:1].all(dim=-1).all(dim=-1).sum()
+                        adv_ns2_state_hits += all_adv_hits[:,0:2].all(dim=-1).all(dim=-1).sum()
+                        adv_ns3_state_hits += all_adv_hits[:,0:3].all(dim=-1).all(dim=-1).sum()
+
+                        # Attention metrics
+                        if reasoner_type == "learned":
+                            adv_out1, adv_out2, adv_out3 = adv_out.all_seqcls_outputs
+                            adv_attn1 = adv_out1.attentions[0][:,0] # (N, r+k, r+k)
+                            adv_attn2 = adv_out2.attentions[0][:,0] # (N, r+k+1, r+k+1)
+                            adv_attn3 = adv_out3.attentions[0][:,0] # (N, r+k+2, r+k+2)
+
+                        elif reasoner_type == "theory":
+                            adv_attn1, adv_attn2, adv_attn3 = adv_out.attentions
+
+                        # Cumulative attention weight of the k attack tokens
+                        adv_ns1_atk_wts_total += adv_attn1[:,-1,L:L+k].sum()
+                        adv_ns2_atk_wts_total += adv_attn2[:,-1,L:L+k].sum()
+                        adv_ns3_atk_wts_total += adv_attn3[:,-1,L:L+k].sum()
+
+                        if config.attack_name == "suppress_rule":
+                            # Try to suppress the rule c,d -> f
+                            suppd_idx = batch["cdf_index"].to(device)
+                            other_idx = batch["bce_index"].to(device)
+                            adv_ns1_suppd_wts_total += adv_attn1[:,-1].gather(1, suppd_idx.view(-1,1)).sum()
+                            adv_ns2_suppd_wts_total += adv_attn2[:,-1].gather(1, suppd_idx.view(-1,1)).sum()
+                            adv_ns3_suppd_wts_total += adv_attn3[:,-1].gather(1, suppd_idx.view(-1,1)).sum()
+
+                            adv_ns1_other_wts_total += adv_attn1[:,-1].gather(1, other_idx.view(-1,1)).sum()
+                            adv_ns2_other_wts_total += adv_attn2[:,-1].gather(1, other_idx.view(-1,1)).sum()
+                            adv_ns3_other_wts_total += adv_attn3[:,-1].gather(1, other_idx.view(-1,1)).sum()
+
+                        # Compute stats
+                        desc = f"{reasoner_type} ndk ({n},{embed_dim},{k}), N {num_dones}: "
+
+                        raw_elems_acc = raw_elems_hits / num_dones
+                        raw_state_acc = raw_state_hits / num_dones
+                        desc += f"raw ({raw_elems_acc:.2f},{raw_state_acc:.2f}), "
+
+                        adv_ns1_elems_acc = adv_ns1_elems_hits / num_dones
+                        adv_ns2_elems_acc = adv_ns2_elems_hits / num_dones
+                        adv_ns3_elems_acc = adv_ns3_elems_hits / num_dones
+
+                        adv_ns1_state_acc = adv_ns1_state_hits / num_dones
+                        adv_ns2_state_acc = adv_ns2_state_hits / num_dones
+                        adv_ns3_state_acc = adv_ns3_state_hits / num_dones
+                        desc += f"adv ({adv_ns1_elems_acc:.2f},{adv_ns1_state_acc:.2f} # " + \
+                                    f"{adv_ns2_elems_acc:.2f},{adv_ns2_state_acc:.2f} # " + \
+                                    f"{adv_ns3_elems_acc:.2f},{adv_ns3_state_acc:.2f}), "
+
+                        adv_ns1_atk_wts = adv_ns1_atk_wts_total / num_dones
+                        adv_ns2_atk_wts = adv_ns2_atk_wts_total / num_dones
+                        adv_ns3_atk_wts = adv_ns3_atk_wts_total / num_dones
+                        desc += f"atk ({adv_ns1_atk_wts:.2f},{adv_ns2_atk_wts:.2f},{adv_ns3_atk_wts:.2f}), "
+
+                        if config.attack_name == "suppress_rule":
+                            adv_ns1_suppd_wts = adv_ns1_suppd_wts_total / num_dones
+                            adv_ns2_suppd_wts = adv_ns2_suppd_wts_total / num_dones
+                            adv_ns3_suppd_wts = adv_ns3_suppd_wts_total / num_dones
+                            desc += f"suppd ({adv_ns1_suppd_wts:.2f}," + \
+                                        f"{adv_ns2_suppd_wts:.2f},{adv_ns3_suppd_wts:.2f}), "
+
+                            adv_ns1_other_wts = adv_ns1_other_wts_total / num_dones
+                            adv_ns2_other_wts = adv_ns2_other_wts_total / num_dones
+                            adv_ns3_other_wts = adv_ns3_other_wts_total / num_dones
+                            desc += f"other ({adv_ns1_other_wts:.2f}," + \
+                                        f"{adv_ns2_other_wts:.2f},{adv_ns3_other_wts:.2f}), "
+
+                        pbar.set_description(desc)
+                        # End inner for loop
+
+                    # Things to save that are common to all attacks
+                    save_dict = {
+                        "num_samples": config.num_samples,
+                        "reasoner_type": reasoner_type,
+                        "train_seed": train_seed,
+                        "num_vars": n,
+                        "embed_dim": embed_dim,
+                        "num_attack_tokens": k,
+                        "raw_state_acc": raw_state_acc.item(),
+                        "adv_ns1_state_acc": adv_ns1_state_acc.item(),
+                        "adv_ns2_state_acc": adv_ns2_state_acc.item(),
+                        "adv_ns3_state_acc": adv_ns3_state_acc.item(),
+                        "adv_ns1_atk_wts": adv_ns1_atk_wts.item(),
+                        "adv_ns2_atk_wts": adv_ns2_atk_wts.item(),
+                        "adv_ns3_atk_wts": adv_ns3_atk_wts.item(),
+                    }
+
+                    # Attack-specific additions
+                    if config.attack_name == "suppress_rule":
+                        other_dict = {
+                            "adv_ns1_suppd_wts": adv_ns1_suppd_wts.item(),
+                            "adv_ns2_suppd_wts": adv_ns2_suppd_wts.item(),
+                            "adv_ns3_suppd_wts": adv_ns3_suppd_wts.item(),
+                            "adv_ns1_other_wts": adv_ns1_other_wts.item(),
+                            "adv_ns2_other_wts": adv_ns2_other_wts.item(),
+                            "adv_ns3_other_wts": adv_ns3_other_wts.item(),
+                        }
+                        save_dict = save_dict | other_dict
+
+                    this_df = pd.DataFrame(save_dict, index=[0])
+                    df = pd.concat([df, this_df], ignore_index=True)
+                    df.to_csv(saveto_file, index=False)
 
 
 if __name__ == "__main__":
     parser = HfArgumentParser(TheoryAttackExperimentsArguments)
     args = parser.parse_args_into_dataclasses()[0]
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
+    config = Namespace(**json.load(open(args.config_file)))
 
-    if args.attack_name == "big_token":
-        run_big_token_attack(args)
-    elif args.attack_name == "repeat_token":
-        run_repeat_token_attack(args)
+    # Set up the configs
+    config.output_dir = args.output_dir
+    config.device = args.device
+
+    if config.attack_name == "coerce_state_variance":
+        ret = run_coerce_state_variance_attack(config)
+
+    elif config.attack_name in ["suppress_rule", "knowledge_amnesia", "coerce_state"]:
+        ret = run_theory_attack_common(config)
+
+    else:
+        raise ValueError(f"Unknown attack name {config.attack_name}")
 
 
 

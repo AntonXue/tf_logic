@@ -80,7 +80,9 @@ def stringify_recipe_with_text(
         recipe: dict,
         task_type: str,
         cot_states: list,
-        shuffle: bool = True
+        shuffle: bool = True,
+        depth_parallel: bool = False,
+        return_states: bool = False
 ):
     """Convert the components of a recipe to a string representation with text.
     The text representation is as follows:
@@ -119,11 +121,28 @@ def stringify_recipe_with_text(
                 for state in cot_states
             ]
         )
+        if depth_parallel:
+            states = ""
+            if len(cot_states) > 0:
+                reasoning_depth = cot_states[-1]["depth"]
+                for d in range(reasoning_depth+1):
+                    derivations_at_d = [state for state in cot_states if state["depth"] == d]
+                    antecedents_at_d = []
+                    facts_at_d = []
+                    for state in derivations_at_d:
+                        antecedents_at_d.extend(state['antecedents'])
+                        facts_at_d.append(state['fact'])
+                    states += f"I have {' and '.join(antecedents_at_d)} and so I can create {' and '.join(facts_at_d)}."
+                    states += " "
+                states = states.strip()
         # final_str = f"{rules}\n{facts}\n{states}".replace("_", " ")
         final_str = f"""Here are some crafting recipes: \n{rules}\nHere are some items I have: \n{facts}\nBased on the items I have and the crafting recipes, I can create the following items: \n{states}\nI cannot create any other items."""
         final_str = final_str.replace("_", " ")
     else:
         raise Exception("Task type not supported. Supported task types: binary_classification, next_token_prediction")
+    
+    if return_states:
+        return final_str, states
     return final_str.replace("minecraft:", "")
 
 
