@@ -8,6 +8,8 @@ from .utils import stringify_recipe_with_tags, stringify_recipe_with_text
 
 """
 TODO: Add support for disjoint train and test datasets
+
+Note: The getitem method will always return the same item for a given idx but the order of rules and facts will be shuffled.
 """
 
 class MinecraftAutoregKStepsBaseDataset(Dataset):
@@ -20,7 +22,8 @@ class MinecraftAutoregKStepsBaseDataset(Dataset):
         tokenizer=None,
         padding: str = "longest",
         task_type: str = "binary_classification",    # Binary classification or Next Token Prediction
-        example_format: str = "text"                 # Text or Tags  
+        example_format: str = "text",                 # Text or Tags  
+        shuffle: bool = True
     ):
         assert task_type in ["binary_classification", "next_token_prediction"], "Task type should be either 'binary_classification' or 'next_token_prediction'"
         assert example_format in ["text", "tags"], "Example format should be either 'text' or 'tags'"
@@ -33,11 +36,14 @@ class MinecraftAutoregKStepsBaseDataset(Dataset):
         self.padding = padding
         self.dataset_len = dataset_len
         self.dataset = self._generate_base_dataset()
+        # Retain a copy of the original dataset
+        self.base_dataset = self.dataset.copy()
         self.dataset = self._generate_dataset_with_distractions()
         self.dataset_len = len(self.dataset)
         # Shuffle the dataset
-        random.seed(seed)
-        random.shuffle(self.dataset)
+        if shuffle:
+            random.seed(seed)
+            random.shuffle(self.dataset)
 
     def __len__(self):
         return self.dataset_len
@@ -132,10 +138,6 @@ class MinecraftAutoregKStepsBaseDataset(Dataset):
         Returns:
             recipes: List of all recipes for an item (all ways to craft an item)
         """
-        # print(f"Item to craft: {item}")
-        # print(f"Items so far: {items_so_far}")
-        # print(f"Depth: {depth}")
-        # print("----" * 10)
         recipes = []
         for antecedents, consequents, _ in rules:
             # If any antececent is in items so far, skip
@@ -242,14 +244,10 @@ class MinecraftAutoregKStepsBaseDataset(Dataset):
             for antecedent in rule[0]
             if antecedent not in derivables
         ]
-        # print("Recipe: ", recipe)
-        # print(f"Rules: {rules}")
-        # print("Derivables: ", derivables)
-        # print(f"Facts: {facts}")
-        # print("----" * 10)
         target = [rule[1] for rule in recipe if rule[2] == 0][0]
+        depth = max(rule[2] for rule in recipe)
 
-        return {"rules": rules, "facts": facts, "target": target}
+        return {"rules": rules, "facts": facts, "target": target, "depth": depth, "derivables": derivables}
 
     def _get_components_with_distrations(self, recipe: list, qed: bool = True):
         """Get the components of a recipe with distractors.
@@ -273,57 +271,46 @@ class MinecraftAutoregKStepsBaseDataset(Dataset):
         ]
 
         if qed:
+            facts = recipe_components["facts"] + [
+                antecedent
+                for distractor in distractor_components
+                for antecedent in distractor["rules"][0][0]
+            ]
+            # Remove any recipe derivables from the facts
+            facts = [fact for fact in facts if fact not in recipe_components["derivables"]]
             return {
                 "rules": recipe_components["rules"]
                 + [distractor["rules"][0] for distractor in distractor_components],
-                "facts": recipe_components["facts"]
-                + [
-                    antecedent
-                    for distractor in distractor_components
-                    for antecedent in distractor["rules"][0][0]
-                ],
+                "facts": facts,
                 "target": recipe_components["target"],
                 "qed": True,
+                "distractor_rules": [distractor["rules"][0] for distractor in distractor_components],
+                "depth": recipe_components["depth"],
             }
 
         # If not qed, choose a random subset of rules and facts (cannot include all facts)
+        facts = random.sample(
+            recipe_components["facts"],
+            random.randint(0, len(recipe_components["facts"]) - 1),
+        ) + [
+            antecedent
+            for distractor in distractor_components
+            for antecedent in distractor["rules"][0][0]
+        ]
+        # Remove any recipe derivables from the facts
+        facts = [fact for fact in facts if fact not in recipe_components["derivables"]]
         return {
             "rules": random.sample(
                 recipe_components["rules"],
                 random.randint(0, len(recipe_components["rules"])),
             )
             + [distractor["rules"][0] for distractor in distractor_components],
-            "facts": random.sample(
-                recipe_components["facts"],
-                random.randint(0, len(recipe_components["facts"]) - 1),
-            )
-            + [
-                antecedent
-                for distractor in distractor_components
-                for antecedent in distractor["rules"][0][0]
-            ],
+            "facts": facts,
             "target": recipe_components["target"],
             "qed": False,
+            "distractor_rules": [distractor["rules"][0] for distractor in distractor_components],
+            "depth": recipe_components["depth"],
         }
-    
-    def _get_chain_of_thought_for_recipe(self, recipe: dict):
-        """Get the sequence of derivable facts for a recipe."""
-
-        base_facts = recipe["facts"]
-        rules = recipe["rules"]
-        derivable_facts = base_facts
-        can_derive = True
-        
-        while can_derive:
-            new_facts = []
-            for rule in rules:
-                if all(antecedent in derivable_facts for antecedent in rule[0]):
-                    new_facts.append(rule[1])
-            # If new facts are already derivable, stop
-            if all(fact in derivable_facts for fact in new_facts):
-                can_derive = False
-            derivable_facts = derivable_facts + list(set(new_facts) - set(derivable_facts))
-        return derivable_facts[len(base_facts):]
     
     def _get_chain_of_thought_for_recipe_with_antecedents(self, recipe: dict):
         """Get the sequence of derivable facts for a recipe including the antecedents that are used to derive the facts."""
@@ -365,19 +352,12 @@ class MinecraftAutoregKStepsBaseDataset(Dataset):
         for item in all_items:
             all_recipes_for_item = self._get_all_recipes_for_item(item, rules)
             for recipe in all_recipes_for_item:
-                # print(f"Max depth: {max([rule[2] for rule in recipe])}")
-                # print(recipe)
-                # print("----" * 10)
-                # Check if depth < num_steps
-                if max([rule[2] for rule in recipe]) < self.num_steps:
-                    continue
                 # Cut off the recipe at num_steps
+                # print(f"Recipe: {recipe}")
                 if self.num_steps >= 0:
                     recipe_with_num_steps = [
                         rule for rule in recipe if rule[2] <= self.num_steps
                     ]
-                    # print(f"Recipe with num steps: {recipe_with_num_steps}")
-                    # print("=======" * 10)
                 else:
                     recipe_with_num_steps = recipe
                 # Add the recipe to the list of all recipes
@@ -390,8 +370,8 @@ class MinecraftAutoregKStepsBaseDataset(Dataset):
         print("Number of unique recipes after removing loops: ", len(all_recipes))
 
         # for recipe in all_recipes:
-        #     print("Recipe: ", recipe)
-        #     print("----" * 10)
+        #     print(f"Recipe after unique: {recipe}")
+
         return all_recipes
 
     def _generate_dataset_with_distractions(self):
@@ -418,60 +398,6 @@ class MinecraftAutoregKStepsBaseDataset(Dataset):
             ]
             dataset.extend(qed_samples + non_qed_samples)
         return dataset
-
-    def _stringify_recipe(
-        self,
-        recipe: dict,
-        cot_states: list,
-        rule_start_tag: str = "[RULES_START]",
-        rule_end_tag: str = "[RULES_END]",
-        fact_start_tag: str = "[FACTS_START]",
-        fact_end_tag: str = "[FACTS_END]",
-        target_start_tag: str = "[TARGET_START]",
-        target_end_tag: str = "[TARGET_END]",
-        rules_separator: str = " , ",
-        facts_separator: str = " , ",
-        rules_ante_conseq_separator: str = " -> ",
-        rules_ante_separator: str = " + ",
-        cot_states_start_tag: str = "[STATES_START]",
-        cot_states_end_tag: str = "[STATES_END]",
-        cot_states_separator: str = " , ",
-    ):
-        """Convert the components of a recipe to a string representation.
-
-        Args:
-            recipe (dict): The components of the recipe
-            rule_start_tag (str, optional): Start tag for rules. Defaults to "[RULES_START]".
-            rule_end_tag (str, optional): End tag for rules. Defaults to "[RULES_END]".
-            fact_start_tag (str, optional): Start tag for facts. Defaults to "[FACTS_START]".
-            fact_end_tag (str, optional): End tag for facts. Defaults to "[FACTS_END]".
-            target_start_tag (str, optional): Start tag for target. Defaults to "[TARGET_START]".
-            target_end_tag (str, optional): End tag for target. Defaults to "[TARGET_END]".
-            rules_separator (str, optional): Separator for rules. Defaults to " , ".
-            facts_separator (str, optional): Separator for facts. Defaults to " , ".
-            rules_ante_conseq_separator (str, optional): Separator for antecedents and consequents in rules. Defaults to " -> ".
-            rules_ante_separator (str, optional): Separator for antecedents in rules. Defaults to " + ".
-
-        Returns:
-            str: String representation of the recipe (<rules_start_tag> <rules> <rules_end_tag> <facts_start_tag> <facts> <facts_end_tag> <target_start_tag> <target> <target_end_tag>)
-        """
-
-        rules = rules_separator.join(
-            [
-                f"{rules_ante_separator.join(rule[0])} {rules_ante_conseq_separator} {rule[1]}"
-                for rule in recipe["rules"]
-            ]
-        )
-        facts = facts_separator.join(recipe["facts"])
-        if self.task_type == "binary_classification":
-            target = recipe["target"]
-            final_str = f"{rule_start_tag} {rules} {rule_end_tag} {fact_start_tag} {facts} {fact_end_tag} {target_start_tag} {target} {target_end_tag}"
-        elif self.task_type == "next_token_prediction":
-            states = cot_states_separator.join(cot_states)
-            final_str = f"{rule_start_tag} {rules} {rule_end_tag} {fact_start_tag} {facts} {fact_end_tag} {cot_states_start_tag} {states} {cot_states_end_tag}"
-        else:
-            raise Exception("Task type not supported. Supported task types: binary_classification, next_token_prediction")
-        return final_str.replace("minecraft:", "")
 
     def __getitem__(self, idx):
         recipe = self.dataset[idx]
@@ -520,7 +446,9 @@ class MinecraftAutoregKStepsNVarsDataset(MinecraftAutoregKStepsBaseDataset):
         tokenizer=None,
         padding: str = "longest",
         task_type: str = "next_token_prediction",    # Binary classification or Next Token Prediction
-        example_format: str = "text"                 # Text or Tags
+        example_format: str = "text",                 # Text or Tags
+        shuffle: bool = True,
+        calculate_num_vars_stats: bool = False
     ):
         assert (
             num_vars_range[0] <= num_vars_range[1]
@@ -536,16 +464,18 @@ class MinecraftAutoregKStepsNVarsDataset(MinecraftAutoregKStepsBaseDataset):
             tokenizer=tokenizer,
             padding=padding,
             task_type=task_type,
-            example_format=example_format
+            example_format=example_format,
+            shuffle=shuffle
         )
-        self.num_vars_histogram = [k["num_vars"] for k in self.dataset]
-        self.num_vars_histogram = {
-            k: self.num_vars_histogram.count(k) for k in self.num_vars_histogram
-        }
-        self.num_vars_histogram_with_samples = {
-            k: [recipe for recipe in self.dataset if recipe["num_vars"] == k]
-            for k in self.num_vars_histogram
-        }
+        if calculate_num_vars_stats:
+            self.num_vars_histogram = [k["num_vars"] for k in self.dataset]
+            self.num_vars_histogram = {
+                k: self.num_vars_histogram.count(k) for k in self.num_vars_histogram
+            }
+            self.num_vars_histogram_with_samples = {
+                k: [recipe for recipe in self.dataset if recipe["num_vars"] == k]
+                for k in self.num_vars_histogram
+            }
 
     def _get_components_with_distrations(self, recipe: list, qed: bool = True):
         """Get the components of a recipe with distractors such that the number of variables is within the specified range.
@@ -559,6 +489,7 @@ class MinecraftAutoregKStepsNVarsDataset(MinecraftAutoregKStepsBaseDataset):
             components (dict): Dictionary containing the components (rules, facts, target)
         """
         recipe_components = self._get_components(recipe)
+        # print("Recipe components: ", recipe_components)
         # Number of vars is the number of unique items in the recipe (antecedents + consequents)
         vars_in_recipe = set(
             [antecedent for rule in recipe for antecedent in rule[0]]
@@ -587,9 +518,22 @@ class MinecraftAutoregKStepsNVarsDataset(MinecraftAutoregKStepsBaseDataset):
             num_vars_in_recipe = len(vars_in_recipe)
             distractor_components.append(self._get_components(distractor_recipe))
 
-        distractor_facts = set(antecedent for distractor in distractor_components for antecedent in distractor["rules"][0][0])
         # Limit the number of distractors to the maximum number of distractors triggerable
-        distractor_facts = random.sample(distractor_facts, min(self.max_num_distractors_triggerable, len(distractor_facts)))
+        # Only consider components where the antecedents are not in recipe derivables
+        components_for_facts = [
+                distractor for distractor in distractor_components if all(antecedent not in recipe_components["derivables"] for antecedent in distractor["rules"][0][0])
+            ]
+        # print(f"Recipe components: {recipe_components}")
+        # # Print the distractor components that are not considered
+        # print(f"Distractor components not considered:")
+        # for distractor in distractor_components:
+        #     if distractor not in components_for_facts:
+        #         print(distractor)
+        if len(distractor_components) > self.max_num_distractors_triggerable:
+            distractor_facts = set(antecedent for distractor in random.sample(components_for_facts, min(self.max_num_distractors_triggerable, len(components_for_facts))) for antecedent in distractor["rules"][0][0])
+        else:
+            distractor_facts = set(antecedent for distractor in components_for_facts for antecedent in distractor["rules"][0][0])
+        # distractor_facts = random.sample(distractor_facts, min(self.max_num_distractors_triggerable, len(distractor_facts)))
 
         if qed:
             facts = set(recipe_components["facts"]).union(distractor_facts)
@@ -601,6 +545,8 @@ class MinecraftAutoregKStepsNVarsDataset(MinecraftAutoregKStepsBaseDataset):
                 "qed": True,
                 "num_vars": num_vars_in_recipe,
                 "vars_in_recipe": vars_in_recipe,
+                "distractor_rules": [distractor["rules"][0] for distractor in distractor_components],
+                "depth": recipe_components["depth"]
             }
 
         # If not qed, choose a random subset of facts (cannot include all facts)
@@ -617,4 +563,138 @@ class MinecraftAutoregKStepsNVarsDataset(MinecraftAutoregKStepsBaseDataset):
             "qed": False,
             "num_vars": num_vars_in_recipe,
             "vars_in_recipe": vars_in_recipe,
+            "distractor_rules": [distractor["rules"][0] for distractor in distractor_components],
+            "depth": recipe_components["depth"]
         }
+    
+class MinecraftAutoregKStepsNVarsSupressAttackDataset(MinecraftAutoregKStepsNVarsDataset):
+    """Dataset for generating recipes with a specified number of variables."""
+
+    def __init__(
+        self,
+        num_steps: int,
+        num_vars_range: tuple[int, int],
+        dataset_len: int,
+        max_num_distractors: int = 2,  # Not used
+        max_num_distractors_triggerable: int = 99999,
+        seed: int = 101,
+        tokenizer=None,
+        padding: str = "longest",
+        task_type: str = "next_token_prediction",    # Binary classification or Next Token Prediction
+        example_format: str = "text",                 # Text or Tags
+        adv_params: dict = None,
+        model: torch.nn.Module = None,          # Model to be attacked
+        num_samples_per_recipe: int = 2,
+        shuffle: bool = True
+    ):
+        
+        self.model = model
+        self.adv_params = adv_params
+        self.idx_to_recipe = {}
+        self.num_samples_per_recipe = num_samples_per_recipe
+        self.shuffle_dataset = shuffle
+        super().__init__(
+            num_steps=num_steps,
+            num_vars_range=num_vars_range,
+            dataset_len=dataset_len,
+            max_num_distractors=max_num_distractors,
+            max_num_distractors_triggerable=max_num_distractors_triggerable,
+            seed=seed,
+            tokenizer=tokenizer,
+            padding=padding,
+            task_type=task_type,
+            example_format=example_format,
+            shuffle=False       # Do not shuffle the dataset initially, to retain the idx to recipe mapping
+        )
+
+    def _generate_dataset_with_distractions(self):
+        """Generate the dataset with distractors.
+        The dataset is generated by taking the original dataset and adding distractors to it.
+        The size of the new dataset matches the requirement by creating multiple copies of the samples from the original dataset and randomly adding distractions.
+        The dataset is balanced with half the samples being qed and the other half being non-qed.
+        """
+
+        if self.shuffle_dataset:
+            random.seed(self.seed)
+            random.shuffle(self.dataset)
+
+        dataset = {}
+        idx = 0
+        num_samples_per_recipe = self.num_samples_per_recipe
+        # TODO: Add support for num_samples_per_recipe < 2
+        if num_samples_per_recipe < 2:
+            raise Exception("Number of samples per recipe should be at least 2.")
+        num_qed_samples = num_samples_per_recipe // 2
+        for recipe in self.dataset:
+            qed_samples = [
+                self._get_components_with_distrations(recipe, qed=True)
+                for _ in range(num_qed_samples)
+            ]
+            non_qed_samples = [
+                self._get_components_with_distrations(recipe, qed=False)
+                for _ in range(num_samples_per_recipe - num_qed_samples)
+            ]
+            # Alternate between qed and non-qed samples
+            dataset[idx] = []
+            for i in range(num_samples_per_recipe):
+                if i % 2 == 0:
+                    dataset[idx].append(qed_samples[i // 2])
+                else:
+                    dataset[idx].append(non_qed_samples[i // 2])
+            self.idx_to_recipe[idx] = recipe
+            idx += 1
+        print(f"Found {len(dataset)} recipes.")
+        return dataset
+    
+    def __getitem__(self, idx):
+        recipes = self.dataset[idx]
+        items = []
+
+        for recipe in recipes:
+            # Use getitem from the parent class
+            qed = recipe["qed"]
+            original_rules = recipe["rules"]
+            recipe["rules"] = recipe["distractor_rules"]
+            if qed:
+                labels = torch.tensor(1).long()
+            else:
+                labels = torch.tensor(0).long()
+
+            adv_cot_states = self._get_chain_of_thought_for_recipe_with_antecedents(recipe)
+
+            recipe["rules"] = original_rules
+            cot_states = self._get_chain_of_thought_for_recipe_with_antecedents(recipe)
+
+            if self.example_format == "tags":
+                item = stringify_recipe_with_tags(recipe, self.task_type, cot_states)
+                adv_item = stringify_recipe_with_tags(recipe, self.task_type, adv_cot_states)
+            elif self.example_format == "text":
+                item = stringify_recipe_with_text(recipe, self.task_type, cot_states)
+                adv_item = stringify_recipe_with_text(recipe, self.task_type, adv_cot_states)
+            else:
+                raise Exception("Example format not supported. Supported example formats: text, tags")
+            if not self.tokenizer:
+                return Exception("Tokenizer not provided.")
+            encoding = self.tokenizer(item, truncation=True, padding=self.padding)
+
+            items.append({
+                "data": item,
+                "adv_data": adv_item,
+                "labels": labels,
+                "input_ids": encoding.input_ids,
+                "attention_mask": encoding.attention_mask,
+                "recipe": recipe,
+                "cot_states": cot_states,
+                "num_vars": recipe["num_vars"] if "num_vars" in recipe else None,
+                "target": recipe["target"].replace("minecraft:", "").replace("_", " ") if self.example_format == "text"
+                        else recipe["target"].replace("minecraft:", ""),
+                "recipe_rules": original_rules,
+                "distractor_rules": recipe["distractor_rules"],
+                "recipe_from_idx": self.idx_to_recipe[idx],
+                "facts": recipe["facts"],
+                "depth": recipe["depth"],
+            })
+
+        return items
+
+        

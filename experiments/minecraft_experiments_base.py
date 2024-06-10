@@ -21,6 +21,8 @@ from utils.metrics import *
 from utils.model_loader_utils import load_checkpoint_from_wandb
 from datasets import Dataset
 
+torch.backends.cuda.matmul.allow_tf32 = True
+
 """ Parser for Hugging Face """
 
 @dataclass
@@ -51,7 +53,7 @@ class MinecraftExperimentsArguments:
     )
 
     max_sequence_length: Optional[int] = field(
-        default = 256,
+        default = 1024,
         metadata = {"help": "The maximum sequence length to use."} 
     )
 
@@ -258,14 +260,12 @@ class TrainerForNextTokenPrediction(Trainer):
                 preds = np.where(preds != -100, preds, self.tokenizer.pad_token_id)
                 decoded_preds = self.tokenizer.batch_decode(preds, skip_special_tokens=True)
 
-                labels = batch["labels"].cpu().numpy()
-                labels = np.where(labels != -100, labels, self.tokenizer.pad_token_id)
-                decoded_labels = self.tokenizer.batch_decode(labels, skip_special_tokens=True)
-                decoded_input_ids = self.tokenizer.batch_decode(batch["input_ids"].cpu().numpy(), skip_special_tokens=True)
+                decoded_labels = batch["labels"]
+                decoded_input_ids = batch["data"]
                     
 
                 # Log some samples
-                for i in range(min(5, len(batch["input_ids"]))):
+                for i in range(min(2, len(batch["input_ids"]))):
                     print(f"prompt: {decoded_input_ids[i]}")
                     print(f"preds: {decoded_preds[i]}")
                     print(f"generation: {decoded_preds[i][len(decoded_input_ids[i]):]}")
@@ -282,25 +282,13 @@ class TrainerForNextTokenPrediction(Trainer):
                     if batch["qed"][i] == 1:
                         if target in generation:
                             n_contains_target += 1
-                            if i < 5:
-                                print(f"preds contains target as expected")
-                                print("=====================================================")
                         if f"so I can create {target}" in generation or f"-> {target}" in generation:
                             n_contains_create_target += 1
-                            if i < 5:
-                                print(f"preds contains create target as expected")
-                                print("=====================================================")
                     else:
                         if target not in generation:
                             n_contains_target += 1
-                            if i < 5:
-                                print(f"preds does not contain target as expected")
-                                print("=====================================================")
                         if f"so I can create {target}" not in generation and f"->  {target}" not in generation:
                             n_contains_create_target += 1
-                            if i < 5:
-                                print(f"preds does not contain create target as expected")
-                                print("=====================================================")
 
                     # Count the number of examples where the generation is complete
                     if "I cannot create any other items" in generation or "[STATES_END]" in generation:
@@ -384,10 +372,10 @@ def make_trainer_for_synthetic(
     def add_labels_to_examples(examples):
         if "labels" not in examples:
             examples["labels"] = examples["input_ids"].clone()
-        else:
-            labels = tokenizer(examples["labels"], truncation=True, padding="max_length", max_length=args.max_sequence_length)
-            # labels = tokenizer(examples["labels"], truncation=True, padding=True)
-            examples["labels"] = labels["input_ids"]
+        # else:
+        #     labels = tokenizer(examples["labels"], truncation=True, padding="max_length", max_length=args.max_sequence_length)
+        #     # labels = tokenizer(examples["labels"], truncation=True, padding=True)
+        #     examples["labels"] = labels["input_ids"]
         return examples
     
     metric = evaluate.load("exact_match")
@@ -453,7 +441,8 @@ def make_trainer_for_synthetic(
         print("Created HF datasets")
     
         train_dataset = train_hf_dataset.map(tokenize_function, batched=True)
-        eval_dataset = eval_hf_dataset.map(tokenize_function, batched=True)
+        # eval_dataset = eval_hf_dataset.map(tokenize_function, batched=True)
+        eval_dataset = eval_hf_dataset
 
         print("Tokenized HF datasets")
 
@@ -550,7 +539,7 @@ def make_trainer_for_synthetic(
         print("Tokenized HF datasets")
         
         train_dataset = train_dataset.map(add_labels_to_examples, batched=True)
-        eval_dataset = eval_dataset.map(add_labels_to_examples, batched=True)
+        # eval_dataset = eval_dataset.map(add_labels_to_examples, batched=True)
 
         tfl_model = AutoModelForCausalLM.from_pretrained(args.model_name, pad_token_id=tokenizer.eos_token_id)
         tfl_model.resize_token_embeddings(len(tokenizer))
@@ -560,13 +549,15 @@ def make_trainer_for_synthetic(
             num_train_epochs = args.num_epochs,
             per_device_train_batch_size = args.train_batch_size,
             per_device_eval_batch_size = args.eval_batch_size,
+            gradient_accumulation_steps = 4,
             auto_find_batch_size = args.auto_find_batch_size,
             evaluation_strategy = "epoch",
             report_to = report_to,
             run_name = minecraftexp_args_to_wandb_run_name(args),
             logging_steps = args.logging_steps,
             warmup_ratio = 0.10,
-            save_strategy = "no",
+            save_strategy = "epoch",
+            save_total_limit = 2,
             save_safetensors = False)
         
         return TrainerForNextTokenPrediction(
