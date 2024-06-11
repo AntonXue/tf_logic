@@ -16,6 +16,8 @@ from tqdm import tqdm, trange
 
 import matplotlib.pyplot as plt
 import matplotlib
+from matplotlib import colormaps
+from matplotlib.colors import LinearSegmentedColormap
 from minecraft_attacks_eval_suppress_rule_universal import load_next_state_model_from_wandb, minecraftexp_args_to_wandb_run_name, get_param_dict_list_from_config_file
 # import seaborn as sns
 import pandas as pd
@@ -66,7 +68,7 @@ def plot_attention_diffs(attns_without_suffix, attns_with_suffix, figsize=(3, 3)
 
     if savepdf:
         os.makedirs(os.path.dirname(savepdf), exist_ok=True)
-        plt.savefig(savepdf, bbox_inches="tight")
+        plt.savefig(savepdf, bbox_inches="tight", transparent=True)
         plt.close()
     return fig
 
@@ -86,9 +88,28 @@ def plot_attention_flow(flow_matrix, token_labels, topk_prefix_start=0, topk_pre
     indices.extend(list(range(flow_matrix.shape[1] - 4, flow_matrix.shape[1])))
     flow_matrix = flow_matrix[:, indices]
     fig, ax = plt.subplots(figsize=figsize, dpi=200)
+
+    # Make up my colors
+    blues = colormaps.get_cmap("Blues")
+    reds = colormaps.get_cmap("Reds")
+    fmin, fmax = flow_matrix.min().item(), flow_matrix.max().item()
+
+    print(f"flow minmax: {fmin:.3f}, {fmax:.3f}")
+
+    
+    my_colors = np.vstack([
+        np.flip(reds(np.linspace(0, abs(fmin), 32)), axis=0),
+        blues(np.linspace(0, abs(fmax), 32)),
+        # np.flip(reds(np.linspace(0, 1, 32)), axis=0),
+        # blues(np.linspace(0, 1, 32)),
+    ])
+
+    my_cmap = LinearSegmentedColormap.from_list("my_colors", my_colors)
+
     h = ax.pcolor(
-        abs(flow_matrix),
-        cmap="Blues",
+        # abs(flow_matrix),
+        flow_matrix,
+        cmap=my_cmap,
         # vmin=0,
     )
     ax.invert_yaxis()
@@ -96,7 +117,7 @@ def plot_attention_flow(flow_matrix, token_labels, topk_prefix_start=0, topk_pre
     ax.tick_params(axis='x', rotation=60)
     ax.set_xticks([0.5 + i for i in range(flow_matrix.shape[1])])
     ax.set_yticks([0.5 + i for i in range(0, flow_matrix.shape[0], 1)])
-    ax.set_yticklabels(list(range(0, flow_matrix.shape[0], 1)), fontsize=16)
+    ax.set_yticklabels(list(range(1, flow_matrix.shape[0]+1, 1)), fontsize=16)
     ax.set_xticklabels(token_labels, fontsize=16)
     cb = plt.colorbar(h)
     ax.set_ylabel(f"Layers", fontsize=16)
@@ -107,11 +128,13 @@ def plot_attention_flow(flow_matrix, token_labels, topk_prefix_start=0, topk_pre
     # Loop over data dimensions and create text annotations.
     for i in range(flow_matrix.shape[0]):
         for j in range(len(token_labels)):
-            if abs(flow_matrix[i, j]) < 0.5:
+            if abs(flow_matrix[i, j]) < 0.4:
                 continue
         # for i in range(1):
+            text_color = "w" if abs(flow_matrix[i,j]) > 0.75 else "k" # w=white, k=black
+
             text = ax.text(j+0.5, i+0.5, valfmt(flow_matrix[i, j]),
-                        ha="center", va="center", fontsize=8)
+                        ha="center", va="center", fontsize=10, color=text_color)
     # else:
     #     ax.set_title("Attention contribution to generation")
     if cbar_text:
@@ -355,8 +378,8 @@ if __name__ == "__main__":
                         heatmap_without_suffix_padded[:heatmap_without_suffix.shape[0], :heatmap_without_suffix.shape[1]] = heatmap_without_suffix
 
                         # Subtract the two heatmaps
-                        # heatmap_diff = heatmap_with_suffix - heatmap_without_suffix_padded
-                        heatmap_diff = heatmap_without_suffix_padded - heatmap_with_suffix
+                        heatmap_diff = heatmap_with_suffix - heatmap_without_suffix_padded
+                        # heatmap_diff = heatmap_without_suffix_padded - heatmap_with_suffix
 
                         heatmap_diff = heatmap_diff.transpose(1, 0)
                         # Switch the axes
