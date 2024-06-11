@@ -474,3 +474,19 @@
 [I 2024-06-11 01:45:48.572 ServerApp] Connecting to kernel f1816a99-9d2b-4b69-8924-cd525cd4de4e.
 [I 2024-06-11 01:45:48.572 ServerApp] Restoring connection for f1816a99-9d2b-4b69-8924-cd525cd4de4e:cdae4a40-b867-4c53-9dcf-d1c91f833c4d
 [I 2024-06-11 01:47:32.980 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
+[I 2024-06-11 02:11:26.948 ServerApp] Starting buffering for f1816a99-9d2b-4b69-8924-cd525cd4de4e:cdae4a40-b867-4c53-9dcf-d1c91f833c4d
+[I 2024-06-11 14:28:01.232 ServerApp] Creating new notebook in 
+[I 2024-06-11 14:28:04.198 ServerApp] Kernel started: 918f358f-c014-4462-bae7-e44b7013c242
+[I 2024-06-11 14:28:04.527 ServerApp] Connecting to kernel 918f358f-c014-4462-bae7-e44b7013c242.
+[I 2024-06-11 14:30:03.344 ServerApp] Saving file at /heatmap_test.ipynb
+[I 2024-06-11 14:38:06.335 ServerApp] Saving file at /heatmap_test.ipynb
+[I 2024-06-11 14:42:06.391 ServerApp] Saving file at /heatmap_test.ipynb
+[I 2024-06-11 14:44:06.450 ServerApp] Saving file at /heatmap_test.ipynb
+[I 2024-06-11 14:46:06.506 ServerApp] Saving file at /heatmap_test.ipynb
+[I 2024-06-11 14:48:06.606 ServerApp] Saving file at /heatmap_test.ipynb
+[I 2024-06-11 14:50:06.668 ServerApp] Saving file at /heatmap_test.ipynb
+[I 2024-06-11 14:52:06.717 ServerApp] Saving file at /heatmap_test.ipynb
+[I 2024-06-11 14:54:06.765 ServerApp] Saving file at /heatmap_test.ipynb
+[I 2024-06-11 14:56:07.361 ServerApp] Saving file at /heatmap_test.ipynb
+[I 2024-06-11 14:56:09.699 ServerApp] Saving file at /heatmap_test.ipynb
+[I 2024-06-11 15:00:09.782 ServerApp] Saving file at /heatmap_test.ipynb

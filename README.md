@@ -5,20 +5,20 @@ WARNINGS: Some of these experiments use Large Language Models and can produce un
 This can be repeated for t=3,5 by modifying the `num_steps` flag.
 
 ```
-python experiments/minecraft_experiments_base.py 
-    --model_name gpt2 
-    --syn_exp_name autoreg_ksteps 
-    --example_format text 
-    --max_sequence_length 768 
-    --max_num_distractors_triggerable 8 
-    --seed 201 
-    --num_steps 1 
-    --min_num_vars 1 
-    --max_num_vars 64 
-    --train_len 65536 
-    --eval_len 16392 
-    --num_epochs 25 
-    --train_batch_size 32 
+python experiments/minecraft_experiments_base.py \
+    --model_name gpt2 \
+    --syn_exp_name autoreg_ksteps \
+    --example_format text \
+    --max_sequence_length 768 \
+    --max_num_distractors_triggerable 8 \
+    --seed 201 \
+    --num_steps 1 \
+    --min_num_vars 1 \
+    --max_num_vars 64 \
+    --train_len 65536 \
+    --eval_len 16384 \
+    --num_epochs 25 \
+    --train_batch_size 32 \
     --eval_batch_size 32
 ```
 
