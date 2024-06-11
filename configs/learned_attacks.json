@@ -1,5 +1,5 @@
 [{
-    "attack_name": ["coerce_state", "suppress_rule", "knowledge_amnesia"],
+    "attack_name": ["coerce_state", "suppress_rule", "fact_amnesia"],
     "reasoner_type": ["learned"],
     "reasoner_seed": [601],
     "attacker_seed": [701],

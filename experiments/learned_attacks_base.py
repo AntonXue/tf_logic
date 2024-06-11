@@ -208,24 +208,43 @@ def eval_one_epoch(
     n, embed_dim, k = args.num_vars, args.embed_dim, args.num_attack_tokens
 
     num_dones = 0
-    raw_elems_hits, raw_state_hits = 0, 0
-    adv_ns0_elems_hits, adv_ns0_state_hits = 0, 0
-    adv_ns1_elems_hits, adv_ns1_state_hits = 0, 0
-    adv_ns2_elems_hits, adv_ns2_state_hits = 0, 0
-    adv_ns3_elems_hits, adv_ns3_state_hits = 0, 0
-    adv_ns1_atk_wts_total, adv_ns2_atk_wts_total, adv_ns3_atk_wts_total = 0., 0., 0.
+    raw_elems_hits, raw_state_hits = torch.tensor([]).to(device), torch.tensor([]).to(device)
+    adv_ns0_elems_hits, adv_ns0_state_hits = torch.tensor([]).to(device), torch.tensor([]).to(device)
+    adv_ns1_elems_hits, adv_ns1_state_hits = torch.tensor([]).to(device), torch.tensor([]).to(device)
+    adv_ns2_elems_hits, adv_ns2_state_hits = torch.tensor([]).to(device), torch.tensor([]).to(device)
+    adv_ns3_elems_hits, adv_ns3_state_hits = torch.tensor([]).to(device), torch.tensor([]).to(device)
+
+    adv_ns1_atk_wts, adv_ns2_atk_wts, adv_ns3_atk_wts = \
+        torch.tensor([]).to(device), torch.tensor([]).to(device), torch.tensor([]).to(device)
+    adv_ns1_atk_wts_std, adv_ns2_atk_wts_std, adv_ns3_atk_wts_std = \
+        torch.tensor([]).to(device), torch.tensor([]).to(device), torch.tensor([]).to(device)
 
     # Things special to suppress rule
-    adv_ns1_suppd_wts_total, adv_ns2_suppd_wts_total, adv_ns3_suppd_wts_total = 0., 0., 0.
-    adv_ns1_other_wts_total, adv_ns2_other_wts_total, adv_ns3_other_wts_total = 0., 0., 0.
-    raw_ns1_suppd_wts_total, raw_ns2_suppd_wts_total, raw_ns3_suppd_wts_total = 0., 0., 0.
-    raw_ns1_other_wts_total, raw_ns2_other_wts_total, raw_ns3_other_wts_total = 0., 0., 0.
+    adv_ns1_suppd_wts, adv_ns2_suppd_wts, adv_ns3_suppd_wts = \
+        torch.tensor([]).to(device), torch.tensor([]).to(device), torch.tensor([]).to(device)
+    adv_ns1_other_wts, adv_ns2_other_wts, adv_ns3_other_wts = \
+        torch.tensor([]).to(device), torch.tensor([]).to(device), torch.tensor([]).to(device)
+    raw_ns1_suppd_wts, raw_ns2_suppd_wts, raw_ns3_suppd_wts = \
+        torch.tensor([]).to(device), torch.tensor([]).to(device), torch.tensor([]).to(device)
+    raw_ns1_other_wts, raw_ns2_other_wts, raw_ns3_other_wts = \
+        torch.tensor([]).to(device), torch.tensor([]).to(device), torch.tensor([]).to(device)
 
-    # Things special to knowledge amnesia (consequents)
-    adv_suffix_conseq_amnesia_avg_total, adv_suffix_conseq_others_avg_total = 0., 0.
+    adv_ns1_suppd_wts_std, adv_ns2_suppd_wts_std, adv_ns3_suppd_wts_std = \
+        torch.tensor([]).to(device), torch.tensor([]).to(device), torch.tensor([]).to(device)
+    adv_ns1_other_wts_std, adv_ns2_other_wts_std, adv_ns3_other_wts_std = \
+        torch.tensor([]).to(device), torch.tensor([]).to(device), torch.tensor([]).to(device)
+    raw_ns1_suppd_wts_std, raw_ns2_suppd_wts_std, raw_ns3_suppd_wts_std = \
+        torch.tensor([]).to(device), torch.tensor([]).to(device), torch.tensor([]).to(device)
+    raw_ns1_other_wts_std, raw_ns2_other_wts_std, raw_ns3_other_wts_std = \
+        torch.tensor([]).to(device), torch.tensor([]).to(device), torch.tensor([]).to(device)
+
+    # Things special to fact amnesia (consequents)
+    adv_suffix_amnesia_targets, adv_suffix_amnesia_others = \
+        torch.tensor([]).to(device), torch.tensor([]).to(device)
 
     # Things special to state coercion
-    adv_suffix_size_avg_total, raw_tokens_size_avg_total = 0., 0.
+    adv_suffix_avg_mags, raw_tokens_avg_mags = \
+        torch.tensor([]).to(device), torch.tensor([]).to(device)
 
     pbar = tqdm(dataloader)
     for i, batch in enumerate(pbar):
@@ -245,8 +264,8 @@ def eval_one_epoch(
 
         num_dones += raw_tokens.size(0)
         all_raw_hits = raw_pred == raw_labels   # (N,3,n)
-        raw_elems_hits += all_raw_hits.float().mean(dim=(1,2)).sum()
-        raw_state_hits += all_raw_hits.all(dim=-1).all(dim=-1).sum()
+        raw_elems_hits = torch.cat([raw_elems_hits, all_raw_hits.float().mean(dim=(1,2))])
+        raw_state_hits = torch.cat([raw_state_hits, all_raw_hits.all(dim=-1).all(dim=-1)])
 
         # Check the adversarial stats
         hints = batch["hints"].to(device)
@@ -258,15 +277,15 @@ def eval_one_epoch(
         # The adv stuff requires 4 states (s0, s1, s2, s3)
         adv_labels = batch["labels"].to(device) # (N,4,n)
         all_adv_hits = adv_pred == adv_labels
-        adv_ns0_elems_hits += all_adv_hits[:,0:1].float().mean(dim=(1,2)).sum()
-        adv_ns1_elems_hits += all_adv_hits[:,1:2].float().mean(dim=(1,2)).sum()
-        adv_ns2_elems_hits += all_adv_hits[:,1:3].float().mean(dim=(1,2)).sum()
-        adv_ns3_elems_hits += all_adv_hits[:,1:4].float().mean(dim=(1,2)).sum()
+        adv_ns0_elems_hits = torch.cat([adv_ns0_elems_hits, all_adv_hits[:,0:1].float().mean(dim=(1,2))])
+        adv_ns1_elems_hits = torch.cat([adv_ns1_elems_hits, all_adv_hits[:,1:2].float().mean(dim=(1,2))])
+        adv_ns2_elems_hits = torch.cat([adv_ns2_elems_hits, all_adv_hits[:,1:3].float().mean(dim=(1,2))])
+        adv_ns3_elems_hits = torch.cat([adv_ns3_elems_hits, all_adv_hits[:,1:4].float().mean(dim=(1,2))])
 
-        adv_ns0_state_hits += all_adv_hits[:,0:1].all(dim=-1).all(dim=-1).sum()
-        adv_ns1_state_hits += all_adv_hits[:,1:2].all(dim=-1).all(dim=-1).sum()
-        adv_ns2_state_hits += all_adv_hits[:,1:3].all(dim=-1).all(dim=-1).sum()
-        adv_ns3_state_hits += all_adv_hits[:,1:4].all(dim=-1).all(dim=-1).sum()
+        adv_ns0_state_hits = torch.cat([adv_ns0_state_hits, all_adv_hits[:,0:1].all(dim=-1).all(dim=-1)])
+        adv_ns1_state_hits = torch.cat([adv_ns1_state_hits, all_adv_hits[:,1:2].all(dim=-1).all(dim=-1)])
+        adv_ns2_state_hits = torch.cat([adv_ns2_state_hits, all_adv_hits[:,1:3].all(dim=-1).all(dim=-1)])
+        adv_ns3_state_hits = torch.cat([adv_ns3_state_hits, all_adv_hits[:,1:4].all(dim=-1).all(dim=-1)])
 
         # Attention metrics
         if args.reasoner_type == "learned":
@@ -285,102 +304,78 @@ def eval_one_epoch(
             adv_attn1, adv_attn2, adv_attn3 = adv_out.attentions
 
         # Cumulative attention weight of the k+1 attack tokens
-        adv_ns1_atk_wts_total += adv_attn1[:,-1,L:L+k].sum()
-        adv_ns2_atk_wts_total += adv_attn2[:,-1,L:L+k].sum()
-        adv_ns3_atk_wts_total += adv_attn3[:,-1,L:L+k].sum()
+        adv_ns1_atk_wts = torch.cat([adv_ns1_atk_wts, adv_attn1[:,-1,L:L+k]])
+        adv_ns2_atk_wts = torch.cat([adv_ns2_atk_wts, adv_attn2[:,-1,L:L+k]])
+        adv_ns3_atk_wts = torch.cat([adv_ns3_atk_wts, adv_attn3[:,-1,L:L+k]])
 
         if args.attack_name == "suppress_rule":
             suppd_idx = batch["cdf_index"].to(device)
             other_idx = batch["bce_index"].to(device)
-            raw_ns1_suppd_wts_total += raw_attn1[:,-1].gather(1, suppd_idx.view(-1,1)).sum()
-            raw_ns2_suppd_wts_total += raw_attn2[:,-1].gather(1, suppd_idx.view(-1,1)).sum()
-            raw_ns3_suppd_wts_total += raw_attn3[:,-1].gather(1, suppd_idx.view(-1,1)).sum()
+            raw_ns1_suppd_wts = torch.cat([raw_ns1_suppd_wts, raw_attn1[:,-1].gather(1, suppd_idx.view(-1,1))])
+            raw_ns2_suppd_wts = torch.cat([raw_ns2_suppd_wts, raw_attn2[:,-1].gather(1, suppd_idx.view(-1,1))])
+            raw_ns3_suppd_wts = torch.cat([raw_ns3_suppd_wts, raw_attn3[:,-1].gather(1, suppd_idx.view(-1,1))])
+            raw_ns1_other_wts = torch.cat([raw_ns1_other_wts, raw_attn1[:,-1].gather(1, other_idx.view(-1,1))])
+            raw_ns2_other_wts = torch.cat([raw_ns2_other_wts, raw_attn2[:,-1].gather(1, other_idx.view(-1,1))])
+            raw_ns3_other_wts = torch.cat([raw_ns3_other_wts, raw_attn3[:,-1].gather(1, other_idx.view(-1,1))])
 
-            raw_ns1_other_wts_total += raw_attn1[:,-1].gather(1, other_idx.view(-1,1)).sum()
-            raw_ns2_other_wts_total += raw_attn2[:,-1].gather(1, other_idx.view(-1,1)).sum()
-            raw_ns3_other_wts_total += raw_attn3[:,-1].gather(1, other_idx.view(-1,1)).sum()
+            adv_ns1_suppd_wts = torch.cat([adv_ns1_suppd_wts, adv_attn1[:,-1].gather(1, suppd_idx.view(-1,1))])
+            adv_ns2_suppd_wts = torch.cat([adv_ns2_suppd_wts, adv_attn2[:,-1].gather(1, suppd_idx.view(-1,1))])
+            adv_ns3_suppd_wts = torch.cat([adv_ns3_suppd_wts, adv_attn3[:,-1].gather(1, suppd_idx.view(-1,1))])
+            adv_ns1_other_wts = torch.cat([adv_ns1_other_wts, adv_attn1[:,-1].gather(1, other_idx.view(-1,1))])
+            adv_ns2_other_wts = torch.cat([adv_ns2_other_wts, adv_attn2[:,-1].gather(1, other_idx.view(-1,1))])
+            adv_ns3_other_wts = torch.cat([adv_ns3_other_wts, adv_attn3[:,-1].gather(1, other_idx.view(-1,1))])
 
-            adv_ns1_suppd_wts_total += adv_attn1[:,-1].gather(1, suppd_idx.view(-1,1)).sum()
-            adv_ns2_suppd_wts_total += adv_attn2[:,-1].gather(1, suppd_idx.view(-1,1)).sum()
-            adv_ns3_suppd_wts_total += adv_attn3[:,-1].gather(1, suppd_idx.view(-1,1)).sum()
-
-            adv_ns1_other_wts_total += adv_attn1[:,-1].gather(1, other_idx.view(-1,1)).sum()
-            adv_ns2_other_wts_total += adv_attn2[:,-1].gather(1, other_idx.view(-1,1)).sum()
-            adv_ns3_other_wts_total += adv_attn3[:,-1].gather(1, other_idx.view(-1,1)).sum()
-
-        elif args.attack_name == "knowledge_amnesia":
+        elif args.attack_name == "fact_amnesia":
             _, atk_conseq = atk_out.logits.chunk(2, dim=-1)  # (N,k,n) each
-            amns_hots = hints.view(-1,1,n).repeat(1,k,1) # (N,n). The suppression should happen where it's hot.
+            amns_hots = hints.view(-1,1,n).repeat(1,k,1).float() # (N,k,n). The suppression should happen where it's hot.
             other_hots = 1 - amns_hots
-            adv_suffix_conseq_amnesia_avg_total += \
-                (atk_conseq * amns_hots / amns_hots.sum(dim=2, keepdim=True)).abs().sum() / k
-            adv_suffix_conseq_others_avg_total += \
-                (atk_conseq * other_hots / other_hots.sum(dim=2, keepdim=True)).abs().sum() / k
 
-            # adv_suffix_conseq_amnesia_avg_total += \
-            #     (atk_conseq * amns_hots / amns_hots.sum(dim=(1,2)).view(-1,1,1)).abs().sum()
+            adv_suffix_amnesia_targets = torch.cat([
+                adv_suffix_amnesia_targets,
+                (atk_conseq * amns_hots).abs().mean(dim=(1,2))
+            ])
+
+            adv_suffix_amnesia_others = torch.cat([
+                adv_suffix_amnesia_others,
+                (atk_conseq * other_hots).abs().mean(dim=(1,2))
+            ])
 
         elif args.attack_name == "coerce_state":
-            adv_suffix_size_avg_total += atk_out.logits.abs().mean(dim=(1,2)).sum()
-            raw_tokens_size_avg_total += raw_tokens.abs().mean(dim=(1,2)).sum()
-
+            adv_suffix_avg_mags = torch.cat([adv_suffix_avg_mags, atk_out.logits.abs().mean(dim=(1,2))])
+            raw_tokens_avg_mags = torch.cat([raw_tokens_avg_mags, raw_tokens.abs().mean(dim=(1,2,))])
 
         # Compute stats
         desc = f"{args.reasoner_type} ndk ({n},{embed_dim},{k}), N {num_dones}: "
 
-        raw_elems_acc = raw_elems_hits / num_dones
-        raw_state_acc = raw_state_hits / num_dones
-        desc += f"raw {raw_state_acc:.2f}, "
+        desc += f"raw {raw_state_hits.float().mean():.2f}, "
 
-        adv_ns0_elems_acc = adv_ns0_elems_hits / num_dones
-        adv_ns1_elems_acc = adv_ns1_elems_hits / num_dones
-        adv_ns2_elems_acc = adv_ns2_elems_hits / num_dones
-        adv_ns3_elems_acc = adv_ns3_elems_hits / num_dones
+        desc += f"adv ([{adv_ns0_elems_hits.float().mean():.2f}/{adv_ns0_state_hits.float().mean():.2f}], " + \
+            f"{adv_ns1_elems_hits.float().mean():.2f}/{adv_ns1_state_hits.float().mean():.2f}, " + \
+            f"{adv_ns2_elems_hits.float().mean():.2f}/{adv_ns2_state_hits.float().mean():.2f}, " + \
+            f"{adv_ns3_elems_hits.float().mean():.2f}/{adv_ns3_state_hits.float().mean():.2f}), "
 
-        adv_ns0_state_acc = adv_ns0_state_hits / num_dones
-        adv_ns1_state_acc = adv_ns1_state_hits / num_dones
-        adv_ns2_state_acc = adv_ns2_state_hits / num_dones
-        adv_ns3_state_acc = adv_ns3_state_hits / num_dones
-        desc += f"adv ([{adv_ns0_elems_acc:.2f}/{adv_ns0_state_acc:.2f}], " + \
-                    f"{adv_ns1_elems_acc:.2f}/{adv_ns1_state_acc:.2f}, " + \
-                    f"{adv_ns2_elems_acc:.2f}/{adv_ns2_state_acc:.2f}, " + \
-                    f"{adv_ns3_elems_acc:.2f}/{adv_ns3_state_acc:.2f}), "
-
-        adv_ns1_atk_wts = adv_ns1_atk_wts_total / num_dones
-        adv_ns2_atk_wts = adv_ns2_atk_wts_total / num_dones
-        adv_ns3_atk_wts = adv_ns3_atk_wts_total / num_dones
-        desc += f"atk e/s ({adv_ns1_atk_wts:.2f},{adv_ns2_atk_wts:.2f},{adv_ns3_atk_wts:.2f}), "
+        desc += f"atk e/s (" + \
+            f"{adv_ns1_atk_wts.float().mean():.2f}," + \
+            f"{adv_ns2_atk_wts.float().mean():.2f}," + \
+            f"{adv_ns3_atk_wts.float().mean():.2f}), "
 
         if args.attack_name == "suppress_rule":
-            raw_ns1_suppd_wts = raw_ns1_suppd_wts_total / num_dones
-            raw_ns2_suppd_wts = raw_ns2_suppd_wts_total / num_dones
-            raw_ns3_suppd_wts = raw_ns3_suppd_wts_total / num_dones
-            raw_ns1_other_wts = raw_ns1_other_wts_total / num_dones
-            raw_ns2_other_wts = raw_ns2_other_wts_total / num_dones
-            raw_ns3_other_wts = raw_ns3_other_wts_total / num_dones
-            desc += f"raw s/o ({raw_ns1_suppd_wts:.2f}/{raw_ns1_other_wts:.2f}, " + \
-                        f"{raw_ns2_suppd_wts:.2f}/{raw_ns2_other_wts:.2f}, " + \
-                        f"{raw_ns3_suppd_wts:.2f}/{raw_ns3_other_wts:.2f}), "
+            desc += f"raw s/o (" + \
+                f"{raw_ns1_suppd_wts.float().mean():.2f}/{raw_ns1_other_wts.float().mean():.2f}, " + \
+                f"{raw_ns2_suppd_wts.float().mean():.2f}/{raw_ns2_other_wts.float().mean():.2f}, " + \
+                f"{raw_ns3_suppd_wts.float().mean():.2f}/{raw_ns3_other_wts.float().mean():.2f}), "
 
-            adv_ns1_suppd_wts = adv_ns1_suppd_wts_total / num_dones
-            adv_ns2_suppd_wts = adv_ns2_suppd_wts_total / num_dones
-            adv_ns3_suppd_wts = adv_ns3_suppd_wts_total / num_dones
-            adv_ns1_other_wts = adv_ns1_other_wts_total / num_dones
-            adv_ns2_other_wts = adv_ns2_other_wts_total / num_dones
-            adv_ns3_other_wts = adv_ns3_other_wts_total / num_dones
-            desc += f"adv s/o ({adv_ns1_suppd_wts:.2f}/{adv_ns1_other_wts:.2f}, " + \
-                        f"{adv_ns2_suppd_wts:.2f}/{adv_ns2_other_wts:.2f}, " + \
-                        f"{adv_ns3_suppd_wts:.2f}/{adv_ns3_other_wts:.2f}), "
+            desc += f"adv s/o (" + \
+                f"{adv_ns1_suppd_wts.float().mean():.2f}/{adv_ns1_other_wts.float().mean():.2f}, " + \
+                f"{adv_ns2_suppd_wts.float().mean():.2f}/{adv_ns2_other_wts.float().mean():.2f}, " + \
+                f"{adv_ns3_suppd_wts.float().mean():.2f}/{adv_ns3_other_wts.float().mean():.2f}), "
 
-
-        elif args.attack_name == "knowledge_amnesia":
-            adv_suffix_conseq_amnesia_avg = adv_suffix_conseq_amnesia_avg_total / num_dones
-            adv_suffix_conseq_others_avg = adv_suffix_conseq_others_avg_total / num_dones
-            desc += f"amns/conseq ({adv_suffix_conseq_amnesia_avg:.2f}/{adv_suffix_conseq_others_avg:.2f}), "
+        elif args.attack_name == "fact_amnesia":
+            desc += f"amns/conseq ({adv_suffix_amnesia_targets.float().mean():.2f}" + \
+                f"/{adv_suffix_amnesia_others.float().mean():.2f}), "
 
         elif args.attack_name == "coerce_state":
-            adv_suffix_size_avg = adv_suffix_size_avg_total / num_dones
-            raw_tokens_size_avg = raw_tokens_size_avg_total / num_dones
+            pass
 
         pbar.set_description(desc)
         # End for loop
@@ -393,44 +388,65 @@ def eval_one_epoch(
         "num_vars": n,
         "embed_dim": embed_dim,
         "num_attack_tokens": k,
-        "raw_state_acc": raw_state_acc.item(),
-        "adv_ns0_state_acc": adv_ns0_state_acc.item(),
-        "adv_ns1_state_acc": adv_ns1_state_acc.item(),
-        "adv_ns2_state_acc": adv_ns2_state_acc.item(),
-        "adv_ns3_state_acc": adv_ns3_state_acc.item(),
-        "adv_ns1_atk_wts": adv_ns1_atk_wts.item(),
-        "adv_ns2_atk_wts": adv_ns2_atk_wts.item(),
-        "adv_ns3_atk_wts": adv_ns3_atk_wts.item(),
+        "raw_state_acc": raw_state_hits.float().mean().item(),
+        "adv_ns0_state_acc": adv_ns0_state_hits.float().mean().item(),
+        "adv_ns1_state_acc": adv_ns1_state_hits.float().mean().item(),
+        "adv_ns2_state_acc": adv_ns2_state_hits.float().mean().item(),
+        "adv_ns3_state_acc": adv_ns3_state_hits.float().mean().item(),
+        "adv_ns1_atk_wts": adv_ns1_atk_wts.mean().item(),
+        "adv_ns2_atk_wts": adv_ns2_atk_wts.mean().item(),
+        "adv_ns3_atk_wts": adv_ns3_atk_wts.mean().item(),
+        "adv_ns1_atk_wts_std": adv_ns1_atk_wts.var().sqrt().item(),
+        "adv_ns2_atk_wts_std": adv_ns2_atk_wts.var().sqrt().item(),
+        "adv_ns3_atk_wts_std": adv_ns3_atk_wts.var().sqrt().item(),
     }
 
     # Attack-specific additions
     if args.attack_name == "suppress_rule":
         other_dict = {
-            "raw_ns1_suppd_wts": raw_ns1_suppd_wts.item(),
-            "raw_ns2_suppd_wts": raw_ns2_suppd_wts.item(),
-            "raw_ns3_suppd_wts": raw_ns3_suppd_wts.item(),
-            "raw_ns1_other_wts": raw_ns1_other_wts.item(),
-            "raw_ns2_other_wts": raw_ns2_other_wts.item(),
-            "raw_ns3_other_wts": raw_ns3_other_wts.item(),
+            "raw_ns1_suppd_wts": raw_ns1_suppd_wts.mean().item(),
+            "raw_ns2_suppd_wts": raw_ns2_suppd_wts.mean().item(),
+            "raw_ns3_suppd_wts": raw_ns3_suppd_wts.mean().item(),
+            "raw_ns1_other_wts": raw_ns1_other_wts.mean().item(),
+            "raw_ns2_other_wts": raw_ns2_other_wts.mean().item(),
+            "raw_ns3_other_wts": raw_ns3_other_wts.mean().item(),
 
-            "adv_ns1_suppd_wts": adv_ns1_suppd_wts.item(),
-            "adv_ns2_suppd_wts": adv_ns2_suppd_wts.item(),
-            "adv_ns3_suppd_wts": adv_ns3_suppd_wts.item(),
-            "adv_ns1_other_wts": adv_ns1_other_wts.item(),
-            "adv_ns2_other_wts": adv_ns2_other_wts.item(),
-            "adv_ns3_other_wts": adv_ns3_other_wts.item(),
+            "adv_ns1_suppd_wts": adv_ns1_suppd_wts.mean().item(),
+            "adv_ns2_suppd_wts": adv_ns2_suppd_wts.mean().item(),
+            "adv_ns3_suppd_wts": adv_ns3_suppd_wts.mean().item(),
+            "adv_ns1_other_wts": adv_ns1_other_wts.mean().item(),
+            "adv_ns2_other_wts": adv_ns2_other_wts.mean().item(),
+            "adv_ns3_other_wts": adv_ns3_other_wts.mean().item(),
+
+            "raw_ns1_suppd_wts_std": raw_ns1_suppd_wts.var().sqrt().item(),
+            "raw_ns2_suppd_wts_std": raw_ns2_suppd_wts.var().sqrt().item(),
+            "raw_ns3_suppd_wts_std": raw_ns3_suppd_wts.var().sqrt().item(),
+            "raw_ns1_other_wts_std": raw_ns1_other_wts.var().sqrt().item(),
+            "raw_ns2_other_wts_std": raw_ns2_other_wts.var().sqrt().item(),
+            "raw_ns3_other_wts_std": raw_ns3_other_wts.var().sqrt().item(),
+
+            "adv_ns1_suppd_wts_std": adv_ns1_suppd_wts.var().sqrt().item(),
+            "adv_ns2_suppd_wts_std": adv_ns2_suppd_wts.var().sqrt().item(),
+            "adv_ns3_suppd_wts_std": adv_ns3_suppd_wts.var().sqrt().item(),
+            "adv_ns1_other_wts_std": adv_ns1_other_wts.var().sqrt().item(),
+            "adv_ns2_other_wts_std": adv_ns2_other_wts.var().sqrt().item(),
+            "adv_ns3_other_wts_std": adv_ns3_other_wts.var().sqrt().item(),
         }
 
-    elif args.attack_name == "knowledge_amnesia":
+    elif args.attack_name == "fact_amnesia":
         other_dict = {
-            "adv_suffix_conseq_amnesia_avg": adv_suffix_conseq_amnesia_avg.item(),
-            "adv_suffix_conseq_others_avg": adv_suffix_conseq_others_avg.item()
+            "adv_suffix_amnesia_targets": adv_suffix_amnesia_targets.mean().item(),
+            "adv_suffix_amnesia_others": adv_suffix_amnesia_others.mean().item(),
+            "adv_suffix_amnesia_targets_std": adv_suffix_amnesia_targets.var().sqrt().item(),
+            "adv_suffix_amnesia_others_std": adv_suffix_amnesia_others.var().sqrt().item(),
         }
 
     elif args.attack_name == "coerce_state":
         other_dict = {
-            "adv_suffix_size_avg": adv_suffix_size_avg.item(),
-            "raw_tokens_size_avg": raw_tokens_size_avg.item(),
+            "adv_suffix_avg_mags": adv_suffix_avg_mags.mean().item(),
+            "raw_tokens_avg_mags": raw_tokens_avg_mags.mean().item(),
+            "adv_suffix_avg_mags_std": adv_suffix_avg_mags.var().sqrt().item(),
+            "raw_tokens_avg_mags_std": raw_tokens_avg_mags.var().sqrt().item(),
         }
 
     else:
@@ -474,9 +490,9 @@ def run_learned_attack(args: LearnedAttackExperimentsArguments):
         train_dataset = SuppressRuleDataset(reasoner_dataset, args.num_attack_tokens, args.train_len)
         eval_dataset = SuppressRuleDataset(reasoner_dataset, args.num_attack_tokens, args.eval_len)
 
-    elif args.attack_name == "knowledge_amnesia":
-        train_dataset = KnowledgeAmnesiaDataset(reasoner_dataset, args.num_attack_tokens, args.train_len)
-        eval_dataset = KnowledgeAmnesiaDataset(reasoner_dataset, args.num_attack_tokens, args.eval_len)
+    elif args.attack_name == "fact_amnesia":
+        train_dataset = FactAmnesiaDataset(reasoner_dataset, args.num_attack_tokens, args.train_len)
+        eval_dataset = FactAmnesiaDataset(reasoner_dataset, args.num_attack_tokens, args.eval_len)
 
     elif args.attack_name == "coerce_state":
         train_dataset = CoerceStateDataset(reasoner_dataset, args.num_attack_tokens, args.train_len)

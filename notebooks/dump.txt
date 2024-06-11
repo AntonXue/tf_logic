@@ -1,38 +1,38 @@
-[I 2024-06-04 14:42:23.048 ServerApp] Package notebook took 0.0000s to import
-[I 2024-06-04 14:42:23.063 ServerApp] Package jupyter_lsp took 0.0148s to import
-[W 2024-06-04 14:42:23.063 ServerApp] A `_jupyter_server_extension_points` function was not found in jupyter_lsp. Instead, a `_jupyter_server_extension_paths` function was found and will be used for now. This function name will be deprecated in future releases of Jupyter Server.
-[I 2024-06-04 14:42:23.074 ServerApp] Package jupyter_server_terminals took 0.0103s to import
-[I 2024-06-04 14:42:23.074 ServerApp] Package jupyterlab took 0.0000s to import
-[I 2024-06-04 14:42:23.110 ServerApp] Package notebook_shim took 0.0000s to import
-[W 2024-06-04 14:42:23.110 ServerApp] A `_jupyter_server_extension_points` function was not found in notebook_shim. Instead, a `_jupyter_server_extension_paths` function was found and will be used for now. This function name will be deprecated in future releases of Jupyter Server.
-[I 2024-06-04 14:42:23.110 ServerApp] jupyter_lsp | extension was successfully linked.
-[I 2024-06-04 14:42:23.113 ServerApp] jupyter_server_terminals | extension was successfully linked.
-[I 2024-06-04 14:42:23.115 ServerApp] jupyterlab | extension was successfully linked.
-[I 2024-06-04 14:42:23.117 ServerApp] notebook | extension was successfully linked.
-[I 2024-06-04 14:42:23.503 ServerApp] notebook_shim | extension was successfully linked.
-[I 2024-06-04 14:42:23.518 ServerApp] notebook_shim | extension was successfully loaded.
-[I 2024-06-04 14:42:23.519 ServerApp] jupyter_lsp | extension was successfully loaded.
-[I 2024-06-04 14:42:23.520 ServerApp] jupyter_server_terminals | extension was successfully loaded.
-[I 2024-06-04 14:42:23.521 LabApp] JupyterLab extension loaded from /home/antonxue/lib/miniconda3/envs/tfl/lib/python3.10/site-packages/jupyterlab
-[I 2024-06-04 14:42:23.521 LabApp] JupyterLab application directory is /home/antonxue/lib/miniconda3/envs/tfl/share/jupyter/lab
-[I 2024-06-04 14:42:23.521 LabApp] Extension Manager is 'pypi'.
-[I 2024-06-04 14:42:23.523 ServerApp] jupyterlab | extension was successfully loaded.
-[I 2024-06-04 14:42:23.524 ServerApp] notebook | extension was successfully loaded.
-[I 2024-06-04 14:42:23.524 ServerApp] Serving notebooks from local directory: /home/antonxue/foo/tf_logic/notebooks
-[I 2024-06-04 14:42:23.524 ServerApp] Jupyter Server 2.10.0 is running at:
-[I 2024-06-04 14:42:23.524 ServerApp] http://localhost:7777/tree?token=3a9301598ec28c757402c1b970aa5c52010e4388b4bd75ac
-[I 2024-06-04 14:42:23.524 ServerApp]     http://127.0.0.1:7777/tree?token=3a9301598ec28c757402c1b970aa5c52010e4388b4bd75ac
-[I 2024-06-04 14:42:23.524 ServerApp] Use Control-C to stop this server and shut down all kernels (twice to skip confirmation).
-[W 2024-06-04 14:42:23.527 ServerApp] No web browser found: Error('could not locate runnable browser').
-[C 2024-06-04 14:42:23.528 ServerApp] 
+[I 2024-06-11 00:50:53.702 ServerApp] Package notebook took 0.0000s to import
+[I 2024-06-11 00:50:53.708 ServerApp] Package jupyter_lsp took 0.0053s to import
+[W 2024-06-11 00:50:53.708 ServerApp] A `_jupyter_server_extension_points` function was not found in jupyter_lsp. Instead, a `_jupyter_server_extension_paths` function was found and will be used for now. This function name will be deprecated in future releases of Jupyter Server.
+[I 2024-06-11 00:50:53.710 ServerApp] Package jupyter_server_terminals took 0.0024s to import
+[I 2024-06-11 00:50:53.710 ServerApp] Package jupyterlab took 0.0000s to import
+[I 2024-06-11 00:50:53.726 ServerApp] Package notebook_shim took 0.0000s to import
+[W 2024-06-11 00:50:53.726 ServerApp] A `_jupyter_server_extension_points` function was not found in notebook_shim. Instead, a `_jupyter_server_extension_paths` function was found and will be used for now. This function name will be deprecated in future releases of Jupyter Server.
+[I 2024-06-11 00:50:53.726 ServerApp] jupyter_lsp | extension was successfully linked.
+[I 2024-06-11 00:50:53.728 ServerApp] jupyter_server_terminals | extension was successfully linked.
+[I 2024-06-11 00:50:53.731 ServerApp] jupyterlab | extension was successfully linked.
+[I 2024-06-11 00:50:53.733 ServerApp] notebook | extension was successfully linked.
+[I 2024-06-11 00:50:53.859 ServerApp] notebook_shim | extension was successfully linked.
+[I 2024-06-11 00:50:53.869 ServerApp] notebook_shim | extension was successfully loaded.
+[I 2024-06-11 00:50:53.871 ServerApp] jupyter_lsp | extension was successfully loaded.
+[I 2024-06-11 00:50:53.871 ServerApp] jupyter_server_terminals | extension was successfully loaded.
+[I 2024-06-11 00:50:53.872 LabApp] JupyterLab extension loaded from /home/antonxue/lib/miniconda3/envs/tfl/lib/python3.10/site-packages/jupyterlab
+[I 2024-06-11 00:50:53.872 LabApp] JupyterLab application directory is /home/antonxue/lib/miniconda3/envs/tfl/share/jupyter/lab
+[I 2024-06-11 00:50:53.872 LabApp] Extension Manager is 'pypi'.
+[I 2024-06-11 00:50:53.874 ServerApp] jupyterlab | extension was successfully loaded.
+[I 2024-06-11 00:50:53.875 ServerApp] notebook | extension was successfully loaded.
+[I 2024-06-11 00:50:53.875 ServerApp] Serving notebooks from local directory: /home/antonxue/foo/tf_logic/notebooks
+[I 2024-06-11 00:50:53.876 ServerApp] Jupyter Server 2.10.0 is running at:
+[I 2024-06-11 00:50:53.876 ServerApp] http://localhost:7777/tree?token=e941be34ed32d6ad8c279b683de1a6ffc6f9976f09f1d56d
+[I 2024-06-11 00:50:53.876 ServerApp]     http://127.0.0.1:7777/tree?token=e941be34ed32d6ad8c279b683de1a6ffc6f9976f09f1d56d
+[I 2024-06-11 00:50:53.876 ServerApp] Use Control-C to stop this server and shut down all kernels (twice to skip confirmation).
+[W 2024-06-11 00:50:53.878 ServerApp] No web browser found: Error('could not locate runnable browser').
+[C 2024-06-11 00:50:53.878 ServerApp] 
     
     To access the server, open this file in a browser:
-        file:///home/antonxue/.local/share/jupyter/runtime/jpserver-2476648-open.html
+        file:///home/antonxue/.local/share/jupyter/runtime/jpserver-2525661-open.html
     Or copy and paste one of these URLs:
-        http://localhost:7777/tree?token=3a9301598ec28c757402c1b970aa5c52010e4388b4bd75ac
-        http://127.0.0.1:7777/tree?token=3a9301598ec28c757402c1b970aa5c52010e4388b4bd75ac
-[I 2024-06-04 14:42:23.541 ServerApp] Skipped non-installed server(s): bash-language-server, dockerfile-language-server-nodejs, javascript-typescript-langserver, jedi-language-server, julia-language-server, pyright, python-language-server, python-lsp-server, r-languageserver, sql-language-server, texlab, typescript-language-server, unified-language-server, vscode-css-languageserver-bin, vscode-html-languageserver-bin, vscode-json-languageserver-bin, yaml-language-server
-[W 2024-06-04 14:42:30.729 LabApp] Failed validating settings (@jupyterlab/filebrowser-extension:browser): Additional properties are not allowed ('showFullPath' was unexpected)
+        http://localhost:7777/tree?token=e941be34ed32d6ad8c279b683de1a6ffc6f9976f09f1d56d
+        http://127.0.0.1:7777/tree?token=e941be34ed32d6ad8c279b683de1a6ffc6f9976f09f1d56d
+[I 2024-06-11 00:50:53.888 ServerApp] Skipped non-installed server(s): bash-language-server, dockerfile-language-server-nodejs, javascript-typescript-langserver, jedi-language-server, julia-language-server, pyright, python-language-server, python-lsp-server, r-languageserver, sql-language-server, texlab, typescript-language-server, unified-language-server, vscode-css-languageserver-bin, vscode-html-languageserver-bin, vscode-json-languageserver-bin, yaml-language-server
+[W 2024-06-11 00:51:06.409 LabApp] Failed validating settings (@jupyterlab/filebrowser-extension:browser): Additional properties are not allowed ('showFullPath' was unexpected)
     
     Failed validating 'additionalProperties' in schema:
         {'additionalProperties': False,
@@ -220,7 +220,7 @@
          'showFileSizeColumn': True,
          'showFullPath': True,
          'sortNotebooksFirst': True}
-[W 2024-06-04 14:42:32.095 LabApp] Failed validating settings (@jupyterlab/filebrowser-extension:browser): Additional properties are not allowed ('showFullPath' was unexpected)
+[W 2024-06-11 00:51:07.668 LabApp] Failed validating settings (@jupyterlab/filebrowser-extension:browser): Additional properties are not allowed ('showFullPath' was unexpected)
     
     Failed validating 'additionalProperties' in schema:
         {'additionalProperties': False,
@@ -408,24 +408,69 @@
          'showFileSizeColumn': True,
          'showFullPath': True,
          'sortNotebooksFirst': True}
-[W 2024-06-04 14:42:34.879 ServerApp] Notebook experiments/exp2_theory_attacks.ipynb is not trusted
-[W 2024-06-04 14:42:36.360 ServerApp] Notebook experiments/exp2_theory_attacks.ipynb is not trusted
-[I 2024-06-04 14:42:36.602 ServerApp] Kernel started: 9c98290b-a0e6-42e9-ad11-bec9644a3f9a
-[I 2024-06-04 14:42:36.965 ServerApp] Connecting to kernel 9c98290b-a0e6-42e9-ad11-bec9644a3f9a.
-[I 2024-06-04 14:43:02.805 ServerApp] Kernel restarted: 9c98290b-a0e6-42e9-ad11-bec9644a3f9a
-[I 2024-06-04 14:43:02.915 ServerApp] Starting buffering for 9c98290b-a0e6-42e9-ad11-bec9644a3f9a:b4a98d56-09cc-4726-b231-a92fba0b69fd
-[I 2024-06-04 14:43:02.927 ServerApp] Connecting to kernel 9c98290b-a0e6-42e9-ad11-bec9644a3f9a.
-[I 2024-06-04 14:43:02.927 ServerApp] Restoring connection for 9c98290b-a0e6-42e9-ad11-bec9644a3f9a:b4a98d56-09cc-4726-b231-a92fba0b69fd
-[I 2024-06-04 14:43:25.976 ServerApp] Saving file at /experiments/exp2_theory_attacks.ipynb
-[I 2024-06-04 14:43:26.130 ServerApp] Saving file at /experiments/exp2_theory_attacks.ipynb
-[I 2024-06-04 16:44:34.396 ServerApp] Starting buffering for 9c98290b-a0e6-42e9-ad11-bec9644a3f9a:b4a98d56-09cc-4726-b231-a92fba0b69fd
-[I 2024-06-10 16:57:48.437 ServerApp] interrupted
-[I 2024-06-10 16:57:48.437 ServerApp] Serving notebooks from local directory: /home/antonxue/foo/tf_logic/notebooks
-    1 active kernel
-    Jupyter Server 2.10.0 is running at:
-    http://localhost:7777/tree?token=3a9301598ec28c757402c1b970aa5c52010e4388b4bd75ac
-        http://127.0.0.1:7777/tree?token=3a9301598ec28c757402c1b970aa5c52010e4388b4bd75ac
-Shutdown this Jupyter server (y/[n])? [C 2024-06-10 16:57:48.595 ServerApp] received signal 2, stopping
-[I 2024-06-10 16:57:48.596 ServerApp] Shutting down 5 extensions
-[I 2024-06-10 16:57:48.596 ServerApp] Shutting down 1 kernel
-[I 2024-06-10 16:57:48.597 ServerApp] Kernel shutdown: 9c98290b-a0e6-42e9-ad11-bec9644a3f9a
+[I 2024-06-11 00:51:16.536 ServerApp] Kernel started: 035e9f8a-7c88-4def-bb56-cc4b2e7f952e
+[I 2024-06-11 00:51:16.890 ServerApp] Connecting to kernel 035e9f8a-7c88-4def-bb56-cc4b2e7f952e.
+[I 2024-06-11 00:53:12.319 ServerApp] Kernel restarted: 035e9f8a-7c88-4def-bb56-cc4b2e7f952e
+[I 2024-06-11 00:53:12.330 ServerApp] Starting buffering for 035e9f8a-7c88-4def-bb56-cc4b2e7f952e:7e25e62c-48e0-4f86-af77-707ed80a02b8
+[I 2024-06-11 00:53:12.340 ServerApp] Connecting to kernel 035e9f8a-7c88-4def-bb56-cc4b2e7f952e.
+[I 2024-06-11 00:53:12.340 ServerApp] Restoring connection for 035e9f8a-7c88-4def-bb56-cc4b2e7f952e:7e25e62c-48e0-4f86-af77-707ed80a02b8
+[I 2024-06-11 00:53:16.455 ServerApp] Saving file at /experiments/exp2_theory_attacks.ipynb
+[I 2024-06-11 01:00:39.853 ServerApp] Kernel restarted: 035e9f8a-7c88-4def-bb56-cc4b2e7f952e
+[I 2024-06-11 01:00:39.864 ServerApp] Starting buffering for 035e9f8a-7c88-4def-bb56-cc4b2e7f952e:7e25e62c-48e0-4f86-af77-707ed80a02b8
+[I 2024-06-11 01:00:39.879 ServerApp] Connecting to kernel 035e9f8a-7c88-4def-bb56-cc4b2e7f952e.
+[I 2024-06-11 01:00:39.879 ServerApp] Restoring connection for 035e9f8a-7c88-4def-bb56-cc4b2e7f952e:7e25e62c-48e0-4f86-af77-707ed80a02b8
+[I 2024-06-11 01:01:16.539 ServerApp] Saving file at /experiments/exp2_theory_attacks.ipynb
+[W 2024-06-11 01:01:20.233 ServerApp] Notebook experiments/exp3_learned_attacks.ipynb is not trusted
+[W 2024-06-11 01:01:22.372 ServerApp] Notebook experiments/exp3_learned_attacks.ipynb is not trusted
+[I 2024-06-11 01:01:22.629 ServerApp] Kernel started: f1816a99-9d2b-4b69-8924-cd525cd4de4e
+[I 2024-06-11 01:01:22.972 ServerApp] Connecting to kernel f1816a99-9d2b-4b69-8924-cd525cd4de4e.
+[I 2024-06-11 01:03:22.491 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
+[W 2024-06-11 01:03:22.491 ServerApp] Notebook experiments/exp3_learned_attacks.ipynb is not trusted
+[I 2024-06-11 01:05:22.541 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
+[W 2024-06-11 01:05:22.541 ServerApp] Notebook experiments/exp3_learned_attacks.ipynb is not trusted
+[I 2024-06-11 01:07:22.581 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
+[W 2024-06-11 01:07:22.581 ServerApp] Notebook experiments/exp3_learned_attacks.ipynb is not trusted
+[I 2024-06-11 01:09:22.621 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
+[W 2024-06-11 01:09:22.622 ServerApp] Notebook experiments/exp3_learned_attacks.ipynb is not trusted
+[I 2024-06-11 01:13:22.661 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
+[W 2024-06-11 01:13:22.661 ServerApp] Notebook experiments/exp3_learned_attacks.ipynb is not trusted
+[I 2024-06-11 01:15:22.704 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
+[W 2024-06-11 01:15:22.704 ServerApp] Notebook experiments/exp3_learned_attacks.ipynb is not trusted
+[I 2024-06-11 01:17:22.746 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
+[W 2024-06-11 01:17:22.746 ServerApp] Notebook experiments/exp3_learned_attacks.ipynb is not trusted
+[I 2024-06-11 01:19:22.799 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
+[I 2024-06-11 01:20:53.196 ServerApp] Starting buffering for f1816a99-9d2b-4b69-8924-cd525cd4de4e:5695c077-53a2-48e3-b845-de2e5bbb5bdf
+[I 2024-06-11 01:20:56.474 ServerApp] Connecting to kernel f1816a99-9d2b-4b69-8924-cd525cd4de4e.
+[I 2024-06-11 01:21:00.407 ServerApp] Kernel restarted: 035e9f8a-7c88-4def-bb56-cc4b2e7f952e
+[I 2024-06-11 01:21:00.490 ServerApp] Starting buffering for 035e9f8a-7c88-4def-bb56-cc4b2e7f952e:7e25e62c-48e0-4f86-af77-707ed80a02b8
+[I 2024-06-11 01:21:00.497 ServerApp] Connecting to kernel 035e9f8a-7c88-4def-bb56-cc4b2e7f952e.
+[I 2024-06-11 01:21:00.497 ServerApp] Restoring connection for 035e9f8a-7c88-4def-bb56-cc4b2e7f952e:7e25e62c-48e0-4f86-af77-707ed80a02b8
+[I 2024-06-11 01:21:03.944 ServerApp] Saving file at /experiments/exp2_theory_attacks.ipynb
+[I 2024-06-11 01:21:04.143 ServerApp] Saving file at /experiments/exp2_theory_attacks.ipynb
+[I 2024-06-11 01:21:04.243 ServerApp] Saving file at /experiments/exp2_theory_attacks.ipynb
+[I 2024-06-11 01:21:04.390 ServerApp] Saving file at /experiments/exp2_theory_attacks.ipynb
+[I 2024-06-11 01:21:22.779 ServerApp] Kernel restarted: f1816a99-9d2b-4b69-8924-cd525cd4de4e
+[I 2024-06-11 01:21:22.810 ServerApp] Starting buffering for f1816a99-9d2b-4b69-8924-cd525cd4de4e:9cde880b-8125-4db8-9c84-447bf949f7f0
+[I 2024-06-11 01:21:22.816 ServerApp] Connecting to kernel f1816a99-9d2b-4b69-8924-cd525cd4de4e.
+[I 2024-06-11 01:21:22.816 ServerApp] Restoring connection for f1816a99-9d2b-4b69-8924-cd525cd4de4e:9cde880b-8125-4db8-9c84-447bf949f7f0
+[I 2024-06-11 01:21:37.883 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
+[I 2024-06-11 01:21:38.033 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
+[I 2024-06-11 01:21:38.262 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
+[I 2024-06-11 01:21:38.348 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
+[I 2024-06-11 01:21:38.508 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
+[I 2024-06-11 01:22:06.414 ServerApp] Starting buffering for 035e9f8a-7c88-4def-bb56-cc4b2e7f952e:7e25e62c-48e0-4f86-af77-707ed80a02b8
+[I 2024-06-11 01:22:06.415 ServerApp] Starting buffering for f1816a99-9d2b-4b69-8924-cd525cd4de4e:9cde880b-8125-4db8-9c84-447bf949f7f0
+[I 2024-06-11 01:25:10.344 ServerApp] Connecting to kernel 035e9f8a-7c88-4def-bb56-cc4b2e7f952e.
+[I 2024-06-11 01:27:29.603 ServerApp] Saving file at /experiments/exp2_theory_attacks.ipynb
+[I 2024-06-11 01:27:30.278 ServerApp] Connecting to kernel f1816a99-9d2b-4b69-8924-cd525cd4de4e.
+[I 2024-06-11 01:27:31.906 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
+[I 2024-06-11 01:35:31.960 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
+[I 2024-06-11 01:41:32.817 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
+[I 2024-06-11 01:42:30.767 ServerApp] Starting buffering for 035e9f8a-7c88-4def-bb56-cc4b2e7f952e:e17dbb07-ef81-4924-b50d-2ed90ebf9760
+[I 2024-06-11 01:43:32.869 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
+[I 2024-06-11 01:45:32.921 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb
+[I 2024-06-11 01:45:48.450 ServerApp] Kernel restarted: f1816a99-9d2b-4b69-8924-cd525cd4de4e
+[I 2024-06-11 01:45:48.565 ServerApp] Starting buffering for f1816a99-9d2b-4b69-8924-cd525cd4de4e:cdae4a40-b867-4c53-9dcf-d1c91f833c4d
+[I 2024-06-11 01:45:48.572 ServerApp] Connecting to kernel f1816a99-9d2b-4b69-8924-cd525cd4de4e.
+[I 2024-06-11 01:45:48.572 ServerApp] Restoring connection for f1816a99-9d2b-4b69-8924-cd525cd4de4e:cdae4a40-b867-4c53-9dcf-d1c91f833c4d
+[I 2024-06-11 01:47:32.980 ServerApp] Saving file at /experiments/exp3_learned_attacks.ipynb

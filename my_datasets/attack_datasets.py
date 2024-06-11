@@ -111,7 +111,7 @@ class SuppressRuleDataset(Dataset):
         }
 
 
-class KnowledgeAmnesiaDataset(Dataset):
+class FactAmnesiaDataset(Dataset):
     """
     The goal is to forget "a"
 

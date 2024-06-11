@@ -39,7 +39,7 @@ class AttackWrapperModel(nn.Module):
         self.token_dim = 2 * self.num_vars
 
         # Set up the attacker model
-        assert attack_name in ["suppress_rule", "knowledge_amnesia", "coerce_state"]
+        assert attack_name in ["suppress_rule", "fact_amnesia", "coerce_state"]
         self.attack_name = attack_name
         self.num_attack_tokens = num_attack_tokens
 
