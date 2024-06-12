@@ -83,32 +83,32 @@ This can be repeated for t=3,5 by modifying the `config_file` flag.
 ### Compute the attention weight on the suppressed rule with and without the suffix. 
 
 ```
-python minecraft_attack_plots_heatmap_suppression_universal_stats.py 
-    --config_file configs/minecraft/attack_1.json 
-    --output_dir minecraft_suppress_rule_qed_256 
+python minecraft_attack_plots_heatmap_suppression_universal_stats.py \
+    --config_file configs/minecraft/attack_1.json \
+    --output_dir minecraft_suppress_rule_qed_256 \
     --num_tokens_to_generate 256
 ```
 
 ### Collect Coercion and Amnesia stats (overlap percentage and replacement ASR)
 
 ```
-python minecraft_collect_coercion_stats.py
-    --config_file configs/minecraft/attack_1.json 
+python minecraft_collect_coercion_stats.py \
+    --config_file configs/minecraft/attack_1.json \
     --output_dir minecraft_coerce_qed_256 
 ```
 
 ```
-python minecraft_collect_amnesia_stats.py
-    --config_file configs/minecraft/attack_1.json 
+python minecraft_collect_amnesia_stats.py \
+    --config_file configs/minecraft/attack_1.json \
     --output_dir minecraft_amnesia_qed_256 
 ```
 
 ## Attention suppression heatmaps for Llama-2-7b-chat
 
 ```
-python plot_llama_heatmaps.py
-    --model_name "llama-2-7b-chat-hf"
-    --dataset_json_path data/rule_following.json
+python plot_llama_heatmaps.py \
+    --model_name "llama-2-7b-chat-hf" \
+    --dataset_json_path data/rule_following.json \
     --output_dir attention_heatmaps_llama
 ```
 

@@ -11,6 +11,8 @@ import json
 
 import matplotlib.pyplot as plt
 import matplotlib
+from matplotlib import colormaps
+from matplotlib.colors import LinearSegmentedColormap
 
 import pandas as pd
 
@@ -48,9 +50,26 @@ def plot_attention_flow(flow_matrix, token_labels, topk_prefix_start=0, topk_pre
     token_labels = token_labels[topk_prefix_start:topk_prefix_end]
     token_labels[0] = ". . . "
     fig, ax = plt.subplots(figsize=figsize, dpi=200)
+
+    # Make up colors
+    blues = colormaps.get_cmap("Blues")
+    reds = colormaps.get_cmap("Reds")
+    fmin, fmax = flow_matrix.min().item(), flow_matrix.max().item()
+
+    if fmin < 0:
+        my_colors = np.vstack([
+            np.flip(reds(np.linspace(0, abs(fmin), 32)), axis=0),
+            blues(np.linspace(0, abs(fmax), 32))
+        ])
+    else:
+        my_colors = blues(np.linspace(0, abs(fmax), 32))
+
+    my_cmap = LinearSegmentedColormap.from_list("my_colors", my_colors)
+
     h = ax.pcolor(
-        abs(flow_matrix),
-        cmap="Blues",
+        # abs(flow_matrix),
+        flow_matrix,
+        cmap=my_cmap,
         # vmin=0,
     )
     ax.invert_yaxis()
@@ -58,9 +77,11 @@ def plot_attention_flow(flow_matrix, token_labels, topk_prefix_start=0, topk_pre
     ax.tick_params(axis='x', rotation=60)
     ax.set_xticks([0.5 + i for i in range(flow_matrix.shape[1])])
     ax.set_yticks([0.5 + i for i in range(0, flow_matrix.shape[0], 1)])
-    ax.set_yticklabels(list(range(0, flow_matrix.shape[0], 1)), fontsize=16)
+    ax.set_yticklabels(list(range(1, flow_matrix.shape[0]+1, 1)), fontsize=16)
     ax.set_xticklabels(token_labels, fontsize=16)
     cb = plt.colorbar(h)
+    cb.ax.tick_params(labelsize=12)
+
     ax.set_ylabel(f"Layers", fontsize=16)
     if title:
         ax.set_title(title)
@@ -72,8 +93,10 @@ def plot_attention_flow(flow_matrix, token_labels, topk_prefix_start=0, topk_pre
             if abs(flow_matrix[i, j]) < 0.5:
                 continue
         # for i in range(1):
+            text_color = "w" if abs(flow_matrix[i,j]) > 0.75 else "k" # w=white, k=black
+
             text = ax.text(j+0.5, i+0.5, valfmt(flow_matrix[i, j]),
-                        ha="center", va="center", fontsize=8)
+                        ha="center", va="center", fontsize=10, color=text_color)
     # else:
     #     ax.set_title("Attention contribution to generation")
     if cbar_text:
@@ -83,6 +106,12 @@ def plot_attention_flow(flow_matrix, token_labels, topk_prefix_start=0, topk_pre
         os.makedirs(os.path.dirname(savepdf), exist_ok=True)
         plt.savefig(savepdf, bbox_inches="tight")
         plt.close()
+
+    save_dict = {
+        "flow_matrix": flow_matrix,
+        "tokens": token_labels
+    }
+
     return fig
 
 if __name__ == "__main__":
