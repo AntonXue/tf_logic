@@ -112,6 +112,8 @@ def plot_attention_flow(flow_matrix, token_labels, topk_prefix_start=0, topk_pre
         "tokens": token_labels
     }
 
+    torch.save(save_dict, savepdf + ".pt")
+
     return fig
 
 if __name__ == "__main__":

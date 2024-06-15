@@ -16,6 +16,7 @@ from utils.model_loader_utils import load_big_grid_stats_from_wandb
 from utils.plotting import heatmap, annotate_heatmap
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
 
 PLOTS_DIR = str(Path(Path(__file__).parent.parent, "plots"))
 
@@ -158,7 +159,9 @@ def plot_and_save_heatmap(args):
     else:
         plot_file = str(Path(PLOTS_DIR, f"{args.plot_file}"))
 
-    plt.savefig(plot_file, bbox_inches="tight")
+    plt.savefig(plot_file, bbox_inches="tight", transparent=True)
+
+    torch.save(metric_dict, plot_file + ".pt")
     return fig
 
 

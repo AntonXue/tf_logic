@@ -106,8 +106,6 @@ def plot_attention_flow(
         my_colors = np.vstack([
             np.flip(reds(np.linspace(0, abs(fmin), 32)), axis=0),
             blues(np.linspace(0, abs(fmax), 32)),
-            # np.flip(reds(np.linspace(0, 1, 32)), axis=0),
-            # blues(np.linspace(0, 1, 32)),
         ])
     else:
         my_colors = blues(np.linspace(0, abs(fmax), 32))
