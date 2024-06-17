@@ -1,6 +1,13 @@
 # Steps to reproduce experimental results
 WARNINGS: Some of these experiments use Large Language Models and can produce undesirable outputs.
 
+## Requirements
+The required python packages can be installed using
+
+```
+pip install -r requirements.txt
+```
+
 ## Finetuning GPT-2 on Minecraft
 This can be repeated for t=3,5 by modifying the `num_steps` flag.
 
