@@ -1,0 +1,18 @@
+[
+    {
+        "model_name": ["gpt2"],
+        "syn_exp_name": ["autoreg_ksteps"],
+        "example_format": ["text"],
+        "max_sequence_length": [768],
+        "max_num_distractors_triggerable": [8],
+        "seed": [201],
+        "num_steps": [3],
+        "min_num_vars": [1],
+        "max_num_vars": [64],
+        "train_len": [65536],
+        "eval_len": [16392],
+        "num_epochs": [25],
+        "train_batch_size": [32],
+        "eval_batch_size": [32]
+    }
+]
