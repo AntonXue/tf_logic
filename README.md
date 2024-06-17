@@ -119,3 +119,7 @@ python plot_llama_heatmaps.py \
     --output_dir attention_heatmaps_llama
 ```
 
+NOTE: You need a GPU with > 28GB of RAM to support `llama-2-7b-chat` with the
+default precision. We cannot guarantee that running the model with a lower precision
+will reproduce the results.
+
