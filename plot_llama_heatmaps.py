@@ -156,7 +156,6 @@ if __name__ == "__main__":
     num_tokens_to_generate = args.num_tokens_to_generate
     device = torch.device(args.device)
     num_fig_cols = 4
-    # model_id = HF_MODEL_NAMES[MODEL_NAME]
     if "llama" in model_name:
         model_id = "meta-llama/Llama-2-7b-chat-hf"
         system_prompt = "You are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. Please ensure that your responses are socially unbiased and positive in nature.\n\nIf a question does not make any sense, or is not factually coherent, explain why instead of answering something not correct. If you don't know the answer to a question, please don't share false information."
@@ -174,33 +173,11 @@ if __name__ == "__main__":
     model = AutoModelForCausalLM.from_pretrained(model_id)
     tokenizer = AutoTokenizer.from_pretrained(model_id)
 
-    print(model.config.torch_dtype)
-
     if "vicuna" in model_name:
         tokenizer.chat_template = VICUNA_HF_CHAT_TEMPLATE
 
     model.to(device)
     model.eval()
-
-    attack_stats = {
-        k : [] for k in range(num_layers)
-    }
-
-    orig_attack_stats = {
-        k : [] for k in range(num_layers)
-    }
-
-    attack_stats_head = {
-        k: {
-            l: [] for l in range(num_heads)
-        } for k in range(num_layers)
-    }
-
-    orig_attack_stats_head = {
-        k: {
-            l: [] for l in range(num_heads)
-        } for k in range(num_layers)
-    }
 
     all_attns_without_suffix = {
         k : []
@@ -218,7 +195,6 @@ if __name__ == "__main__":
     model_config = model.model.config
     num_key_value_groups = model_config.num_attention_heads // model_config.num_key_value_heads
     attention_layers = [(i, f"layers.{i}.self_attn") for i in range(model.model.config.num_hidden_layers)]
-    # mlp_layers = [(i, f"model.layers.{i}.mlp") for i in range(model_wrapped.model.config.num_hidden_layers)]
     all_layers = attention_layers
 
     samples = json.load(open(args.dataset_json_path))
@@ -231,11 +207,9 @@ if __name__ == "__main__":
     
     for sample_i, sample in tqdm(enumerate(samples)):
         input_to_model = [
-            # {"role": "system", "content": system_prompt}, 
             {"role": "user", "content": f"{sample['system_prompt']} {sample['user_prompt']}"}]
         
         attack_input_to_model = [
-            # {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"{sample['system_prompt']} {sample['user_prompt']} {sample['adversarial_suffix']}"}
         ]
 
@@ -252,50 +226,21 @@ if __name__ == "__main__":
             for k in range(num_layers)
         }
 
-        # input_to_model = f"{system_prompt}{input_to_model}"
-        # attack_input_to_model = f"{system_prompt}{attack_input_to_model}"
-
-        
-
-        # input_to_model = [
-        #     {"role": "system", "content": system_prompt}, 
-        #     {"role": "user", "content": f"{input_to_model}"}]
-        
-        # attack_input_to_model = [
-        #     {"role": "system", "content": system_prompt},
-        #     {"role": "user", "content": f"{attack_input_to_model}"}
-        # ]
-
-        # print(f"Generation configuration: {model.generation_config}")
-
         print(f"Input to model: {input_to_model}\n--------\n")
         tokenized_input = tokenizer.apply_chat_template(input_to_model, tokenize=True, add_generation_prompt=True, return_tensors="pt").to(device)
         tokenized_attack_input = tokenizer.apply_chat_template(attack_input_to_model, tokenize=True, add_generation_prompt=True, return_tensors="pt").to(device)
-
-        # tokenized_input = tokenizer(input_to_model, return_tensors="pt").to(device)
-        # tokenized_attack_input = tokenizer(attack_input_to_model, return_tensors="pt").to(device)
-
-        # print(f"Tokenized input: {tokenized_input.shape}")
-        # print(f"Output: {model.generate(tokenized_input, max_new_tokens=1, do_sample=False, temperature=0, top_p=1, output_attentions=True, output_hidden_states=True, return_dict_in_generate=True).sequences.shape}")
-        # exit()
 
         original_tokenized_input = tokenized_input.clone()
         original_tokenized_attack_input = tokenized_attack_input.clone()
 
         # Analyze attentions of all layers with and without the adversarial suffix
         with torch.no_grad():
-            # model.generation_config.output_attentions = True
-            # model.generation_config.return_dict_in_generate = True
             model.generation_config.do_sample = False
             model.generation_config.temperature = None
             model.generation_config.top_p = None
             model.generation_config.pad_token_id=tokenizer.pad_token_id
 
             print(model.generation_config)
-
-            # op_without_suffix = model.generate(tokenized_input, output_attentions=True, return_dict_in_generate=True, do_sample=False, temperature=None, top_p=None, max_new_tokens=25)
-            # op_without_suffix = model.generate(tokenized_input, do_sample=False, temperature=None, top_p=None, pad_token_id=tokenizer.pad_token_id, output_attentions=True, return_dict_in_generate=True)
-            # op_with_suffix = model.generate(tokenized_attack_input, do_sample=False, temperature=None, top_p=None, pad_token_id=tokenizer.pad_token_id, output_attentions=True, return_dict_in_generate=True)
 
             op_without_suffix = model.generate(tokenized_input, output_hidden_states=True, output_attentions=True)
             op_with_suffix = model.generate(tokenized_attack_input, output_hidden_states=True, output_attentions=True)
@@ -309,8 +254,7 @@ if __name__ == "__main__":
 
             tokens_without_suffix = [tokenizer.decode(t) for t in op_without_suffix[0]]
             print(f"tokens without suffix: {tokens_without_suffix}")
-            # tokens_with_suffix = [tokenizer.decode(t) for t in op_with_suffix[0]]
-
+            
             rule = sample['rule_suppressed'].replace(" ", "")
 
             
@@ -331,24 +275,6 @@ if __name__ == "__main__":
             ante_pos = list(range(rule_start, rule_end))
             print(f"Ante pos: {ante_pos}")
             print(f"Tokens: {tokens_without_suffix[rule_start:rule_end]}")
-
-            
-
-            # continue
-            # op_with_suffix = model.generate(tokenized_attack_input, output_attentions=True, return_dict_in_generate=True, do_sample=False, temperature=None, top_p=None, max_new_tokens=25)
-
-            # op_without_suffix = model.generate(**tokenized_input, output_attentions=True, return_dict_in_generate=True, do_sample=False, temperature=None, top_p=None, max_new_tokens=15)
-            # op_with_suffix = model.generate(**tokenized_attack_input, output_attentions=True, return_dict_in_generate=True, do_sample=False, temperature=None, top_p=None, max_new_tokens=15)
-
-            # print(f"Decoded without suffix: {tokenizer.decode(op_without_suffix.sequences[0])}")
-            # print(f"Decoded with suffix: {tokenizer.decode(op_with_suffix.sequences[0])}")
-
-            # continue
-
-            # Get list of tokens for input and attack input
-            # tokens_without_suffix = tokenizer.convert_ids_to_tokens(op_without_suffix.sequences[0])
-            # tokens_with_suffix = tokenizer.convert_ids_to_tokens(op_with_suffix.sequences[0])
-                        
 
             for ntk in tqdm(range(num_tokens_to_generate)):
                 print(ntk)
@@ -387,24 +313,15 @@ if __name__ == "__main__":
                 tokens_without_suffix = [tokenizer.decode(t) for t in tokenized_input[0]]
                 tokens_with_suffix = [tokenizer.decode(t) for t in tokenized_attack_input[0]]
 
-                # print(f"Tokens with suffix: {tokens_with_suffix}")
-            
+               
                 orig_attns_without_suffix = attns_without_suffix
                 orig_attns_with_suffix = attns_with_suffix
 
-                # print(f"Shape of attns_without_suffix: {attns_without_suffix[0]}")
-
+               
                 # Create a heatmap of the attention scores for the last token
-                # Sum the attention scores for all heads in a layer
-                # The heatmap's x-axis is the layer number
-                # The heatmap's y-xis is the token value
-
-                # Get the attentions for the last token
+               
                 attns_without_suffix = [attns_without_suffix[layer].squeeze(0) for layer in range(len(attns_without_suffix))]
                 attns_with_suffix = [attns_with_suffix[layer].squeeze(0) for layer in range(len(attns_with_suffix))]
-
-                # attns_without_suffix = [attns_without_suffix_layer.sum(dim=0) for attns_without_suffix_layer in attns_without_suffix]
-                # attns_with_suffix = [attns_with_suffix_layer.sum(dim=0) for attns_with_suffix_layer in attns_with_suffix]
 
                 attns_without_suffix = [attns_without_suffix_layer.max(dim=0).values for attns_without_suffix_layer in attns_without_suffix]
                 attns_with_suffix = [attns_with_suffix_layer.max(dim=0).values for attns_with_suffix_layer in attns_with_suffix]
@@ -414,7 +331,6 @@ if __name__ == "__main__":
                 attns_with_suffix = [attns_with_suffix_layer[-1] for attns_with_suffix_layer in attns_with_suffix]
 
                 # Generate the heatmap
-
                 heatmap_without_suffix = torch.stack(attns_without_suffix).cpu().numpy()
                 heatmap_with_suffix = torch.stack(attns_with_suffix).cpu().numpy()
 
@@ -438,10 +354,7 @@ if __name__ == "__main__":
                     heatmap_diff, 
                     tokens_with_suffix, 
                     savepdf=f"{output_dir}/{model_name}/sample_{sample_i}/token_{ntk}_diff.png",
-                    # figsize=(3, 24),
-                    # figsize=(24, 3),
                     figsize=(40, 10),
-                    # topk_prefix_start=-86,
                     topk_prefix_start=0,
                     topk_prefix_end=heatmap_diff.shape[1])
                 
@@ -449,10 +362,7 @@ if __name__ == "__main__":
                     abs(heatmap_diff), 
                     tokens_with_suffix, 
                     savepdf=f"{output_dir}/{model_name}/sample_{sample_i}/token_{ntk}_diff_abs.png",
-                    # figsize=(3, 24),
-                    # figsize=(24, 3),
                     figsize=(40, 10),
-                    # topk_prefix_start=-86,
                     topk_prefix_start=0,
                     topk_prefix_end=heatmap_diff.shape[1])
 
@@ -460,10 +370,7 @@ if __name__ == "__main__":
                     heatmap_with_suffix, 
                     tokens_with_suffix, 
                     savepdf=f"{output_dir}/{model_name}/sample_{sample_i}/token_{ntk}_with_suffix",
-                    # figsize=(3, 24),
-                    # figsize=(24, 3),
                     figsize=(40, 10),
-                    # topk_prefix_start=-86,
                     topk_prefix_start=0,
                     topk_prefix_end=heatmap_with_suffix.shape[1])
                 
@@ -471,10 +378,7 @@ if __name__ == "__main__":
                     heatmap_without_suffix, 
                     tokens_without_suffix, 
                     savepdf=f"{output_dir}/{model_name}/sample_{sample_i}/token_{ntk}_without_suffix",
-                    # figsize=(3, 24),
-                    # figsize=(24, 3),
                     figsize=(40, 10),
-                    # topk_prefix_start=-86,
                     topk_prefix_start=0,
                     topk_prefix_end=heatmap_without_suffix.shape[1])
 
