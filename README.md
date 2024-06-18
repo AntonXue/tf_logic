@@ -106,8 +106,9 @@ python minecraft_collect_coercion_stats.py \
 
 ```
 python minecraft_collect_amnesia_stats.py \
-    --config_file configs/minecraft/attack_1.json \
-    --output_dir minecraft_amnesia_qed_256 
+    --config_file configs/minecraft/attack_3.json \
+    --output_dir minecraft_amnesia_qed_256 \
+    --amnesia_rule_depth 1
 ```
 
 ## Attention suppression heatmaps for Llama-2-7b-chat
@@ -119,7 +120,11 @@ python plot_llama_heatmaps.py \
     --output_dir attention_heatmaps_llama
 ```
 
-NOTE: You need a GPU with > 28GB of RAM to support `llama-2-7b-chat` with the
+NOTE: 
+
+1. You need to obtain an access token from huggingface to use the Llama models. This token can then be stored as an environment variable `HF_TOKEN` which will be used by the the `plot_llama-heatmaps.py` script.
+2. You need a GPU with > 28GB of RAM to support `llama-2-7b-chat` with the
 default precision. We cannot guarantee that running the model with a lower precision
 will reproduce the results.
+
 
