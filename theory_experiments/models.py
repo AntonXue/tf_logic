@@ -7,7 +7,6 @@ from transformers.utils import ModelOutput
 
 @dataclass
 class MyTheoryOutput(ModelOutput):
-    """ At the moment this is the same as BaseModelOutput, but may change """
     logits: torch.FloatTensor | None = None
     attn_outs: torch.FloatTensor | None = None
     attn_wts: torch.FloatTensor | None = None
@@ -31,7 +30,7 @@ class MySelfAttnHead(nn.Module):
 
 
 class MyTheoryModel(nn.Module):
-    """ A one-layer, one-head transformer model of some embedding dimension """
+    """ A one-layer, one-head transformer model of some embedding dimension. """
     def __init__(
         self,
         embed_dim: int,
@@ -69,7 +68,7 @@ class MyTheoryAROutput(ModelOutput):
 
 
 class MyTheoryARModel(nn.Module):
-    """ A one-layer, one-head transformer model of some embedding dimension """
+    """ Autoregressive version of the theory model. """
     def __init__(
         self,
         num_props: int,
