@@ -7,7 +7,7 @@ def hot(i,n):
     return F.one_hot(i,n)
 
 
-def make_common_stuff(num_vars, num_rules, hot_prob):
+def make_common_stuff(num_props, num_rules, hot_prob):
     """
     Make rules of the following form that is common to all the experiments
 
@@ -20,7 +20,7 @@ def make_common_stuff(num_vars, num_rules, hot_prob):
 
     with proof states: {a} -> {abcd} -> {abcdef} -> {abcdefg}
     """
-    n, r, p = num_vars, num_rules, hot_prob
+    n, r, p = num_props, num_rules, hot_prob
     infos = torch.randperm(n)[:8]
     a, b, c, d, e, f, g, h = infos
 
@@ -57,7 +57,7 @@ def make_common_stuff(num_vars, num_rules, hot_prob):
     }
 
 
-class AutoregCustomTokensDataset(Dataset):
+class AutoregDataset(Dataset):
     """ The standard training dataset """
     def __init__(
         self,
@@ -69,7 +69,6 @@ class AutoregCustomTokensDataset(Dataset):
         assert num_props >= 8
         self.num_props = num_props
         self.num_rules = num_rules
-        self.exp_hots = exp_hots
         self.hot_prob = exp_hots / num_props
         self.dataset_len = dataset_len
 
@@ -97,6 +96,51 @@ class AutoregCustomTokensDataset(Dataset):
         }
 
 
+class FactAmnesiaDataset(Dataset):
+    """
+    The goal is to forget "a"
+
+    Proof states:
+        {a} -> {bcd} -> {abcdef} -> {bcdefgh}
+    """
+    def __init__(
+        self,
+        num_props: int,
+        num_repeats: int,
+        dataset_len: int,
+        num_rules: int = 32,
+        exp_hots: float = 3.0,
+    ):
+        self.num_props = num_props
+        self.num_repeats = num_repeats
+        self.num_rules = num_rules
+        self.num_stuff_rules = num_rules - num_repeats - 1
+        self.hot_prob = exp_hots / num_props
+        self.dataset_len = dataset_len
+
+    def __len__(self):
+        return self.dataset_len
+
+    def __getitem__(self, idx):
+        n = self.num_props
+        stuff = make_common_stuff(n, self.num_stuff_rules, self.hot_prob)
+        a, b, c, d, e, f, g, h = stuff["infos"]
+
+        labels = torch.stack([
+            hot(b,n) + hot(c,n) + hot(d,n),
+            hot(b,n) + hot(c,n) + hot(d,n) + hot(e,n) + hot(f,n),
+            hot(b,n) + hot(c,n) + hot(d,n) + hot(e,n) + hot(f,n) + hot(g,n),
+        ])
+
+        hints = hot(a,n)
+
+        return {
+            "tokens": stuff["tokens"],
+            "labels": labels,
+            "infos": stuff["infos"],
+            "hints": hints,
+        }
+
 
 class SuppressRuleDataset(Dataset):
     """
@@ -107,27 +151,28 @@ class SuppressRuleDataset(Dataset):
     """
     def __init__(
         self,
-        reasoner_dataset: Dataset,
-        num_attack_tokens: int,
+        num_props: int,
+        num_repeats: int,
         dataset_len: int,
+        num_rules: int = 32,
+        exp_hots: float = 3.0,
     ):
-        # The reasoner dataset is only used to compute a few things
-        self.reasoner_dataset = reasoner_dataset
-        self.num_vars = reasoner_dataset.num_vars
-        self.hot_prob = reasoner_dataset.exp_hots / self.num_vars
-        self.num_rules = reasoner_dataset.num_rules - num_attack_tokens
+        self.num_props = num_props
+        self.num_repeats = num_repeats
+        self.num_rules = num_rules
+        self.num_stuff_rules = num_rules - num_repeats - 1
+        self.hot_prob = exp_hots / num_props
         self.dataset_len = dataset_len
 
     def __len__(self):
         return self.dataset_len
 
     def __getitem__(self, idx):
-        n = self.num_vars
-        stuff = make_common_stuff(n, self.num_rules, self.hot_prob)
+        n = self.num_props
+        stuff = make_common_stuff(n, self.num_stuff_rules, self.hot_prob)
         a, b, c, d, e, f, g, h = stuff["infos"]
 
         labels = torch.stack([
-            hot(a,n),
             hot(a,n) + hot(b,n) + hot(c,n) + hot(d,n),
             hot(a,n) + hot(b,n) + hot(c,n) + hot(d,n) + hot(e,n),
             hot(a,n) + hot(b,n) + hot(c,n) + hot(d,n) + hot(e,n),
@@ -152,71 +197,26 @@ class SuppressRuleDataset(Dataset):
         }
 
 
-class FactAmnesiaDataset(Dataset):
-    """
-    The goal is to forget "a"
-
-    Proof states:
-        {a} -> {bcd} -> {abcdef} -> {bcdefgh}
-    """
-    def __init__(
-        self,
-        reasoner_dataset: Dataset,
-        num_attack_tokens: int,
-        dataset_len: int,
-    ):
-        # The reasoner dataset is only used to compute a few things
-        self.reasoner_dataset = reasoner_dataset
-        self.num_vars = reasoner_dataset.num_vars
-        self.hot_prob = reasoner_dataset.exp_hots / self.num_vars
-        self.num_rules = reasoner_dataset.num_rules - num_attack_tokens
-        self.dataset_len = dataset_len
-
-    def __len__(self):
-        return self.dataset_len
-
-    def __getitem__(self, idx):
-        n = self.num_vars
-        stuff = make_common_stuff(n, self.num_rules, self.hot_prob)
-        a, b, c, d, e, f, g, h = stuff["infos"]
-
-        labels = torch.stack([
-            hot(a,n),
-            hot(b,n) + hot(c,n) + hot(d,n),
-            hot(b,n) + hot(c,n) + hot(d,n) + hot(e,n) + hot(f,n),
-            hot(b,n) + hot(c,n) + hot(d,n) + hot(e,n) + hot(f,n) + hot(g,n),
-        ])
-
-        hints = hot(a,n)
-
-        return {
-            "tokens": stuff["tokens"],
-            "labels": labels,
-            "infos": stuff["infos"],
-            "hints": hints,
-        }
-
 
 class CoerceStateDataset(Dataset):
     def __init__(
         self,
-        reasoner_dataset: Dataset,
-        num_attack_tokens: int,
+        num_props: int,
         dataset_len: int,
+        num_rules: int = 32,
+        exp_hots: float = 3.0,
     ):
-        # The reasoner dataset is only used to compute a few things
-        self.reasoner_dataset = reasoner_dataset
-        self.num_vars = reasoner_dataset.num_vars
-        self.hot_prob = reasoner_dataset.exp_hots / self.num_vars
-        self.num_rules = reasoner_dataset.num_rules - num_attack_tokens
+        self.num_props = num_props
+        self.num_rules = num_rules
+        self.hot_prob = exp_hots / num_props
         self.dataset_len = dataset_len
 
     def __len__(self):
         return self.dataset_len
 
     def __getitem__(self, idx):
-        n, p = self.num_vars, self.hot_prob
-        stuff = make_common_stuff(self.num_vars, self.num_rules, self.hot_prob)
+        n, p = self.num_props, self.hot_prob
+        stuff = make_common_stuff(self.num_props, self.num_rules-3, p)
         infos = stuff["infos"]
         a, b, c, d = infos[0], infos[1], infos[2], infos[3]
 
@@ -224,7 +224,8 @@ class CoerceStateDataset(Dataset):
         target2 = ((torch.rand(n) < p) + hot(c,n) - hot(a,n) - hot(b,n) - hot(d,n)).clamp(0,1)
         target3 = ((torch.rand(n) < p) + hot(d,n) - hot(a,n) - hot(c,n) - hot(c,n)).clamp(0,1)
         targets = torch.stack([target1, target2, target3]).long()
-        labels = torch.cat([hot(a,n).view(1,-1), targets], dim=0).long()
+        # labels = torch.cat([hot(a,n).view(1,-1), targets], dim=0).long()
+        labels = targets.long()
         return {
             "tokens": stuff["tokens"],
             "labels": labels,
