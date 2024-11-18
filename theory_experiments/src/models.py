@@ -60,14 +60,14 @@ class MyTheoryModel(nn.Module):
 
 
 @dataclass
-class MyTheoryAROutput(ModelOutput):
+class MyAutoregTheoryOutput(ModelOutput):
     logits: torch.FloatTensor | None = None
     attn_outs: tuple[torch.FloatTensor] | None = None
     attn_wts: tuple[torch.FloatTensor] | None = None
     loss: torch.FloatTensor | None = None
 
 
-class MyTheoryARModel(nn.Module):
+class MyAutoregTheoryModel(nn.Module):
     """ Autoregressive version of the theory model. """
     def __init__(
         self,
@@ -109,7 +109,7 @@ class MyTheoryARModel(nn.Module):
         if labels is not None:
             loss = self.loss_fn(all_logits, labels.float())
 
-        return MyTheoryAROutput(
+        return MyAutoregTheoryOutput(
             logits = all_logits,
             attn_outs = all_attn_outs,
             attn_wts = all_attn_wts,
