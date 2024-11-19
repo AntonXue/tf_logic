@@ -13,7 +13,10 @@ saveto_dir = str(Path(Path(__file__).parent.parent, "_saved_models/autoreg_grid"
 
 def train_model(model, dataloader, optimizer, lr_scheduler):
     model.train().to(device)
-    all_losses, all_elems_accs, all_state_accs = [], [], []
+    n, d = model.input_dim // 2, model.embed_dim
+    losses = []
+    e1_accs, e2_accs, e3_accs = [], [], []
+    s1_accs, s2_accs, s3_accs = [], [], []
     pbar = tqdm(dataloader)
     for i, batch in enumerate(pbar):
         tokens, labels = batch["tokens"].to(device), batch["labels"].to(device)
@@ -26,21 +29,25 @@ def train_model(model, dataloader, optimizer, lr_scheduler):
         # Track stuff
         pred = (out.logits > 0).long()
         loss = loss.detach().cpu().item()
-        elems_acc = (pred == labels).float().mean().cpu().item()
-        state_acc = (pred == labels).all(dim=-1).all(dim=-1).float().mean().cpu().item()
-        all_losses.append(loss); all_elems_accs.append(elems_acc); all_state_accs.append(state_acc)
+        losses.append(loss)
 
-        n, d = tokens.size(-1) // 2, model.embed_dim
+        e1_accs.append((pred == labels)[:,:1].float().mean().item())
+        e2_accs.append((pred == labels)[:,:2].float().mean().item())
+        e3_accs.append((pred == labels)[:,:3].float().mean().item())
+
+        s1_accs.append((pred == labels)[:,:1].all(dim=-1).all(dim=-1).float().mean().item())
+        s2_accs.append((pred == labels)[:,:2].all(dim=-1).all(dim=-1).float().mean().item())
+        s3_accs.append((pred == labels)[:,:3].all(dim=-1).all(dim=-1).float().mean().item())
 
         pbar.set_description(
-            f"n {n}, d {d}, loss {loss:.3f}, elems {elems_acc:.3f}, state {state_acc:.3f}"
+            f"n {n}, d {d}, loss {loss:.3f}, elems {e3_accs[-1]:.3f}, state {s3_accs[-1]:.3f}"
         )
 
     return {
         "model_state_dict": model.eval().cpu().state_dict(),
-        "losses": all_losses,
-        "elems_accs": all_elems_accs,
-        "state_accs": all_state_accs,
+        "losses": losses,
+        "e1_accs": e1_accs, "e2_accs": e2_accs, "e3_accs": e3_accs,
+        "s1_accs": s1_accs, "s2_accs": s2_accs, "s3_accs": s3_accs,
     }
 
 
@@ -57,8 +64,8 @@ def init_and_train(num_props, embed_dim, batch_size, num_optim_steps, lr, seed):
 
 def train_theory(
     nd_pairs,
-    batch_size = 512,
-    num_optim_steps = 10000,
+    batch_size = 1024,
+    num_optim_steps = 5000,
     lr = 5e-4,
     seed = 101,
 ):
