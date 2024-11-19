@@ -6,11 +6,6 @@ import torchvision; torchvision.disable_beta_transforms_warning()
 from transformers import GPT2Model, GPT2Config
 from transformers.utils import ModelOutput
 
-@dataclass
-class TheoryOutput(ModelOutput):
-    logits: torch.FloatTensor | None = None
-    attn_wts: torch.FloatTensor | None = None
-
 
 class SelfAttnHead(nn.Module):
     def __init__(self, embed_dim: int):
@@ -27,6 +22,12 @@ class SelfAttnHead(nn.Module):
         wts = F.softmax((torch.bmm(Q, K.transpose(1,2)) / (d**0.5)) + mask, dim=2) # (B,L,L)
         out = torch.bmm(wts, V)
         return out, wts
+
+
+@dataclass
+class TheoryOutput(ModelOutput):
+    logits: torch.FloatTensor | None = None
+    attn_wts: torch.FloatTensor | None = None
 
 
 class TheoryModel(nn.Module):
@@ -71,11 +72,16 @@ class AutoregTheoryModel(nn.Module):
         self,
         num_props: int,
         num_steps: int,
+        embed_dim: int | None = None,
         do_layer_norm: bool = False
     ):
         super().__init__()
         self.num_props = num_props
-        self.model = TheoryModel(2*num_props, do_layer_norm=do_layer_norm)
+        self.input_dim = 2 * num_props
+        self.embed_dim = 2 * num_props if embed_dim is None else embed_dim
+        self.embed_fn = nn.Linear(self.input_dim, self.embed_dim)
+        self.cls_head = nn.Linear(self.embed_dim, self.num_props)
+        self.model = TheoryModel(self.embed_dim, do_layer_norm=do_layer_norm)
         self.num_steps = num_steps
         self.loss_fn = nn.BCEWithLogitsLoss()
 
@@ -90,8 +96,9 @@ class AutoregTheoryModel(nn.Module):
         all_tokens = tokens
 
         for t in range(self.num_steps):
-            out = self.model(all_tokens.float())
-            logits = out.logits[:,-1,-self.num_props:]
+            x = self.embed_fn(all_tokens.float())
+            out = self.model(x)
+            logits = self.cls_head(out.logits[:,-1])
             succ = (logits > 0).long()
             succ_token = torch.cat([torch.zeros_like(succ), succ], dim=-1)
             all_tokens = torch.cat([all_tokens, succ_token.view(-1,1,d)], dim=1).long()
