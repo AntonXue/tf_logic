@@ -64,9 +64,9 @@ def init_and_train(num_props, embed_dim, batch_size, num_optim_steps, lr, seed):
 
 def train_theory(
     nd_pairs,
-    batch_size = 1024,
-    num_optim_steps = 5000,
-    lr = 5e-4,
+    batch_size = 512,
+    num_optim_steps = 10000,
+    lr = 1e-3,
     seed = 101,
 ):
     for (n, d) in nd_pairs:
@@ -76,6 +76,7 @@ def train_theory(
 
 
 all_embed_dims = [128, 112, 96, 80, 64, 48, 32]
+all_num_props = [64, 56, 48, 40, 32, 24, 16]
 
 n16_pairs = [(16, d) for d in all_embed_dims]
 n24_pairs = [(24, d) for d in all_embed_dims]
@@ -85,4 +86,11 @@ n48_pairs = [(48, d) for d in all_embed_dims]
 n56_pairs = [(56, d) for d in all_embed_dims]
 n64_pairs = [(64, d) for d in all_embed_dims]
 
+d128_pairs = [(n, 128) for n in all_num_props]
+d112_pairs = [(n, 112) for n in all_num_props]
+d96_pairs = [(n, 96) for n in all_num_props]
+d80_pairs = [(n, 80) for n in all_num_props]
+d64_pairs = [(n, 64) for n in all_num_props]
+d48_pairs = [(n, 48) for n in all_num_props]
+d32_pairs = [(n, 32) for n in all_num_props]
 
