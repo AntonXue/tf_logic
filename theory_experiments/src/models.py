@@ -2,9 +2,9 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from transformers import GPT2ForSequenceClassification, GPT2Config
+import torchvision; torchvision.disable_beta_transforms_warning()
+from transformers import GPT2Model, GPT2Config
 from transformers.utils import ModelOutput
-
 
 @dataclass
 class TheoryOutput(ModelOutput):
@@ -125,20 +125,27 @@ class AutoregGPT2Model(nn.Module):
         self,
         num_props: int,
         num_steps: int,
+        embed_dim: int | None = None,
     ):
         super().__init__()
         self.num_props = num_props
-        self.model = GPT2ForSequenceClassification._from_config(GPT2Config(
-            n_embd = 2 * num_props,
+        self.input_dim = 2 * num_props
+        self.embed_dim = 2 * num_props if embed_dim is None else embed_dim
+
+        self.embed_fn = nn.Linear(self.input_dim, self.embed_dim)
+        self.cls_head = nn.Linear(self.embed_dim, self.num_props)
+
+        # GPT-2 with positional encoding disabled
+        self.gpt2 = GPT2Model(GPT2Config(
+            n_embd = self.embed_dim,
             n_head = 1,
             n_layer = 1,
-            num_labels = num_props,
-            pad_token_id = -1
         ))
-        self.model.transformer.wpe.requires_grad_(False)
-        self.model.transformer.wpe.weight.fill_(0)
+        self.gpt2.wpe.requires_grad_(False)
+        self.gpt2.wpe.weight.fill_(0)
 
         self.num_steps = num_steps
+        self.loss_fn = nn.BCEWithLogitsLoss()
 
     def forward(
         self,
@@ -151,8 +158,10 @@ class AutoregGPT2Model(nn.Module):
         all_tokens = tokens
 
         for t in range(self.num_steps):
-            out = self.model(inputs_embeds=all_tokens.float(), output_attentions=True)
-            logits = out.logits
+            x = self.embed_fn(all_tokens.float())
+            out = self.gpt2(inputs_embeds=x, output_attentions=True)
+            logits = self.cls_head(out.last_hidden_state[:,-1])
+
             succ = (logits > 0).long()
             succ_token = torch.cat([torch.zeros_like(succ), succ], dim=-1)
             all_tokens = torch.cat([all_tokens, succ_token.view(-1,1,d)], dim=1).long()

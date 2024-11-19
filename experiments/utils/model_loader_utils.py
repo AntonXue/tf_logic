@@ -168,7 +168,7 @@ def load_model_and_dataset_from_big_grid(
     seed: int = 601,
     quiet: bool = False,
     wandb_project: str = "transformer_friends/transformer_friends",
-    overwrite: bool = True,
+    overwrite: bool = False,
     max_test_seq_len: int = 1024,
 ):
     seqcls_model = MyGPT2SeqClsModel(MyGPT2Config(
@@ -193,15 +193,18 @@ def load_model_and_dataset_from_big_grid(
         f"_steps{num_train_steps}_lr{learning_rate:.5f}"
 
     artifact_id = f"model-SynSAR_{model_str}__{dataset_str}__{train_str}_seed{seed}:v0"
+    print("Attempting to download artifact id:")
+    print(artifact_id)
 
     artifact_dir = Path(DUMP_DIR, "artifacts", artifact_id)
-    artifact_dir = download_artifact(
-        artifact_id = artifact_id, 
-        artifact_dir = artifact_dir,
-        wandb_project = wandb_project,
-        quiet = quiet,
-        overwrite = overwrite
-    )
+    if not artifact_dir.exists():
+        artifact_dir = download_artifact(
+            artifact_id = artifact_id, 
+            artifact_dir = artifact_dir,
+            wandb_project = wandb_project,
+            quiet = quiet,
+            overwrite = overwrite
+        )
 
     artifact_file = Path(artifact_dir, "model.safetensors")
     with safe_open(str(artifact_file), framework="pt", device="cpu") as f:
@@ -245,7 +248,7 @@ def load_big_grid_stats_from_wandb(
     seed: int = 601,
     quiet: bool = False,
     wandb_project: str = "transformer_friends/transformer_friends",
-    overwrite: bool = True,
+    overwrite: bool = False,
     max_test_seq_len: int = 1024,
     return_first: bool = True
 ):
