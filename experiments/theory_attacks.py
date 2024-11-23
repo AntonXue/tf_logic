@@ -158,7 +158,7 @@ def run_theory_attack_common(config):
         "num_samples",
         "reasoner_type", "train_seed", "num_vars", "embed_dim", "num_attack_tokens",
         "raw_state_acc",
-        "simple_asr",
+        "simple_ssr", "simple_asr",
         "adv_ns1_state_acc", "adv_ns2_state_acc", "adv_ns3_state_acc",
         "adv_ns1_atk_wts", "adv_ns2_atk_wts", "adv_ns3_atk_wts",
         "adv_ns1_atk_wts_std", "adv_ns2_atk_wts_std", "adv_ns3_atk_wts_std"
@@ -223,7 +223,7 @@ def run_theory_attack_common(config):
                     adv_ns1_other_wts, adv_ns2_other_wts, adv_ns3_other_wts = \
                         torch.tensor([]).to(device), torch.tensor([]).to(device), torch.tensor([]).to(device)
 
-                    simple_asr_oks, ssr_oks = torch.tensor([]).to(device), torch.tensor([]).to(device)
+                    simple_ssr_oks, simple_asr_oks = torch.tensor([]).to(device), torch.tensor([]).to(device)
 
                     pbar = tqdm(dataloader)
                     for i, batch in enumerate(pbar):
@@ -316,15 +316,17 @@ def run_theory_attack_common(config):
                         adv_ns3_atk_wts = torch.cat([adv_ns3_atk_wts, adv_attn3[:,-1,L:L+k]])
 
                         # Track the simple ASR
-                        # simple_asr_oks = torch.cat([simple_asr_oks, (adv_pred != raw_labels).any(dim=-1).any(dim=-1)])
+                        # simple_ssr_oks = torch.cat([simple_ssr_oks, (adv_pred != raw_labels).any(dim=-1).any(dim=-1)])
 
                         # Track the SSR and simple-ASR stats
                         if config.attack_name == "fact_amnesia":
                             # ssr_oks = torch.cat([ssr_oks, (adv_pred * hot(a,n)).sum(dim=(-1,-2)) == 0])
-                            simple_asr_oks = torch.cat([simple_asr_oks, (adv_pred * hot(a,n)).sum(dim=(-1,-2)) == 0])
+                            simple_ssr_oks = torch.cat([simple_ssr_oks, (adv_pred * hot(a,n)).sum(dim=(-1,-2)) == 0])
 
                         elif config.attack_name == "suppress_rule":
-                            simple_asr_oks = torch.cat([simple_asr_oks, (adv_pred * hot(f,n)).sum(dim=(-1,-2)) == 0])
+                            simple_ssr_oks = torch.cat([simple_ssr_oks, (adv_pred * hot(f,n)).sum(dim=(-1,-2)) == 0])
+
+                        simple_asr_oks = torch.cat([simple_asr_oks, (adv_pred != raw_labels).any(dim=-1).any(dim=-1)])
 
                         if config.attack_name == "suppress_rule":
                             # Try to suppress the rule c,d -> f
@@ -351,7 +353,7 @@ def run_theory_attack_common(config):
                             + f"{adv_ns2_atk_wts.float().mean():.2f}," \
                             + f"{adv_ns3_atk_wts.float().mean():.2f}), " \
 
-                        desc += f"simp_asr {simple_asr_oks.float().mean():.2f}"
+                        desc += f"simp_asr {simple_ssr_oks.float().mean():.2f}"
 
                         if config.attack_name == "suppress_rule":
                             desc += f"suppd ({adv_ns1_suppd_wts.float().mean():.2f}," \
@@ -374,6 +376,7 @@ def run_theory_attack_common(config):
                         "embed_dim": embed_dim,
                         "num_attack_tokens": k,
                         "raw_state_acc": raw_state_hits.float().mean().item(),
+                        "simple_ssr": simple_ssr_oks.float().mean().item(),
                         "simple_asr": simple_asr_oks.float().mean().item(),
                         "adv_ns1_state_acc": adv_ns1_state_hits.float().mean().item(),
                         "adv_ns2_state_acc": adv_ns2_state_hits.float().mean().item(),

@@ -332,12 +332,14 @@ def eval_one_epoch(
 
             adv_suffix_amnesia_targets = torch.cat([
                 adv_suffix_amnesia_targets,
-                (atk_conseq * amns_hots).abs().mean(dim=(1,2))
+                (atk_conseq * amns_hots).abs().sum(dim=(1,2)) / amns_hots.sum(dim=(1,2))
+                # (atk_conseq * amns_hots).abs().mean(dim=(1,2))
             ])
 
             adv_suffix_amnesia_others = torch.cat([
                 adv_suffix_amnesia_others,
-                (atk_conseq * other_hots).abs().mean(dim=(1,2))
+                (atk_conseq * other_hots).abs().sum(dim=(1,2)) / other_hots.sum(dim=(1,2))
+                # (atk_conseq * other_hots).abs().mean(dim=(1,2))
             ])
 
         elif args.attack_name == "coerce_state":
